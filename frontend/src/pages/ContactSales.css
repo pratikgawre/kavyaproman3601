@@ -1,0 +1,29 @@
+.contact-root { position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; z-index:2000; }
+.contact-overlay { position:absolute; inset:0; background: rgba(18,24,40,0.55); backdrop-filter: blur(4px); }
+.contact-card { position:relative; width:520px; max-width:calc(100% - 32px); max-height:420px; overflow-y:auto; background: #fff; border-radius:12px; padding:16px 20px; box-shadow: 0 10px 30px rgba(12,23,36,0.10); border:3px solid rgba(59,130,246,0.14); }
+.modal-close { position:absolute; right:14px; top:12px; background:transparent; border:0; font-size:20px; color:#475569; }
+.contact-icon { position:relative; margin: 6px auto 10px; width:64px; height:64px; background:linear-gradient(180deg,#fff,#f6f9ff); border-radius:999px; display:flex; align-items:center; justify-content:center; box-shadow:0 6px 18px rgba(59,130,246,0.07); border:5px solid #eef6ff }
+.icon-inner{ display:flex; align-items:center; justify-content:center; color:#2563eb }
+.icon-inner svg{ display:block }
+.contact-title{ text-align:center; font-size:20px; margin-top:6px; margin-bottom:6px; color:#0f172a }
+.contact-sub{ text-align:center; color:#64748b; margin-bottom:18px }
+.contact-form{ margin-top:6px }
+.field{ display:flex; align-items:center; gap:10px; background:#fff; border:1px solid #eef2ff; padding:8px 10px; border-radius:8px; margin-bottom:10px }
+.field input, .field textarea{ border:0; outline:0; flex:1; font-size:14px; color:#0f172a; background:transparent }
+.field textarea{ resize:vertical }
+.field-icon{ color:#7c93e6; font-size:18px }
+.phone-field { display:flex; align-items:center; gap:8px }
+.phone-field .country{ border:0; background:transparent; padding:6px 8px; margin-right:6px; border-radius:6px; font-size:14px }
+.phone-field input{ flex:1 }
+
+.country option{ padding-left:6px }
+.submit-btn{ display:block; margin:14px auto 6px; background:linear-gradient(180deg,#2b8cff,#2570ff); color:#fff; border:0; padding:10px 32px; border-radius:8px; font-weight:600; box-shadow:0 8px 18px rgba(43,140,255,0.24); font-size:15px }
+.help-text{ text-align:center; color:#64748b; margin-top:6px }
+
+@media (max-width:420px){
+  .contact-card{ padding:14px }
+  .contact-icon{ width:56px;height:56px }
+  .contact-title{ font-size:18px }
+  .field input, .field textarea{ font-size:14px }
+  .submit-btn{ padding:10px 28px }
+}

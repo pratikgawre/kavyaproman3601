@@ -1,0 +1,53 @@
+.payment-root { min-height:100vh; background:#f6f7fb; }
+.payment-card { max-width:720px; margin:28px auto; background:#fff; padding:24px; border-radius:12px; box-shadow:0 12px 40px rgba(2,6,23,0.06); }
+.method-tabs .btn { border-radius:8px; padding:8px 14px; margin-right:8px; }
+.method-tabs .btn.active { background:#0b1226; color:#fff; }
+.method-form label { font-weight:700; font-size:13px; }
+.method-form .form-control { margin-top:6px; }
+
+/* Layout: form + preview */
+.payment-grid { display:grid; grid-template-columns: 1fr 360px; gap:20px; align-items:start; }
+.preview-column { display:flex; align-items:flex-start; justify-content:center; }
+
+.card-large-preview { width:320px; background:linear-gradient(135deg,#0b1226 0%, #2b89ff 100%); color:#fff; padding:22px; border-radius:12px; box-shadow:0 20px 60px rgba(11,18,38,0.18); }
+.card-large-preview .card-chip { width:56px; height:36px; background:#f6e58d; border-radius:8px; margin-bottom:18px; }
+.card-large-preview .card-number { font-weight:800; font-size:20px; letter-spacing:2px; margin-bottom:14px; }
+.card-large-preview .card-meta { display:flex; justify-content:space-between; font-size:14px; opacity:0.95; }
+
+.upi-large-preview { display:flex; flex-direction:column; align-items:center; gap:12px; }
+.upi-card-large { display:flex; align-items:center; justify-content:space-between; width:320px; background:#fff; border-radius:12px; padding:12px; box-shadow:0 8px 30px rgba(2,6,23,0.06); border:1px solid rgba(15,23,32,0.04); }
+.upi-left-large { display:flex; flex-direction:column; }
+.upi-brand-large { font-weight:900; color:#0b1226; font-size:20px; margin-bottom:6px; }
+.upi-brand-large { display:inline-flex; align-items:center; gap:8px; color:#6b7280; }
+.upi-brand-large::after { content:''; display:inline-block; width:28px; height:18px; background:linear-gradient(90deg,#f6b73c 0%,#10b981 100%); clip-path: polygon(0 0, 100% 50%, 0 100%); border-radius:2px; }
+.upi-id-large { font-weight:800; color:#0b1226; }
+.upi-right-large { display:flex; align-items:center; }
+
+@media (max-width:900px) { .payment-grid { grid-template-columns: 1fr; } .preview-column { margin-top:14px; } }
+
+/* Small screen tweaks */
+@media (max-width:600px) {
+	.payment-card { padding:16px; margin:12px; }
+	.payment-grid { grid-template-columns:1fr; gap:12px; }
+	.preview-column { justify-content:center; }
+
+	/* Make previews full width and adapt sizing */
+	.card-large-preview, .upi-card-large { width:100%; max-width:100%; padding:16px; }
+	.card-large-preview .card-number { font-size:18px; }
+
+	/* Stack small input groups and make buttons full width */
+	.method-form .d-flex.gap-2 { flex-direction:column; }
+	.method-form .d-flex.gap-2 .form-control { width:100%; }
+	.method-form .mt-4.d-flex.gap-2 { flex-direction:column; }
+	.method-form .mt-4.d-flex.gap-2 .btn { width:100%; }
+
+	/* Make tabs reachable and compact */
+	.method-tabs { display:flex; gap:8px; }
+	.method-tabs .btn { padding:8px 10px; font-size:14px; }
+
+	/* UPI copy button smaller */
+	.upi-right-large .btn, .upi-right .copy-btn { padding:8px 10px; font-size:13px; }
+}
+
+.method-form input[readonly] { background:#eef2ff; }
+.btn.btn-outline-secondary { white-space:nowrap; }
