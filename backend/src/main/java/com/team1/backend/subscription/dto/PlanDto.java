@@ -10,4 +10,5 @@ public class PlanDto {
     private double monthlyPrice;
     private double yearlyPrice;
     private boolean featured;
+    private long purchaseCount;
 }
