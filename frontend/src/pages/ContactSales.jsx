@@ -3,6 +3,12 @@ import './ContactSales.css'
 import { FiX, FiUser, FiMail, FiPhone, FiEdit3, FiServer } from 'react-icons/fi'
 import { useNavigate } from 'react-router-dom'
 
+const stripLeadingSpace = (value) => value.replace(/^\s+/, '')
+const sanitizeEmail = (value) => stripLeadingSpace(value).replace(/[^A-Za-z0-9@.]/g, '')
+const preventLeadingSpace = (e) => {
+  if (e.key === ' ' && (e.currentTarget.selectionStart ?? 0) === 0) e.preventDefault()
+}
+
 export default function ContactSales(){
   const API_BASE_ROOT = import.meta.env.VITE_API_BASE || 'http://localhost:8080'
   const API_BASE = API_BASE_ROOT + '/api/contact'
@@ -27,14 +33,14 @@ export default function ContactSales(){
       const e = params.get('email');
       const code = params.get('code');
       if (e && code) {
-        setEmail(decodeURIComponent(e));
+        setEmail(sanitizeEmail(decodeURIComponent(e)));
         setVerificationSent(true);
         (async () => {
           try {
             const r = await fetch(API_BASE + '/verify', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email: decodeURIComponent(e), code })
+              body: JSON.stringify({ email: sanitizeEmail(decodeURIComponent(e)), code })
             });
             const j = await r.json().catch(() => ({}));
             if (!r.ok) {
@@ -99,8 +105,8 @@ export default function ContactSales(){
           <label className="field">
             <FiMail className="field-icon" />
             <input placeholder="Email Address" type="email" value={email} onChange={(e)=>{
-              setEmail(e.target.value); setVerificationSent(false); setVerified(false); setVerificationCode('');
-            }} required />
+              setEmail(sanitizeEmail(e.target.value)); setVerificationSent(false); setVerified(false); setVerificationCode('');
+            }} onKeyDown={preventLeadingSpace} required />
             {verified && (
               <span style={{marginLeft:8,background:'#ecfdf5',color:'#065f46',padding:'6px 8px',borderRadius:6,fontSize:12,fontWeight:600}}>Verified</span>
             )}
