@@ -5,6 +5,12 @@ import { FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLog
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
+const stripLeadingSpace = (value) => value.replace(/^\s+/, '')
+const sanitizeEmail = (value) => stripLeadingSpace(value).replace(/[^A-Za-z0-9@.]/g, '')
+const preventLeadingSpace = (e) => {
+  if (e.key === ' ' && (e.currentTarget.selectionStart ?? 0) === 0) e.preventDefault()
+}
+
 const FALLBACK_MEMBERS = [
   { id: 1, name: 'Sarah Johnson', email: 'sarah.johnson@kavyapro.com', role: 'Admin', projects: 3, activeIssues: 8, image: 'https://randomuser.me/api/portraits/women/44.jpg' },
   { id: 2, name: 'Michael Chen', email: 'michael.chen@kavyapro.com', role: 'Developer', projects: 2, activeIssues: 6, image: 'https://randomuser.me/api/portraits/men/32.jpg' },
@@ -648,7 +654,8 @@ export default function Teams() {
                         <input
                           type="email"
                           value={editingMember.email}
-                          onChange={(e) => setEditingMember({...editingMember, email: e.target.value})}
+                          onChange={(e) => setEditingMember({...editingMember, email: sanitizeEmail(e.target.value)})}
+                          onKeyDown={preventLeadingSpace}
                           placeholder="Email"
                         />
                         <select
@@ -770,7 +777,8 @@ export default function Teams() {
                   type="email"
                   placeholder="Enter member email"
                   value={inviteFormData.email}
-                  onChange={(e) => setInviteFormData({...inviteFormData, email: e.target.value})}
+                  onChange={(e) => setInviteFormData({...inviteFormData, email: sanitizeEmail(e.target.value)})}
+                  onKeyDown={preventLeadingSpace}
                   required
                 />
               </div>

@@ -4,6 +4,11 @@ import './Auth.css'
 import { useAuth } from '../context/AuthContext'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080'
+const stripLeadingSpace = (value) => value.replace(/^\s+/, '')
+const sanitizeEmail = (value) => stripLeadingSpace(value).replace(/[^A-Za-z0-9@.]/g, '')
+const preventLeadingSpace = (e) => {
+  if (e.key === ' ' && (e.currentTarget.selectionStart ?? 0) === 0) e.preventDefault()
+}
 
 export default function ForgotPassword(){
   const [email,setEmail] = useState('')
@@ -32,7 +37,12 @@ export default function ForgotPassword(){
         <h2>Forgot password</h2>
         {error && <div className="auth-error">{error}</div>}
         <label>Email</label>
-        <input value={email} onChange={e=>setEmail(e.target.value)} required />
+        <input
+          value={email}
+          onChange={e=>setEmail(sanitizeEmail(e.target.value))}
+          onKeyDown={preventLeadingSpace}
+          required
+        />
         <button className="auth-btn" type="submit">Send code</button>
       </form>
     </div>

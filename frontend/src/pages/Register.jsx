@@ -17,6 +17,12 @@ export default function Register() {
   const navigate = useNavigate()
   const { setPendingUserId, setPendingFlow } = useAuth()
 
+  const stripLeadingSpace = (value) => value.replace(/^\s+/, '')
+  const sanitizeEmail = (value) => stripLeadingSpace(value).replace(/[^A-Za-z0-9@.]/g, '')
+  const preventLeadingSpace = (e) => {
+    if (e.key === ' ' && (e.currentTarget.selectionStart ?? 0) === 0) e.preventDefault()
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
@@ -69,28 +75,35 @@ export default function Register() {
         <h2>Create account</h2>
         {error && <div className="auth-error">{error}</div>}
         <label>Name</label>
-        <input value={name} onChange={e => setName(e.target.value)} required />
+        <input value={name} onChange={e => setName(stripLeadingSpace(e.target.value))} required />
         <label>Email</label>
-        <input type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" required />
+        <input
+          type="email"
+          value={email}
+          onChange={e => setEmail(sanitizeEmail(e.target.value))}
+          onKeyDown={preventLeadingSpace}
+          autoComplete="email"
+          required
+        />
         <label>Password</label>
         <div className="password-wrapper">
           <input
             type={showPassword ? 'text' : 'password'}
             value={password}
-            onChange={e => setPassword(e.target.value)}
+            onChange={e => setPassword(stripLeadingSpace(e.target.value))}
             autoComplete="new-password"
             required
           />
           <button type="button" className="password-toggle" aria-pressed={showPassword} aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword(s => !s)}>
             {showPassword ? (
               <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6">
-                <path d="M17.94 17.94A10.97 10.97 0 0 1 12 20c-6 0-10-5.5-10-8 1.27-2.2 4.29-5 8.46-6.18" strokeLinecap="round" strokeLinejoin="round"></path>
-                <path d="M1 1l22 22" strokeLinecap="round" strokeLinejoin="round"></path>
+                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" strokeLinecap="round" strokeLinejoin="round"></path>
+                <circle cx="12" cy="12" r="3" strokeLinecap="round" strokeLinejoin="round"></circle>
               </svg>
             ) : (
               <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6">
-                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" strokeLinecap="round" strokeLinejoin="round"></path>
-                <circle cx="12" cy="12" r="3" strokeLinecap="round" strokeLinejoin="round"></circle>
+                <path d="M17.94 17.94A10.97 10.97 0 0 1 12 20c-6 0-10-5.5-10-8 1.27-2.2 4.29-5 8.46-6.18" strokeLinecap="round" strokeLinejoin="round"></path>
+                <path d="M1 1l22 22" strokeLinecap="round" strokeLinejoin="round"></path>
               </svg>
             )}
           </button>
@@ -120,20 +133,20 @@ export default function Register() {
           <input
             type={showConfirmPassword ? 'text' : 'password'}
             value={confirmPassword}
-            onChange={e => setConfirmPassword(e.target.value)}
+            onChange={e => setConfirmPassword(stripLeadingSpace(e.target.value))}
             autoComplete="new-password"
             required
           />
           <button type="button" className="password-toggle" aria-pressed={showConfirmPassword} aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'} onClick={() => setShowConfirmPassword(s => !s)}>
             {showConfirmPassword ? (
               <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6">
-                <path d="M17.94 17.94A10.97 10.97 0 0 1 12 20c-6 0-10-5.5-10-8 1.27-2.2 4.29-5 8.46-6.18" strokeLinecap="round" strokeLinejoin="round"></path>
-                <path d="M1 1l22 22" strokeLinecap="round" strokeLinejoin="round"></path>
+                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" strokeLinecap="round" strokeLinejoin="round"></path>
+                <circle cx="12" cy="12" r="3" strokeLinecap="round" strokeLinejoin="round"></circle>
               </svg>
             ) : (
               <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6">
-                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" strokeLinecap="round" strokeLinejoin="round"></path>
-                <circle cx="12" cy="12" r="3" strokeLinecap="round" strokeLinejoin="round"></circle>
+                <path d="M17.94 17.94A10.97 10.97 0 0 1 12 20c-6 0-10-5.5-10-8 1.27-2.2 4.29-5 8.46-6.18" strokeLinecap="round" strokeLinejoin="round"></path>
+                <path d="M1 1l22 22" strokeLinecap="round" strokeLinejoin="round"></path>
               </svg>
             )}
           </button>

@@ -136,7 +136,7 @@ export default function ResetPassword() {
             required
           />
           <button type="button" className="password-toggle" onClick={() => setShowPassword((s) => !s)} aria-label="toggle-password">
-            {showPassword ? <FiEyeOff /> : <FiEye />}
+            {showPassword ? <FiEye /> : <FiEyeOff />}
           </button>
         </div>
 
@@ -164,7 +164,7 @@ export default function ResetPassword() {
             onClick={() => setShowConfirmPassword((s) => !s)}
             aria-label="toggle-confirm-password"
           >
-            {showConfirmPassword ? <FiEyeOff /> : <FiEye />}
+            {showConfirmPassword ? <FiEye /> : <FiEyeOff />}
           </button>
         </div>
 
