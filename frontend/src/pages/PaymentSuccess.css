@@ -1,0 +1,97 @@
+.payment-success-root {
+  min-height: 100vh;
+  background:
+    radial-gradient(900px 420px at 20% 20%, rgba(45, 90, 150, 0.35), transparent 60%),
+    radial-gradient(700px 400px at 80% 60%, rgba(255, 140, 0, 0.18), transparent 65%),
+    linear-gradient(160deg, #0b1226 0%, #24344b 45%, #1a2230 100%);
+  color: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 18px;
+  text-align: center;
+}
+
+.success-hero h1 {
+  font-size: 38px;
+  margin: 12px 0 4px;
+  letter-spacing: 0.2px;
+  text-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.success-hero p {
+  color: rgba(248, 250, 252, 0.75);
+  margin: 0 0 24px;
+  font-size: 16px;
+}
+
+.success-icon {
+  width: 120px;
+  height: 120px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 30% 30%, #7ee081 0%, #34a853 55%, #1f7a35 100%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45), inset 0 -8px 18px rgba(0, 0, 0, 0.25);
+  color: #f8fafc;
+}
+
+.success-card {
+  width: min(680px, 92vw);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 26px 26px 30px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(8px);
+}
+
+.success-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  text-align: left;
+}
+
+.success-row:last-of-type {
+  border-bottom: 0;
+}
+
+.success-row .label {
+  color: rgba(248, 250, 252, 0.7);
+  font-size: 15px;
+}
+
+.success-row .value {
+  color: #f8fafc;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.success-done {
+  margin-top: 22px;
+  width: min(320px, 100%);
+  border-radius: 999px;
+  padding: 12px 18px;
+  font-weight: 700;
+  font-size: 18px;
+  border: none;
+  background: linear-gradient(180deg, #2b89ff 0%, #0b5bd3 100%);
+  color: #fff;
+  box-shadow: 0 14px 40px rgba(11, 91, 211, 0.5);
+}
+
+.success-done:hover {
+  filter: brightness(1.05);
+}
+
+@media (max-width: 600px) {
+  .success-icon { width: 96px; height: 96px; }
+  .success-hero h1 { font-size: 28px; }
+  .success-card { padding: 20px 18px 24px; }
+  .success-row { flex-direction: column; gap: 6px; }
+}

@@ -3,9 +3,31 @@ import { createContext, useContext, useMemo, useState } from 'react'
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null)
+  const [user, setUserState] = useState(() => {
+    try {
+      if (typeof window === 'undefined') return null
+      const stored = localStorage.getItem('authUser')
+      return stored ? JSON.parse(stored) : null
+    } catch (err) {
+      return null
+    }
+  })
   const [pendingUserId, setPendingUserId] = useState('')
   const [pendingFlow, setPendingFlow] = useState('')
+
+  const setUser = (nextUser) => {
+    setUserState(nextUser || null)
+    try {
+      if (typeof window === 'undefined') return
+      if (nextUser) {
+        localStorage.setItem('authUser', JSON.stringify(nextUser))
+      } else {
+        localStorage.removeItem('authUser')
+      }
+    } catch (err) {
+      // Ignore storage errors
+    }
+  }
 
   const value = useMemo(
     () => ({
