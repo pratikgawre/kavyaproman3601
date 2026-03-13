@@ -1,17 +1,28 @@
 ﻿import { useNavigate, NavLink, useLocation } from 'react-router-dom'
 import './Subscription.css'
 import './Dashboard.css'
-import { FiSearch, FiBell, FiPlus, FiZap, FiStar, FiCheck, FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLogOut, FiMenu, FiUser, FiBriefcase, FiServer, FiDownload, FiArrowRight, FiChevronDown, FiX, FiRepeat } from 'react-icons/fi'
+import { FiSearch, FiBell, FiPlus, FiZap, FiStar, FiCheck, FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLogOut, FiMenu, FiBriefcase, FiServer, FiDownload, FiArrowRight, FiChevronDown, FiX, FiRepeat } from 'react-icons/fi'
 import { GiCrown } from 'react-icons/gi'
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import useIssueNotifications from '../hooks/useIssueNotifications'
+
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080'
+const getAvatarInitials = (name, email) => {
+  const source = (name || '').trim() || (email || '').trim()
+  if (!source) return 'G'
+  const parts = source.split(/[\s._-]+/).filter(Boolean)
+  if (parts.length === 0) return source.charAt(0).toUpperCase()
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase()
+  return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase()
+}
 
 export default function Subscription() {
   const navigate = useNavigate()
   const location = useLocation()
   const { user, clearUser } = useAuth()
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
+  const avatarInitials = getAvatarInitials(user?.name, user?.email)
   const DEFAULT_PLAN = 'free'
   const normalizePlan = (value) => {
     const key = String(value || '').trim().toLowerCase()
@@ -45,6 +56,8 @@ export default function Subscription() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('card')
   const [upiCopied, setUpiCopied] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
+  const [payments, setPayments] = useState([])
+  const [paymentsLoading, setPaymentsLoading] = useState(false)
   const {
     notifications,
     unreadCount,
@@ -56,6 +69,10 @@ export default function Subscription() {
     clearAllNotifications
   } = useIssueNotifications({ limit: 6 })
   const notificationRef = useRef(null)
+  const freePlanRef = useRef(null)
+  const professionalPlanRef = useRef(null)
+  const businessPlanRef = useRef(null)
+  const enterprisePlanRef = useRef(null)
 
   useEffect(() => {
     const handleOutsideClick = (e) => {
@@ -215,6 +232,13 @@ export default function Subscription() {
     }
   }, [location?.state?.highlightPlan, location?.state?.scrollToPlan])
 
+  // preset preferred payment method when coming from update payment page
+  useEffect(() => {
+    if (!location?.state?.paymentMethod) return
+    const nextMethod = location.state.paymentMethod === 'upi' ? 'upi' : 'card'
+    setSelectedPaymentMethod(nextMethod)
+  }, [location?.state?.paymentMethod])
+
   // apply current plan passed from other pages (e.g., after upgrade flow)
   useEffect(() => {
     if (!location?.state?.currentPlan) return
@@ -247,13 +271,17 @@ export default function Subscription() {
     const planValue = modalPlan || selectedPlan
     if (!planValue) return
     setShowUpgradeModal(false)
-    await updateCurrentSubscription(planValue, period)
     navigate('/payment', { state: { plan: planValue, billingCycle: period, paymentMethod: selectedPaymentMethod } })
   }
 
   async function handleStartFree() {
     await updateCurrentSubscription('free', period)
     navigate('/free-plan', { state: { plan: 'free' } })
+  }
+
+  async function handleCancelSubscription() {
+    const nextBilling = currentBillingCycle || 'monthly'
+    await updateCurrentSubscription('free', nextBilling)
   }
 
   async function handleDownloadInvoice(paymentId) {
@@ -329,7 +357,9 @@ return (
 
           <div className="sidebar-footer mt-3 d-flex flex-column align-items-start">
             <div className="profile d-flex align-items-center w-100">
-              <div className="avatar-icon"><FiUser size={20} /></div>
+              <div className="avatar-icon">
+                {user?.avatar ? <img src={user.avatar} alt="avatar" /> : avatarInitials}
+              </div>
               <div className="ms-2 user-info">
                 <div className="user-name">{displayName}</div>
                 <div className="user-role">{user?.role || 'Member'}</div>
@@ -717,9 +747,9 @@ return (
               </div>
 
               <div className="sub-actions d-flex gap-2">
-                <button className="btn btn-outline-secondary">Update Payment Method</button>
-                <button className="btn btn-outline-secondary">Manage Team Members</button>
-                <button className="btn btn-danger">Cancel Subscription</button>
+                <button className="btn btn-outline-secondary" onClick={() => navigate('/update-payment')}>Update Payment Method</button>
+                <button className="btn btn-outline-secondary" onClick={() => navigate('/teams')}>Manage Team Members</button>
+                <button className="btn btn-danger" onClick={handleCancelSubscription}>Cancel Subscription</button>
               </div>
             </div>
           </section>
@@ -787,7 +817,7 @@ return (
               <h2 className="cta-title">Need help choosing?</h2>
               <p className="cta-sub">Our team is here to help you find the perfect plan</p>
               <div className="cta-actions d-inline-flex align-items-center gap-3 mt-3">
-                <button type="button" className="btn btn-dark cta-contact">
+                <button type="button" className="btn btn-dark cta-contact" onClick={() => navigate('/contact-sales')}>
                   Contact Sales <span className="cta-arrow">→</span>
                 </button>
               </div>

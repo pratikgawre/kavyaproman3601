@@ -15,6 +15,7 @@ export default function ResetPassword() {
   const [codeVerified, setCodeVerified] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [confirmPasswordError, setConfirmPasswordError] = useState('')
   const navigate = useNavigate()
   const { pendingUserId, clearPending } = useAuth()
   const userId = pendingUserId || ''
@@ -54,6 +55,26 @@ export default function ResetPassword() {
   const isStrongPassword = passwordRules.every((rule) => rule.valid)
   const isConfirmMatched = confirmPassword.length > 0 && confirmPassword === newPassword
 
+  const handleNewPasswordChange = (e) => {
+    const next = e.target.value
+    setNewPassword(next)
+    if (confirmPassword && next !== confirmPassword) {
+      setConfirmPasswordError('Passwords do not match')
+    } else {
+      setConfirmPasswordError('')
+    }
+  }
+
+  const handleConfirmPasswordChange = (e) => {
+    const next = e.target.value
+    setConfirmPassword(next)
+    if (newPassword && next !== newPassword) {
+      setConfirmPasswordError('Passwords do not match')
+    } else {
+      setConfirmPasswordError('')
+    }
+  }
+
   function verifyCode(e) {
     e.preventDefault()
     setError('')
@@ -77,7 +98,10 @@ export default function ResetPassword() {
     if (!userId) return setError('Missing reset context. Please request a new code.')
     if (!codeVerified) return setError('Please verify your 6-digit code first')
     if (!isStrongPassword) return setError('Please satisfy all password requirements')
-    if (!isConfirmMatched) return setError('Confirm password must match new password')
+    if (!isConfirmMatched) {
+      setConfirmPasswordError('Passwords do not match')
+      return setError('Confirm password must match new password')
+    }
 
     try {
       const res = await fetch(`${API_BASE}/api/auth/reset-password`, {
@@ -99,11 +123,14 @@ export default function ResetPassword() {
   return (
     <div className="auth-root">
       <form className="auth-card reset-password-card" onSubmit={submit}>
-        <h2>Reset password</h2>
+        <div className="reset-header">
+          <div className="reset-badge">Secure reset</div>
+          <h2>Reset password</h2>
+        </div>
         {error && <div className="auth-error">{error}</div>}
         {success && <div className="auth-success">{success}</div>}
 
-        <p className="muted">Enter the 6-digit code you received and your new password</p>
+        <p className="muted reset-subtitle">Enter the 6-digit code you received and your new password</p>
 
         <div className="otp-row">
           {code.map((c, i) => (
@@ -131,7 +158,7 @@ export default function ResetPassword() {
           <input
             type={showPassword ? 'text' : 'password'}
             value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
+            onChange={handleNewPasswordChange}
             autoComplete="new-password"
             required
           />
@@ -143,7 +170,7 @@ export default function ResetPassword() {
         <div className="pw-rules reset-pw-rules">
           {passwordRules.map((rule) => (
             <div key={rule.id} className={`pw-rule ${rule.valid ? 'valid' : ''}`}>
-              <span className="rule-mark">{rule.valid ? 'check' : 'x'}</span>
+              <span className="rule-mark">{rule.valid ? '✓' : '✕'}</span>
               <span>{rule.label}</span>
             </div>
           ))}
@@ -154,7 +181,7 @@ export default function ResetPassword() {
           <input
             type={showConfirmPassword ? 'text' : 'password'}
             value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
+            onChange={handleConfirmPasswordChange}
             autoComplete="new-password"
             required
           />
@@ -168,7 +195,7 @@ export default function ResetPassword() {
           </button>
         </div>
 
-        {confirmPassword && !isConfirmMatched && <div className="auth-error inline-auth-error">Passwords do not match</div>}
+        {confirmPasswordError && <div className="auth-error inline-auth-error">{confirmPasswordError}</div>}
 
         <button className="auth-btn" type="submit">
           Reset password

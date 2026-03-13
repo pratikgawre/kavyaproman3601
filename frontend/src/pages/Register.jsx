@@ -14,20 +14,74 @@ export default function Register() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [role, setRole] = useState('')
   const [error, setError] = useState('')
+  const [nameError, setNameError] = useState('')
+  const [emailError, setEmailError] = useState('')
+  const [confirmPasswordError, setConfirmPasswordError] = useState('')
   const navigate = useNavigate()
   const { setPendingUserId, setPendingFlow } = useAuth()
 
   const stripLeadingSpace = (value) => value.replace(/^\s+/, '')
+  const sanitizeName = (value) => stripLeadingSpace(value).replace(/[^A-Za-z\s]/g, '')
   const sanitizeEmail = (value) => stripLeadingSpace(value).replace(/[^A-Za-z0-9@.]/g, '')
   const preventLeadingSpace = (e) => {
     if (e.key === ' ' && (e.currentTarget.selectionStart ?? 0) === 0) e.preventDefault()
+  }
+  const validateName = (value) => {
+    const trimmed = value.trim()
+    if (!trimmed) return ''
+    return /^[A-Za-z]+(?:\s+[A-Za-z]+)*$/.test(trimmed)
+      ? ''
+      : 'Name can only contain letters and spaces'
+  }
+
+  const handleNameChange = (e) => {
+    const raw = e.target.value
+    const sanitized = sanitizeName(raw)
+    setName(sanitized)
+    if (raw !== sanitized) {
+      setNameError('Name can only contain letters and spaces')
+      return
+    }
+    setNameError(validateName(sanitized))
+  }
+  const handleEmailChange = (e) => {
+    const raw = e.target.value
+    const sanitized = sanitizeEmail(raw)
+    setEmail(sanitized)
+    if (raw !== sanitized) {
+      setEmailError('Email cannot contain special characters (only letters, numbers, @ and .)')
+      return
+    }
+    setEmailError('')
+  }
+  const handlePasswordChange = (e) => {
+    const next = stripLeadingSpace(e.target.value)
+    setPassword(next)
+    if (confirmPassword && next !== confirmPassword) {
+      setConfirmPasswordError('Passwords do not match')
+    } else {
+      setConfirmPasswordError('')
+    }
+  }
+  const handleConfirmPasswordChange = (e) => {
+    const next = stripLeadingSpace(e.target.value)
+    setConfirmPassword(next)
+    if (password && next !== password) {
+      setConfirmPasswordError('Passwords do not match')
+    } else {
+      setConfirmPasswordError('')
+    }
   }
 
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
     // client-side validation
-    if (!name.trim()) return setError('Name is required')
+    const trimmedName = name.trim()
+    if (!trimmedName) return setError('Name is required')
+    if (!/^[A-Za-z]+(?:\s+[A-Za-z]+)*$/.test(trimmedName)) {
+      return setError('Name can only contain letters and spaces')
+    }
     // require corporate email
     const lower = email.trim().toLowerCase()
     if (!lower.endsWith('@kavyainfoweb.com')) return setError('Use official email id')
@@ -75,22 +129,29 @@ export default function Register() {
         <h2>Create account</h2>
         {error && <div className="auth-error">{error}</div>}
         <label>Name</label>
-        <input value={name} onChange={e => setName(stripLeadingSpace(e.target.value))} required />
+        <input
+          value={name}
+          onChange={handleNameChange}
+          onKeyDown={preventLeadingSpace}
+          required
+        />
+        {nameError && <div className="auth-error inline-auth-error">{nameError}</div>}
         <label>Email</label>
         <input
           type="email"
           value={email}
-          onChange={e => setEmail(sanitizeEmail(e.target.value))}
+          onChange={handleEmailChange}
           onKeyDown={preventLeadingSpace}
           autoComplete="email"
           required
         />
+        {emailError && <div className="auth-error inline-auth-error">{emailError}</div>}
         <label>Password</label>
         <div className="password-wrapper">
           <input
             type={showPassword ? 'text' : 'password'}
             value={password}
-            onChange={e => setPassword(stripLeadingSpace(e.target.value))}
+            onChange={handlePasswordChange}
             autoComplete="new-password"
             required
           />
@@ -133,7 +194,7 @@ export default function Register() {
           <input
             type={showConfirmPassword ? 'text' : 'password'}
             value={confirmPassword}
-            onChange={e => setConfirmPassword(stripLeadingSpace(e.target.value))}
+            onChange={handleConfirmPasswordChange}
             autoComplete="new-password"
             required
           />
@@ -151,6 +212,7 @@ export default function Register() {
             )}
           </button>
         </div>
+        {confirmPasswordError && <div className="auth-error inline-auth-error">{confirmPasswordError}</div>}
 
         <label>Role</label>
         <select value={role} onChange={e => setRole(e.target.value)} required>

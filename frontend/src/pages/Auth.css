@@ -61,73 +61,137 @@
 /* Reset password page */
 .reset-password-card{
   max-width:520px;
-  width:100%;
-  border-radius:0;
-  padding:28px 40px 34px;
+  width:min(90vw, 520px);
+  border-radius:16px;
+  padding:28px 36px 32px;
+  position:relative;
+  overflow:hidden;
+  border:1px solid rgba(226,232,240,0.9);
+  box-shadow:0 24px 60px rgba(15,23,42,0.18);
+  background:#ffffff;
+}
+
+.reset-password-card::before{
+  content:'';
+  position:absolute;
+  top:-140px;
+  right:-120px;
+  width:280px;
+  height:280px;
+  background:radial-gradient(circle, rgba(99,102,241,0.35) 0%, rgba(99,102,241,0) 70%);
+  pointer-events:none;
+}
+
+.reset-password-card::after{
+  content:'';
+  position:absolute;
+  left:-160px;
+  bottom:-160px;
+  width:260px;
+  height:260px;
+  background:radial-gradient(circle, rgba(14,165,233,0.25) 0%, rgba(14,165,233,0) 70%);
+  pointer-events:none;
+}
+
+.reset-password-card > *{
+  position:relative;
+  z-index:1;
+}
+
+.reset-header{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:10px;
+  margin-bottom:8px;
+}
+
+.reset-badge{
+  background:linear-gradient(90deg, rgba(79,70,229,0.12), rgba(14,165,233,0.12));
+  color:#1e1b4b;
+  border:1px solid rgba(99,102,241,0.2);
+  padding:6px 12px;
+  font-weight:700;
+  font-size:11px;
+  border-radius:999px;
+  text-transform:uppercase;
+  letter-spacing:0.08em;
 }
 
 .reset-password-card h2{
   text-align:center;
-  font-size:42px;
+  font-size:32px;
   line-height:1.08;
-  margin-bottom:12px;
+  margin:0;
 }
 
 .reset-password-card .muted{
   color:#64748b;
-  font-size:16px;
+  font-size:14px;
   line-height:1.5;
-  margin-bottom:12px;
+  margin-bottom:14px;
+  text-align:center;
 }
 
 .reset-password-card .otp-row{
   justify-content:center;
-  gap:14px;
-  margin:14px 0 20px;
+  gap:10px;
+  flex-wrap:nowrap;
+  margin:14px 0 18px;
 }
 
 .reset-password-card .otp-box{
-  width:62px;
-  height:70px;
-  border-radius:12px;
-  border:1px solid #d1d5db;
+  width:46px;
+  height:54px;
+  border-radius:14px;
+  border:1px solid #e2e8f0;
+  background:#f8fafc;
+  font-size:18px;
+  font-weight:700;
+  color:#0f172a;
 }
 
 .reset-password-card .otp-clear{
-  width:34px;
-  height:34px;
-  right:-12px;
-  top:-12px;
-  font-size:18px;
+  width:30px;
+  height:30px;
+  right:-10px;
+  top:-10px;
+  font-size:16px;
+  border-color:#e2e8f0;
+  color:#0f172a;
 }
 
 .verify-code-btn{
-  background:linear-gradient(90deg,#08142b,#020b1c);
-  margin-top:4px;
+  background:linear-gradient(90deg,#0f172a,#1e293b);
+  margin-top:6px;
   margin-bottom:16px;
   border-radius:18px;
+  font-size:14px;
+  font-weight:700;
+  line-height:1.1;
+  min-height:48px;
+  width:88%;
+  margin-left:auto;
+  margin-right:auto;
+  box-shadow:0 12px 24px rgba(15,23,42,0.2);
+}
+
+.reset-password-card label{
   font-size:16px;
   font-weight:700;
   line-height:1.1;
-  min-height:56px;
+  margin-top:14px;
+  margin-bottom:8px;
   width:88%;
   margin-left:auto;
   margin-right:auto;
 }
 
-.reset-password-card label{
-  font-size:18px;
-  font-weight:700;
-  line-height:1.1;
-  margin-top:16px;
-  margin-bottom:8px;
-}
-
 .reset-password-card .password-wrapper input{
-  min-height:52px;
-  border-radius:16px;
+  min-height:46px;
+  border-radius:14px;
   border:1px solid #d1d5db;
-  font-size:16px;
+  font-size:14px;
   padding-left:16px;
 }
 
@@ -141,31 +205,37 @@
   width:88%;
   margin-left:auto;
   margin-right:auto;
+  background:linear-gradient(90deg,#4f46e5,#7c3aed);
+  box-shadow:0 14px 30px rgba(124,58,237,0.28);
 }
 
 .reset-password-card .password-toggle{
-  right:14px;
-  width:44px;
-  height:44px;
+  right:12px;
+  width:38px;
+  height:38px;
 }
 
 .reset-password-card .password-toggle svg{
-  width:30px;
-  height:30px;
+  width:24px;
+  height:24px;
 }
 
 .reset-pw-rules{
   margin-top:14px;
   margin-bottom:10px;
   gap:8px;
+  width:88%;
+  margin-left:auto;
+  margin-right:auto;
 }
 
 .reset-pw-rules .pw-rule{
-  font-size:14px;
+  font-size:12px;
   color:#ef4444;
   background:#fff5f5;
   border-radius:8px;
-  padding:8px 10px;
+  padding:6px 10px;
+  width:100%;
 }
 
 .reset-pw-rules .pw-rule.valid{
@@ -181,15 +251,47 @@
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  width:28px;
-  height:28px;
+  width:22px;
+  height:22px;
   border-radius:50%;
   border:1px solid #d1d5db;
   color:inherit;
-  font-size:14px;
+  font-size:12px;
   font-weight:700;
   flex:0 0 auto;
   text-transform:uppercase;
+}
+
+@media (min-width: 1200px){
+  .reset-password-card{
+    max-width:500px;
+    width:500px;
+    padding:26px 34px 30px;
+  }
+
+  .reset-password-card h2{
+    font-size:30px;
+  }
+
+  .reset-password-card .otp-box{
+    width:44px;
+    height:52px;
+  }
+
+  .verify-code-btn{
+    min-height:46px;
+    width:80%;
+  }
+
+  .reset-password-card .password-wrapper,
+  .reset-password-card .auth-btn[type='submit'],
+  .reset-password-card label{
+    width:80%;
+  }
+
+  .reset-pw-rules{
+    width:80%;
+  }
 }
 
 .inline-auth-error{
@@ -214,6 +316,9 @@
     width:50px;
     height:58px;
   }
+  .reset-password-card .otp-row{
+    gap:8px;
+  }
 
   .verify-code-btn{
     font-size:15px;
@@ -231,7 +336,47 @@
 
   .reset-password-card .password-wrapper,
   .reset-password-card .auth-btn[type='submit'],
+  .reset-password-card label,
   .verify-code-btn{
+    width:100%;
+  }
+}
+
+@media (max-width: 640px){
+  .reset-password-card{
+    padding:24px 22px 26px;
+    border-radius:14px;
+  }
+
+  .reset-password-card h2{
+    font-size:30px;
+  }
+
+  .reset-password-card .muted{
+    font-size:14px;
+  }
+
+  .reset-password-card .otp-box{
+    width:42px;
+    height:50px;
+    border-radius:12px;
+    font-size:20px;
+  }
+
+  .reset-password-card .otp-row{
+    gap:6px;
+  }
+
+  .verify-code-btn{
+    min-height:50px;
+    width:100%;
+  }
+
+  .reset-password-card .password-wrapper{
+    width:100%;
+  }
+
+  .reset-password-card .auth-btn[type='submit']{
     width:100%;
   }
 }
