@@ -19,6 +19,7 @@ import Subscription from './pages/Subscription'
 import ContactSales from './pages/ContactSales'
 import PaymentMethod from './pages/PaymentMethod'
 import PaymentSuccess from './pages/PaymentSuccess'
+import UpdatePayment from './pages/UpdatePayment'
 import FreePlan from './pages/FreePlan'
 import Project from './pages/Project'
 import Board from './pages/Board'
@@ -62,6 +63,7 @@ function App() {
         <Route path="/free-plan" element={<FreePlan />} />
         <Route path="/payment" element={<PaymentMethod />} />
         <Route path="/payment-success" element={<PaymentSuccess />} />
+        <Route path="/update-payment" element={<UpdatePayment />} />
         <Route path="/contact-sales" element={<ContactSales />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/projects" element={<Project />} />
