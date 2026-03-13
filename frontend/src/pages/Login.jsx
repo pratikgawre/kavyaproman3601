@@ -70,7 +70,7 @@ export default function Login() {
       </div>
       <form className="auth-card" onSubmit={handleSubmit}>
         <h2>Welcome Back</h2>
-        <p className="muted">Sign in to your account to continue</p>
+        <p className="muted text-black">Sign in to your account to continue</p>
         {error && <div className="auth-error">{error}</div>}
         <label>Email Address</label>
         <input
@@ -114,7 +114,7 @@ export default function Login() {
           <a className="muted" href="/forgot-password">Forgot password?</a>
         </div>
         <button className="auth-btn" type="submit">Sign In</button>
-        <div className="divider">Or continue with</div>
+        <div className="divider text-black">Or continue with</div>
         <div className="auth-socials">
           <button className="social mt-2">Google</button>
           <button className="social mt-2">GitHub</button>

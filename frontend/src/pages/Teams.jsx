@@ -82,6 +82,7 @@ export default function Teams() {
   const [editingMember, setEditingMember] = useState(null);
   const notificationRef = useRef(null);
   const memberListRef = useRef(null);
+  const topSearchInputRef = useRef(null);
 
   const [inviteFormData, setInviteFormData] = useState({
     name: '',
@@ -111,6 +112,12 @@ export default function Teams() {
     document.addEventListener("mousedown", handleOutsideClick);
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
+
+  useEffect(() => {
+    if (!mobileSearchOpen) return;
+    const timeoutId = setTimeout(() => topSearchInputRef.current?.focus(), 0);
+    return () => clearTimeout(timeoutId);
+  }, [mobileSearchOpen]);
 
   const toggleNotifications = () => {
     setShowNotifications((prev) => !prev);
@@ -330,6 +337,27 @@ export default function Teams() {
     return typeof window !== 'undefined' && window.innerWidth <= 768
   }
 
+  function runIssueSearch() {
+    const query = (topSearchText || '').trim()
+    if (!query) {
+      navigate('/all-my-issues')
+      return
+    }
+    navigate(`/all-my-issues?q=${encodeURIComponent(query)}`)
+  }
+
+  function handleTopSearchIconClick(event) {
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (isMobileScreen() && !mobileSearchOpen) {
+      setMobileSearchOpen(true)
+      return
+    }
+
+    runIssueSearch()
+  }
+
   return (
     <div className="dashboard-root d-flex">
       {/* Sidebar */}
@@ -430,15 +458,30 @@ export default function Teams() {
                   <div
                     className={`input-group top-search-medium ${mobileSearchOpen ? 'mobile-open' : ''}`}
                     onClick={() => {
-                      if (isMobileScreen() && !mobileSearchOpen) setMobileSearchOpen(true)
+                      if (isMobileScreen() && !mobileSearchOpen) {
+                        setMobileSearchOpen(true)
+                        return
+                      }
+                      topSearchInputRef.current?.focus()
                     }}
                   >
-                    <span className="input-group-text"><FiSearch /></span>
+                    <button
+                      type="button"
+                      className="input-group-text"
+                      aria-label="Search"
+                      onClick={handleTopSearchIconClick}
+                    >
+                      <FiSearch />
+                    </button>
                     <input
+                      ref={topSearchInputRef}
                       className="form-control"
                       placeholder="Search issues, projects..."
                       value={topSearchText}
                       onChange={(e) => setTopSearchText(e.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') runIssueSearch()
+                      }}
                       onFocus={() => {
                         if (isMobileScreen()) setMobileSearchOpen(true)
                       }}

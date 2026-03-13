@@ -682,13 +682,13 @@
 
 /* Ensure header controls (search pill, bell, create button) match design on small/medium screens */
 @media (max-width: 992px) {
-  .top-search-row{display:flex;align-items:center;gap:8px}
-  .top-search-medium{flex:0 0 48px;max-width:48px;width:48px;padding:6px;border-radius:12px;justify-content:center;background:transparent}
-  .top-search-medium .input-group-text{background:#eaf4ff;border-radius:10px;padding:6px;display:flex;align-items:center;justify-content:center;box-shadow:none;border:0}
-  .top-search-medium input{display:none}
-  .bell-black{color:#000 !important;position:relative;margin-left:6px}
-  .bell-black::after{content:none !important;display:none !important}
-  .create-issue-medium{min-width:120px;padding:8px 10px;font-size:13px;border-radius:8px;background:#05060a !important;color:#fff !important;border:none !important;display:inline-flex;align-items:center;justify-content:center;font-weight:700}
+  .team-header .top-search-row{display:flex;align-items:center;gap:8px}
+  .team-header .top-search-medium{flex:0 0 48px;max-width:48px;width:48px;padding:6px;border-radius:12px;justify-content:center;background:transparent}
+  .team-header .top-search-medium .input-group-text{background:#eaf4ff;border-radius:10px;padding:6px;display:flex;align-items:center;justify-content:center;box-shadow:none;border:0}
+  .team-header .top-search-medium input{display:none}
+  .team-header .bell-black{color:#000 !important;position:relative;margin-left:6px}
+  .team-header .bell-black::after{content:none !important;display:none !important}
+  .team-header .create-issue-medium{min-width:120px;padding:8px 10px;font-size:13px;border-radius:8px;background:#05060a !important;color:#fff !important;border:none !important;display:inline-flex;align-items:center;justify-content:center;font-weight:700}
 }
 
 /* Keep Teams top header controls in one line on mobile even if shared CSS overrides later */

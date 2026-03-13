@@ -49,6 +49,8 @@ export default function Board() {
   }, [])
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+  const [topSearchText, setTopSearchText] = useState('')
   const createEmptyFilters = () => ({
     status: [],
     type: [],
@@ -72,6 +74,7 @@ export default function Board() {
     clearAllNotifications
   } = useIssueNotifications({ limit: 6 })
   const notificationRef = useRef(null)
+  const topSearchInputRef = useRef(null)
   const assigneeDropdownRef = useRef(null)
   const typeDropdownRef = useRef(null)
   const projectFromState = location.state?.project
@@ -152,6 +155,12 @@ export default function Board() {
     return () => document.removeEventListener('mousedown', handleOutsideClick)
   }, [])
 
+  useEffect(() => {
+    if (!mobileSearchOpen) return
+    const timeoutId = setTimeout(() => topSearchInputRef.current?.focus(), 0)
+    return () => clearTimeout(timeoutId)
+  }, [mobileSearchOpen])
+
   function toggleFilter(group, value) {
     setSelectedFilters((current) => {
       const exists = current[group].includes(value)
@@ -180,6 +189,31 @@ export default function Board() {
       }
       return next
     })
+  }
+
+  function isMobileScreen() {
+    return typeof window !== 'undefined' && window.innerWidth <= 768
+  }
+
+  function runIssueSearch() {
+    const query = (topSearchText || '').trim()
+    if (!query) {
+      navigate('/all-my-issues')
+      return
+    }
+    navigate(`/all-my-issues?q=${encodeURIComponent(query)}`)
+  }
+
+  function handleTopSearchIconClick(event) {
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (isMobileScreen() && !mobileSearchOpen) {
+      setMobileSearchOpen(true)
+      return
+    }
+
+    runIssueSearch()
   }
 
   function formatTypeLabel(type) {
@@ -271,10 +305,52 @@ export default function Board() {
 
       <main className={`content board-content flex-grow-1 p-4 ${collapsed ? 'with-topbar' : ''}`}>
         <header className="board-top-strip">
-          <div className="top-search-row">
-            <div className="input-group top-search-medium">
-              <span className="input-group-text"><FiSearch /></span>
-              <input className="form-control" placeholder="Search issues, projects..." aria-label="Search issues and projects" />
+          <div className={`top-search-row ${mobileSearchOpen ? 'mobile-search-open' : ''}`}>
+            <div
+              className={`input-group top-search-medium ${mobileSearchOpen ? 'mobile-open' : ''}`}
+              onClick={() => {
+                if (isMobileScreen() && !mobileSearchOpen) {
+                  setMobileSearchOpen(true)
+                  return
+                }
+                topSearchInputRef.current?.focus()
+              }}
+            >
+              <button
+                type="button"
+                className="input-group-text"
+                aria-label="Search"
+                onClick={handleTopSearchIconClick}
+              >
+                <FiSearch />
+              </button>
+              <input
+                ref={topSearchInputRef}
+                className="form-control"
+                placeholder="Search issues, projects..."
+                aria-label="Search issues and projects"
+                value={topSearchText}
+                onChange={(event) => setTopSearchText(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') runIssueSearch()
+                }}
+                onFocus={() => {
+                  if (isMobileScreen()) setMobileSearchOpen(true)
+                }}
+              />
+              {mobileSearchOpen && (
+                <button
+                  type="button"
+                  className="dashboard-search-close"
+                  aria-label="Close search"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setMobileSearchOpen(false)
+                  }}
+                >
+                  <FiX size={16} />
+                </button>
+              )}
             </div>
 
             <div className="notification-wrapper me-2" ref={notificationRef}>
