@@ -1,11 +1,13 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import './Dashboard.css'
-import { FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLogOut, FiMenu, FiSearch, FiBell, FiPlus, FiUser, FiShare2, FiDownload, FiTrash2, FiFilter, FiBookmark, FiClock, FiRepeat, FiArrowRight, FiUpload, FiAlignLeft, FiAlignCenter, FiAlignRight, FiAlignJustify } from 'react-icons/fi'
+import { FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLogOut, FiMenu, FiSearch, FiBell, FiPlus, FiShare2, FiDownload, FiTrash2, FiFilter, FiBookmark, FiClock, FiRepeat, FiArrowRight, FiUpload, FiAlignLeft, FiAlignCenter, FiAlignRight, FiAlignJustify } from 'react-icons/fi'
 import { NavLink } from 'react-router-dom'
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { FiX } from 'react-icons/fi'
 import { BOARD_COLUMNS } from '../data/boardColumns'
 import { useAuth } from '../context/AuthContext'
+import { uploadFiles } from '../utils/upload'
+import { getInitials } from '../utils/initials'
 
 export default function Dashboard({ initialShowCreate = false }) {
   const API_BASE = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:8080'
@@ -13,6 +15,7 @@ export default function Dashboard({ initialShowCreate = false }) {
   const location = useLocation()
   const { user, clearUser } = useAuth()
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
+  const avatarInitials = getInitials(user?.name || displayName, user?.email)
   const [selectedOrg, setSelectedOrg] = useState(() => {
     try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null }
   })
@@ -38,11 +41,8 @@ export default function Dashboard({ initialShowCreate = false }) {
     }
   })
   const [attachments, setAttachments] = useState([])
-  const [avatar, setAvatar] = useState('')
-  useEffect(() => {
-    const stored = localStorage.getItem('userAvatar')
-    if (stored) setAvatar(stored)
-  }, [])
+  const [uploadingAttachments, setUploadingAttachments] = useState(false)
+  const avatar = user?.avatar || ''
 
   // sync sidebar state from global controller
   useEffect(() => {
@@ -137,25 +137,41 @@ export default function Dashboard({ initialShowCreate = false }) {
   function markAllAsRead() {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })))
   }
-  // convert File -> data URL and store with metadata so files can be opened later
-  function fileToDataUrl(file){
-    return new Promise((res, rej) => {
-      const reader = new FileReader()
-      reader.onload = ()=> res({ name: file.name, size: file.size, type: file.type, data: reader.result })
-      reader.onerror = rej
-      reader.readAsDataURL(file)
-    })
+  function attachmentFromUpload(file, upload) {
+    return {
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      url: upload.url,
+      publicId: upload.publicId,
+      resourceType: upload.resourceType,
+      format: upload.format,
+      bytes: upload.bytes
+    }
   }
   async function handleAddFiles(files){
     const arr = Array.from(files || [])
     if(arr.length === 0) return
+    setUploadingAttachments(true)
     try{
-      const converted = await Promise.all(arr.map(f => fileToDataUrl(f)))
-      setAttachments(prev => [...prev, ...converted])
-    }catch(err){ console.error('file read error', err) }
-    if(fileInputRef.current) fileInputRef.current.value = ''
+      const uploaded = await uploadFiles(arr, { folder: 'issues' })
+      const next = uploaded.map((u, idx) => attachmentFromUpload(arr[idx], u))
+      setAttachments(prev => [...prev, ...next])
+    }catch(err){
+      console.error('file upload error', err)
+      alert(err.message || 'File upload failed')
+    } finally {
+      setUploadingAttachments(false)
+      if(fileInputRef.current) fileInputRef.current.value = ''
+    }
   }
   async function downloadAttachment(file){
+    const href = file?.url || file?.data
+    if (!href) return
+    if (file.url) {
+      window.open(file.url, '_blank', 'noopener')
+      return
+    }
     try{
       // fetch data URL and trigger download with proper filename
       const res = await fetch(file.data)
@@ -170,7 +186,6 @@ export default function Dashboard({ initialShowCreate = false }) {
       setTimeout(()=> URL.revokeObjectURL(url), 1500)
     }catch(err){
       console.error('download failed', err)
-      // fallback: try opening in new tab
       window.open(file.data, '_blank', 'noopener')
     }
   }
@@ -193,17 +208,27 @@ export default function Dashboard({ initialShowCreate = false }) {
   async function handleCreate(e){
     e?.preventDefault()
     if(!validateForm()) return
+    const normalizedAttachments = attachments.map(f => ({
+      name: f.name,
+      size: f.size,
+      type: f.type,
+      url: f.url,
+      publicId: f.publicId,
+      resourceType: f.resourceType,
+      format: f.format,
+      bytes: f.bytes,
+      data: f.data
+    }))
     const payload = {
       project,
       issueType,
       epicName,
       summary,
       description: descRef.current?.innerHTML || '',
-      // attachments already include data URLs produced when added
-      attachments: attachments.map(f => ({ name: f.name, size: f.size, type: f.type, data: f.data })),
+      attachments: normalizedAttachments,
       creatorName: user?.name || '',
       creatorEmail: user?.email || '',
-      attachmentsJson: JSON.stringify(attachments.map(f => ({ name: f.name, size: f.size, type: f.type, data: f.data }))),
+      attachmentsJson: JSON.stringify(normalizedAttachments),
       difficulty: selectedDifficulty,
       createdAt: new Date().toISOString()
     }
@@ -480,7 +505,7 @@ export default function Dashboard({ initialShowCreate = false }) {
           <div className="sidebar-footer mt-3 d-flex flex-column align-items-start">
             <div className="profile d-flex align-items-center w-100">
               <div className="avatar-icon">
-            {avatar ? <img src={avatar} alt="avatar" /> : <FiUser size={20} />}
+            {avatar ? <img src={avatar} alt="avatar" /> : avatarInitials}
           </div>
               <div className="ms-2 user-info">
                 <div className="user-name">{displayName}</div>
@@ -820,7 +845,7 @@ export default function Dashboard({ initialShowCreate = false }) {
                     </div>
 
                     <input type="color" className="color-input" defaultValue="#10b981" onMouseDown={e=>e.preventDefault()} onChange={(e)=>document.execCommand('foreColor', false, e.target.value)} title="Text color" />
-                    <button type="button" className="format-btn upload-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>fileInputRef.current?.click()} title="Attach files">
+                    <button type="button" className="format-btn upload-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>fileInputRef.current?.click()} title={uploadingAttachments ? 'Uploading...' : 'Attach files'} disabled={uploadingAttachments}>
                       <FiUpload />
                     </button>
                     <input type="file" ref={fileInputRef} style={{display:'none'}} accept=".pdf,image/*,.doc,.docx" multiple onChange={(e)=>{ handleAddFiles(e.target.files) }} />
@@ -837,7 +862,7 @@ export default function Dashboard({ initialShowCreate = false }) {
                     <div className="attachments">
                       {attachments.map((f, i) => (
                         <div className="attachment-item" key={i} title={f.name}>
-                              {f.data ? (
+                              {(f.url || f.data) ? (
                                 <button type="button" className="attachment-name link-like" onClick={(e)=>{ e.preventDefault(); downloadAttachment(f) }}>{f.name}</button>
                               ) : (
                                 <span className="attachment-name">{f.name}</span>
@@ -867,7 +892,7 @@ export default function Dashboard({ initialShowCreate = false }) {
                       Cancel
                     </button>
 
-                    <button type="button" className="btn btn-primary create-btn" onClick={handleCreate} disabled={Object.values(errors).some(v => v)}>Create</button>
+                    <button type="button" className="btn btn-primary create-btn" onClick={handleCreate} disabled={uploadingAttachments || Object.values(errors).some(v => v)}>Create</button>
                   </div>
                 </div>
               </form>

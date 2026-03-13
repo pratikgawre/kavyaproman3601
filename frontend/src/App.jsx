@@ -45,7 +45,7 @@ function App() {
       try {
         if (!user?.id) return
 
-        const res = await fetch(`${API_BASE}/api/user/me`, {
+        const res = await fetch(`${API_BASE}/api/user`, {
           headers: { 'X-USER-ID': String(user.id) }
         })
         if (!res.ok) return
@@ -55,7 +55,9 @@ function App() {
           id: dbUser.id,
           email: dbUser.email,
           name: dbUser.name,
-          role: dbUser.role
+          role: dbUser.role,
+          avatar: dbUser.avatar,
+          timezone: dbUser.timezone
         })
       } catch {
         // Keep existing session data when refresh fails.

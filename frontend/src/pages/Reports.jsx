@@ -19,7 +19,6 @@ import {
   FiClock,
   FiActivity,
   FiX,
-  FiUser,
 } from "react-icons/fi";
 import {
   BarChart,
@@ -36,6 +35,7 @@ import {
 import "./Reports.css";
 import "./Dashboard.css";
 import { useAuth } from '../context/AuthContext'
+import { getInitials } from '../utils/initials'
 
 const Reports = () => {
   const navigate = useNavigate();
@@ -48,13 +48,13 @@ const Reports = () => {
 
   const { user, clearUser } = useAuth()
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
+  const avatarInitials = getInitials(user?.name || displayName, user?.email)
   const [selectedOrg, setSelectedOrg] = useState(() => {
     try {
       return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null
     } catch (e) { return null }
   })
-  const [avatar, setAvatar] = useState('')
-  useEffect(() => { const stored = localStorage.getItem('userAvatar'); if (stored) setAvatar(stored) }, [])
+  const avatar = user?.avatar || ''
 
   // listen for organization changes from OrganizationPage or other parts of app
   useEffect(() => {
@@ -227,7 +227,7 @@ const Reports = () => {
 
           <div className="sidebar-footer mt-3 d-flex flex-column align-items-start">
             <div className="profile d-flex align-items-center w-100">
-              <div className="avatar-icon">{avatar ? <img src={avatar} alt="avatar" /> : <FiUser size={20} />}</div>
+              <div className="avatar-icon">{avatar ? <img src={avatar} alt="avatar" /> : avatarInitials}</div>
               <div className="ms-2 user-info">
                 <div className="user-name">{displayName}</div>
                 <div className="user-role">{user?.role || 'Member'}</div>

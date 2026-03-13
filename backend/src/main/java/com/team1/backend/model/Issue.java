@@ -21,7 +21,7 @@ public class Issue {
 
     private String description;
 
-    // attachments stored as JSON string (array of objects with name,type,data)
+    // attachments stored as JSON string (array of objects with name,type,url,publicId,resourceType,etc.)
     private String attachmentsJson;
 
     private String difficulty;
