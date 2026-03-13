@@ -135,14 +135,17 @@ const Reports = () => {
   const COLORS = ["#f4b400", "#0969da", "#2da44e"];
   // Notifications state for topbar
   const [showNotifications, setShowNotifications] = useState(false);
-  const [notifications, setNotifications] = useState([
-    { id: 1, title: 'New report generated: Sprint 5', time: '5m ago', read: false },
-    { id: 2, title: 'Project plan updated', time: '25m ago', read: false },
-    { id: 3, title: 'Export complete', time: '1h ago', read: true }
-  ]);
+  const {
+    notifications,
+    unreadCount,
+    loading: notificationsLoading,
+    error: notificationsError,
+    markAsRead: markNotificationAsRead,
+    markAllAsRead,
+    dismissNotification,
+    clearAllNotifications
+  } = useIssueNotifications({ limit: 6 });
   const notificationRef = useRef(null);
-
-  const unreadCount = notifications.filter(n => !n.read).length;
 
   useEffect(() => {
     const handleOutsideClick = (event) => {
@@ -154,16 +157,6 @@ const Reports = () => {
     document.addEventListener("mousedown", handleOutsideClick);
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
-
-  const markAllAsRead = () => {
-    setNotifications(prev => prev.map(item => ({ ...item, read: true })));
-  };
-
-  const markNotificationAsRead = (id) => {
-    setNotifications(prev =>
-      prev.map(item => (item.id === id ? { ...item, read: true } : item))
-    );
-  };
 
   const toggleSidebarForScreen = () => {
     setCollapsed(prev => {
@@ -298,21 +291,65 @@ const Reports = () => {
               <div className="notification-dropdown">
                 <div className="notification-header">
                   <span>Notifications</span>
-                  <button className="mark-all-btn" onClick={markAllAsRead} type="button">
-                    Mark all as read
-                  </button>
+                  {(unreadCount > 0 || notifications.length > 0) && (
+                    <div className="notification-actions">
+                      {unreadCount > 0 && (
+                        <button className="mark-all-btn" onClick={markAllAsRead} type="button">
+                          Mark all read
+                        </button>
+                      )}
+                      {notifications.length > 0 && (
+                        <button className="clear-all-btn" onClick={clearAllNotifications} type="button">
+                          Clear all
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="notification-list">
-                  {notifications.map(item => (
-                    <button
+                  {notificationsLoading && (
+                    <div className="muted p-3">Loading notifications...</div>
+                  )}
+                  {!notificationsLoading && notifications.length === 0 && (
+                    <div className="muted p-3">{notificationsError || "No notifications yet"}</div>
+                  )}
+                  {!notificationsLoading && notifications.length > 0 && notifications.map(item => (
+                    <div
                       key={item.id}
                       className={`notification-item-row ${item.read ? "" : "unread"}`.trim()}
-                      onClick={() => markNotificationAsRead(item.id)}
-                      type="button"
+                      data-variant={item.variant}
+                      onClick={() => {
+                        markNotificationAsRead(item.id)
+                        setShowNotifications(false)
+                        if (item.href) navigate(item.href)
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          markNotificationAsRead(item.id)
+                          setShowNotifications(false)
+                          if (item.href) navigate(item.href)
+                        }
+                      }}
                     >
-                      <div className="notification-title">{item.title}</div>
-                      <div className="notification-time">{item.time}</div>
-                    </button>
+                      <div className="notification-item-body">
+                        <div className="notification-title">{item.title}</div>
+                        <div className="notification-time">{item.time}</div>
+                      </div>
+                      <button
+                        type="button"
+                        className="notification-dismiss-btn"
+                        aria-label="Dismiss notification"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          dismissNotification(item.id)
+                        }}
+                      >
+                        <FiX size={14} />
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>

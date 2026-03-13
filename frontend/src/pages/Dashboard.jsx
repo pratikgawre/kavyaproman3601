@@ -26,20 +26,16 @@ export default function Dashboard({ initialShowCreate = false }) {
   const [showNotifications, setShowNotifications] = useState(false)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const [topSearchText, setTopSearchText] = useState('')
-  const defaultNotifications = [
-    { id: 1, title: 'Issue KPM-7 assigned to you', time: '2m ago', read: false },
-    { id: 2, title: 'Sprint planning starts in 30 minutes', time: '15m ago', read: false },
-    { id: 3, title: 'Michael commented on KPM-3', time: '1h ago', read: true }
-  ]
-  const [notifications, setNotifications] = useState(() => {
-    try {
-      const raw = localStorage.getItem('dashboardNotifications')
-      const parsed = raw ? JSON.parse(raw) : null
-      return Array.isArray(parsed) ? parsed : defaultNotifications
-    } catch (e) {
-      return defaultNotifications
-    }
-  })
+  const {
+    notifications,
+    unreadCount,
+    loading: notificationsLoading,
+    error: notificationsError,
+    markAsRead,
+    markAllAsRead,
+    dismissNotification,
+    clearAllNotifications
+  } = useIssueNotifications({ limit: 6 })
   const [attachments, setAttachments] = useState([])
   const [uploadingAttachments, setUploadingAttachments] = useState(false)
   const avatar = user?.avatar || ''
@@ -66,6 +62,7 @@ export default function Dashboard({ initialShowCreate = false }) {
     window.addEventListener('org:changed', onOrgChanged)
     return () => window.removeEventListener('org:changed', onOrgChanged)
   }, [])
+
   const [project, setProject] = useState('KavyaProMan 360')
   const [issueType, setIssueType] = useState('Story')
   const [epicName, setEpicName] = useState('')
@@ -86,7 +83,6 @@ export default function Dashboard({ initialShowCreate = false }) {
   const [savedFilters, setSavedFilters] = useState([])
   const fileInputRef = useRef(null)
   const notificationRef = useRef(null)
-  const unreadCount = notifications.filter(n => !n.read).length
   const activeFilterCount =
     selectedFilters.status.length +
     selectedFilters.issueType.length +
@@ -117,14 +113,6 @@ export default function Dashboard({ initialShowCreate = false }) {
       console.error('failed to load saved filters', err)
     }
   }, [])
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('dashboardNotifications', JSON.stringify(notifications))
-    } catch (err) {
-      console.error('failed to persist notifications', err)
-    }
-  }, [notifications])
 
   function toggleNotifications() {
     setShowNotifications(prev => !prev)
@@ -232,7 +220,7 @@ export default function Dashboard({ initialShowCreate = false }) {
       difficulty: selectedDifficulty,
       createdAt: new Date().toISOString()
     }
-    // send to backend API; if backend fails, fallback to localStorage
+    // send to backend API
     try{
       const res = await fetch(`${API_BASE}/api/issues`, { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(payload) })
       if(!res.ok) throw new Error('server error')
@@ -258,6 +246,11 @@ export default function Dashboard({ initialShowCreate = false }) {
   const descRef = useRef(null)
   const [totalIssues, setTotalIssues] = useState(0)
   const [difficultyCounts, setDifficultyCounts] = useState({ High:0, Medium:0, Low:0 })
+  const activeSprint = {
+    name: 'Sprint 2 - Board Implementation',
+    start: '2026-03-01',
+    end: '2026-03-14'
+  }
   const activeProjects = [
     { id: 'KPM', name: 'KavyaProMan 360', code: 'KPM', icon: 'KP', progressCount: '1/10', progressPct: 10 },
     { id: 'WEB', name: 'Website Redesign', code: 'WEB', icon: 'WR', progressCount: '0/0', progressPct: 0 },
@@ -272,6 +265,35 @@ export default function Dashboard({ initialShowCreate = false }) {
     })
     return counts
   }, [])
+  const sprintProgress = useMemo(() => {
+    let total = 0
+    let done = 0
+    BOARD_COLUMNS.forEach((column) => {
+      const count = Array.isArray(column.issues) ? column.issues.length : 0
+      total += count
+      if (column.key === 'done') done += count
+    })
+    const pct = total ? Math.round((done / total) * 100) : 0
+    return { total, done, pct }
+  }, [])
+  const sprintTimeLabel = useMemo(() => {
+    if (!activeSprint?.start || !activeSprint?.end) return 'Dates not set'
+    const start = new Date(activeSprint.start)
+    const end = new Date(activeSprint.end)
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 'Dates not set'
+    const now = new Date()
+    const msPerDay = 1000 * 60 * 60 * 24
+    const daysUntilStart = Math.ceil((start - now) / msPerDay)
+    const daysUntilEnd = Math.ceil((end - now) / msPerDay)
+    if (daysUntilStart > 0) {
+      return `Starts in ${daysUntilStart} day${daysUntilStart === 1 ? '' : 's'}`
+    }
+    if (daysUntilEnd >= 0) {
+      return `${daysUntilEnd} day${daysUntilEnd === 1 ? '' : 's'} left`
+    }
+    const daysPast = Math.abs(daysUntilEnd)
+    return `Ended ${daysPast} day${daysPast === 1 ? '' : 's'} ago`
+  }, [activeSprint.start, activeSprint.end])
   const recentActivities = useMemo(() => (
     BOARD_COLUMNS
       .flatMap((column) =>
@@ -286,7 +308,11 @@ export default function Dashboard({ initialShowCreate = false }) {
       )
       .slice(0, 6)
   ), [])
-
+  const overdueTasks = [
+    { id: 'KPM-2', title: 'Implement Kanban board with drag and drop' },
+    { id: 'KPM-3', title: 'Add sprint planning interface' },
+    { id: 'KPM-4', title: 'Bug: Filter not working on board view' }
+  ]
   // load counts for dashboard summary
   useEffect(()=>{
     async function loadCounts(){
@@ -294,7 +320,7 @@ export default function Dashboard({ initialShowCreate = false }) {
         const res = await fetch(`${API_BASE}/api/issues`)
         if(!res.ok) throw new Error('failed to fetch')
         const data = await res.json()
-        const parsed = data.map(d => ({ ...d }))
+        const parsed = Array.isArray(data) ? data.map(d => ({ ...d })) : []
         setTotalIssues(parsed.length)
         const counts = { High:0, Medium:0, Low:0 }
         parsed.forEach(it => {
@@ -324,6 +350,12 @@ export default function Dashboard({ initialShowCreate = false }) {
     navigate(`/projects/${project.id}/board`, {
       state: { project: { id: project.id, name: project.name, code: project.code } }
     })
+  }
+
+  function openActiveSprint() {
+    const fallbackProject = { id: 'KPM', name: 'KavyaProMan 360', code: 'KPM' }
+    const project = activeProjects.find((item) => item.id === fallbackProject.id) || activeProjects[0] || fallbackProject
+    navigate(`/projects/${project.id}/backlog`, { state: { project } })
   }
 
   function openIssueFromActivity(issueKey) {
@@ -597,20 +629,65 @@ export default function Dashboard({ initialShowCreate = false }) {
                   <div className="notification-dropdown">
                     <div className="notification-header">
                       <span>Notifications</span>
-                      {unreadCount > 0 && (
-                        <button className="mark-all-btn" onClick={markAllAsRead}>Mark all read</button>
+                      {(unreadCount > 0 || notifications.length > 0) && (
+                        <div className="notification-actions">
+                          {unreadCount > 0 && (
+                            <button className="mark-all-btn" type="button" onClick={markAllAsRead}>
+                              Mark all read
+                            </button>
+                          )}
+                          {notifications.length > 0 && (
+                            <button className="clear-all-btn" type="button" onClick={clearAllNotifications}>
+                              Clear all
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                     <div className="notification-list">
-                      {notifications.map((n) => (
-                        <button
+                      {notificationsLoading && (
+                        <div className="muted p-3">Loading notifications...</div>
+                      )}
+                      {!notificationsLoading && notifications.length === 0 && (
+                        <div className="muted p-3">{notificationsError || 'No notifications yet'}</div>
+                      )}
+                      {!notificationsLoading && notifications.length > 0 && notifications.map((n) => (
+                        <div
                           key={n.id}
                           className={`notification-item-row ${n.read ? 'read' : 'unread'}`}
-                          onClick={() => markAsRead(n.id)}
+                          data-variant={n.variant}
+                          onClick={() => {
+                            markAsRead(n.id)
+                            setShowNotifications(false)
+                            if (n.href) navigate(n.href)
+                          }}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault()
+                              markAsRead(n.id)
+                              setShowNotifications(false)
+                              if (n.href) navigate(n.href)
+                            }
+                          }}
                         >
-                          <div className="notification-title">{n.title}</div>
-                          <div className="notification-time">{n.time}</div>
-                        </button>
+                          <div className="notification-item-body">
+                            <div className="notification-title">{n.title}</div>
+                            <div className="notification-time">{n.time}</div>
+                          </div>
+                          <button
+                            type="button"
+                            className="notification-dismiss-btn"
+                            aria-label="Dismiss notification"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              dismissNotification(n.id)
+                            }}
+                          >
+                            <FiX size={14} />
+                          </button>
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -953,20 +1030,32 @@ export default function Dashboard({ initialShowCreate = false }) {
         
 
         <section className="dashboard-cards mt-4">
-          <div className="stat-card">
+          <div
+            className="stat-card sprint-card"
+            role="button"
+            tabIndex={0}
+            aria-label="Open active sprint backlog"
+            onClick={openActiveSprint}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                openActiveSprint()
+              }
+            }}
+          >
             <div className="stat-card-body">
               <div className="stat-meta">
                 <div className="muted">Active Sprint</div>
-                <h3 className="stat-title">Sprint 2 - Board Implementation</h3>
+                <h3 className="stat-title">{activeSprint.name}</h3>
               </div>
 
               <div className="stat-progress">
                 <div className="progress-row">
                   <div className="progress-label">Progress</div>
-                  <div className="progress-count">0/6</div>
+                  <div className="progress-count">{sprintProgress.done}/{sprintProgress.total}</div>
                 </div>
-                <div className="progress-track"><div className="progress-fill" style={{width: '0%'}}></div></div>
-                <div className="time-remaining"><FiClock className="me-2" />{'-728 days left'}</div>
+                <div className="progress-track"><div className="progress-fill" style={{width: `${sprintProgress.pct}%`}}></div></div>
+                <div className="time-remaining"><FiClock className="me-2" />{sprintTimeLabel}</div>
               </div>
             </div>
           </div>
@@ -1038,9 +1127,24 @@ export default function Dashboard({ initialShowCreate = false }) {
               <h3 className="overdue-count">3</h3>
 
               <ul className="overdue-list">
-                <li><span className="overdue-icon">!</span> Implement Kanban board with drag...</li>
-                <li><span className="overdue-icon">!</span> Add sprint planning interface</li>
-                <li><span className="overdue-icon">!</span> Bug: Filter not working on board vi...</li>
+                {overdueTasks.map((task) => (
+                  <li
+                    key={task.id}
+                    className="overdue-item"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openIssueFromActivity(task.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        openIssueFromActivity(task.id)
+                      }
+                    }}
+                  >
+                    <span className="overdue-icon">!</span>
+                    <span className="overdue-text">{task.title}</span>
+                  </li>
+                ))}
               </ul>
             </div>
           </div>
@@ -1073,7 +1177,19 @@ export default function Dashboard({ initialShowCreate = false }) {
                       <span className="activity-type">{item.type}</span>
                     </div>
                     <div className="activity-title">{item.title}</div>
-                    <div className="activity-sub muted">{item.statusLabel} &nbsp;â€¢&nbsp; Board data &nbsp;â€¢&nbsp; <span className="activity-user"><div className="small-avatar">{getInitials(item.assignee)}</div> {item.assignee}</span></div>
+                    <div className="activity-sub muted">
+                      <span className="activity-sub-item">
+                        <FiTag className="activity-sub-icon" />
+                        {item.statusLabel}
+                      </span>
+                      <span className="activity-sub-item">
+                        <FiGrid className="activity-sub-icon" />
+                        Board data
+                      </span>
+                      <span className="activity-user">
+                        <div className="small-avatar">{getInitials(item.assignee)}</div> {item.assignee}
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}

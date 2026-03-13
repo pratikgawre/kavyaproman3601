@@ -2,29 +2,28 @@ package com.team1.backend.subscription;
 
 import com.team1.backend.subscription.model.Invoice;
 import com.team1.backend.subscription.model.Plan;
-import com.team1.backend.subscription.model.Subscription;
+import com.team1.backend.subscription.model.SubscriptionMember;
 import com.team1.backend.subscription.repository.InvoiceRepository;
 import com.team1.backend.subscription.repository.PlanRepository;
-import com.team1.backend.subscription.repository.SubscriptionRepository;
+import com.team1.backend.subscription.repository.SubscriptionMemberRepository;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
+import java.time.Instant;
 
 @Component
-@Profile("dev")
 public class DataInitializer implements ApplicationRunner {
 
     private final PlanRepository planRepository;
     private final InvoiceRepository invoiceRepository;
-    private final SubscriptionRepository subscriptionRepository;
+    private final SubscriptionMemberRepository subscriptionMemberRepository;
 
-    public DataInitializer(PlanRepository planRepository, InvoiceRepository invoiceRepository, SubscriptionRepository subscriptionRepository) {
+    public DataInitializer(PlanRepository planRepository, InvoiceRepository invoiceRepository, SubscriptionMemberRepository subscriptionMemberRepository) {
         this.planRepository = planRepository;
         this.invoiceRepository = invoiceRepository;
-        this.subscriptionRepository = subscriptionRepository;
+        this.subscriptionMemberRepository = subscriptionMemberRepository;
     }
 
     @Override
@@ -36,6 +35,7 @@ public class DataInitializer implements ApplicationRunner {
             free.setMonthlyPrice(0);
             free.setYearlyPrice(0);
             free.setFeatured(false);
+            free.setPurchaseCount(0);
             planRepository.save(free);
 
             Plan pro = new Plan();
@@ -44,6 +44,7 @@ public class DataInitializer implements ApplicationRunner {
             pro.setMonthlyPrice(12);
             pro.setYearlyPrice(120);
             pro.setFeatured(true);
+            pro.setPurchaseCount(0);
             planRepository.save(pro);
 
             Plan business = new Plan();
@@ -52,6 +53,7 @@ public class DataInitializer implements ApplicationRunner {
             business.setMonthlyPrice(25);
             business.setYearlyPrice(250);
             business.setFeatured(false);
+            business.setPurchaseCount(0);
             planRepository.save(business);
 
             Plan enterprise = new Plan();
@@ -60,6 +62,7 @@ public class DataInitializer implements ApplicationRunner {
             enterprise.setMonthlyPrice(0);
             enterprise.setYearlyPrice(0);
             enterprise.setFeatured(false);
+            enterprise.setPurchaseCount(0);
             planRepository.save(enterprise);
         }
 
@@ -86,12 +89,14 @@ public class DataInitializer implements ApplicationRunner {
             invoiceRepository.save(i3);
         }
 
-        if (subscriptionRepository.count() == 0) {
-            Subscription s = new Subscription();
-            s.setOrganizationName("Kavya Technologies");
-            s.setPlanName("Professional");
-            s.setBillingCycle("monthly");
-            subscriptionRepository.save(s);
+        if (subscriptionMemberRepository.count() == 0) {
+            SubscriptionMember member = new SubscriptionMember();
+            member.setOrganizationName("Kavya Technologies");
+            member.setPlanName("Free");
+            member.setBillingCycle("monthly");
+            member.setStatus("active");
+            member.setPurchasedAt(Instant.now());
+            subscriptionMemberRepository.save(member);
         }
     }
 }

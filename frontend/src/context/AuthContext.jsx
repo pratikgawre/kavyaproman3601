@@ -1,7 +1,24 @@
-import { createContext, useContext, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 
 const AuthContext = createContext(null)
 const USER_STORAGE_KEY = 'kpm360.authUser'
+
+const AUTH_USER_STORAGE_KEY = 'kpm360.auth.user'
+const API_BASE = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:8080'
+
+function readStoredUser() {
+  try {
+    if (typeof window === 'undefined') return null
+    const raw = window.localStorage.getItem(AUTH_USER_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    if (parsed.id === null || parsed.id === undefined || parsed.id === '') return null
+    return parsed
+  } catch {
+    return null
+  }
+}
 
 export function AuthProvider({ children }) {
   const [user, setUserState] = useState(() => {
@@ -33,7 +50,7 @@ export function AuthProvider({ children }) {
     () => ({
       user,
       setUser,
-      clearUser: () => setUser(null),
+      clearUser,
       pendingUserId,
       setPendingUserId,
       pendingFlow,
@@ -43,7 +60,7 @@ export function AuthProvider({ children }) {
         setPendingFlow('')
       }
     }),
-    [user, pendingUserId, pendingFlow]
+    [clearUser, pendingFlow, pendingUserId, setUser, user]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

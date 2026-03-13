@@ -1,35 +1,61 @@
-import { useNavigate, NavLink } from 'react-router-dom'
+﻿import { useNavigate, NavLink, useLocation } from 'react-router-dom'
 import './Subscription.css'
 import './Dashboard.css'
 import { FiSearch, FiBell, FiPlus, FiZap, FiStar, FiCheck, FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLogOut, FiMenu, FiUser, FiBriefcase, FiServer, FiDownload, FiArrowRight, FiChevronDown, FiX, FiRepeat } from 'react-icons/fi'
 import { GiCrown } from 'react-icons/gi'
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
+import useIssueNotifications from '../hooks/useIssueNotifications'
 
 export default function Subscription() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user, clearUser } = useAuth()
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
+  const DEFAULT_PLAN = 'free'
+  const normalizePlan = (value) => {
+    const key = String(value || '').trim().toLowerCase()
+    if (!key) return DEFAULT_PLAN
+    if (key === 'pro' || key.includes('professional')) return 'professional'
+    if (key.includes('business')) return 'business'
+    if (key.includes('enterprise')) return 'enterprise'
+    if (key.includes('free')) return 'free'
+    return DEFAULT_PLAN
+  }
+  const normalizeBilling = (value) => {
+    const key = String(value || '').trim().toLowerCase()
+    return key === 'yearly' ? 'yearly' : 'monthly'
+  }
+  const formatPlanLabel = (value) => {
+    const plan = normalizePlan(value)
+    return plan.charAt(0).toUpperCase() + plan.slice(1)
+  }
   const [selectedOrg, setSelectedOrg] = useState(() => {
     try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null }
   })
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [period, setPeriod] = useState('monthly')
-  const [selectedPlan, setSelectedPlan] = useState('professional')
+  const [currentPlan, setCurrentPlan] = useState(DEFAULT_PLAN)
+  const [currentBillingCycle, setCurrentBillingCycle] = useState('monthly')
+  const [selectedPlan, setSelectedPlan] = useState(DEFAULT_PLAN)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [modalPlan, setModalPlan] = useState(null)
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('card')
   const [upiCopied, setUpiCopied] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
-  const [notifications, setNotifications] = useState([
-    { id: 1, title: 'Your invoice INV-2024-002 is ready', time: '3m ago', read: false },
-    { id: 2, title: 'Professional plan renewal in 2 days', time: '40m ago', read: false },
-    { id: 3, title: 'Payment method updated successfully', time: '1h ago', read: true }
-  ])
+  const {
+    notifications,
+    unreadCount,
+    loading: notificationsLoading,
+    error: notificationsError,
+    markAsRead,
+    markAllAsRead,
+    dismissNotification,
+    clearAllNotifications
+  } = useIssueNotifications({ limit: 6 })
   const notificationRef = useRef(null)
-  const unreadCount = notifications.filter(n => !n.read).length
 
   useEffect(() => {
     const handleOutsideClick = (e) => {
@@ -38,16 +64,12 @@ export default function Subscription() {
       }
     }
     document.addEventListener('mousedown', handleOutsideClick)
-    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  
+
+  return () => document.removeEventListener('mousedown', handleOutsideClick)
   }, [])
 
   const toggleNotifications = () => setShowNotifications(prev => !prev)
-  const markAsRead = (id) => {
-    setNotifications(prev => prev.map(n => (n.id === id ? { ...n, read: true } : n)))
-  }
-  const markAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })))
-  }
 
   function handleLogout() {
     clearUser()
@@ -66,6 +88,56 @@ export default function Subscription() {
 
   function toggleFaq(i) { setOpenFaq(prev => prev === i ? null : i) }
 
+  const formatPaymentDate = (value) => {
+    if (!value) return 'N/A'
+    const date = new Date(value)
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+  }
+
+  const formatPaymentAmount = (value, currency) => {
+    const amount = typeof value === 'number' ? value : Number(value || 0)
+    const prefix = currency || 'USD'
+    return `${prefix} ${amount.toFixed(2)}`
+  }
+
+  const applyCurrentSubscription = (planValue, billingValue) => {
+    const normalizedPlan = normalizePlan(planValue)
+    const normalizedBilling = normalizeBilling(billingValue)
+    setCurrentPlan(normalizedPlan)
+    setCurrentBillingCycle(normalizedBilling)
+    setSelectedPlan(normalizedPlan)
+    setPeriod(normalizedBilling)
+  }
+
+  const updateCurrentSubscription = async (planValue, billingValue) => {
+    const normalizedPlan = normalizePlan(planValue)
+    const normalizedBilling = normalizeBilling(billingValue)
+    const payload = {
+      planName: formatPlanLabel(normalizedPlan),
+      billingCycle: normalizedBilling
+    }
+
+    try {
+      const headers = { 'Content-Type': 'application/json' }
+      if (user?.id) headers['X-USER-ID'] = String(user.id)
+      const res = await fetch(`${API_BASE}/api/subscription/current`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(payload)
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        applyCurrentSubscription(data?.planName || normalizedPlan, data?.billingCycle || normalizedBilling)
+        return
+      }
+    } catch (err) {
+      // Ignore and fallback to local update for demo flow
+    }
+
+    applyCurrentSubscription(normalizedPlan, normalizedBilling)
+  }
+
   // sync sidebar state from global controller
   useEffect(() => {
     function sync(e){
@@ -76,6 +148,78 @@ export default function Subscription() {
     window.addEventListener('sidebar:state', sync)
     return () => window.removeEventListener('sidebar:state', sync)
   }, [])
+
+  // load current subscription once on mount
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadCurrentSubscription() {
+      try {
+        const headers = {}
+        if (user?.id) headers['X-USER-ID'] = String(user.id)
+        const res = await fetch(`${API_BASE}/api/subscription/current`, { headers })
+        if (!res.ok) return
+        const data = await res.json()
+        if (!isMounted) return
+        applyCurrentSubscription(data?.planName, data?.billingCycle)
+      } catch (err) {
+        // Keep defaults if the API is unavailable
+      }
+    }
+
+    loadCurrentSubscription()
+    return () => { isMounted = false }
+  }, [user?.id])
+
+  // load billing history
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadPayments() {
+      setPaymentsLoading(true)
+      try {
+        const headers = {}
+        if (user?.id) headers['X-USER-ID'] = String(user.id)
+        const res = await fetch(`${API_BASE}/api/payment`, { headers })
+        if (!res.ok) return
+        const data = await res.json()
+        if (!isMounted) return
+        setPayments(Array.isArray(data) ? data : [])
+      } catch (err) {
+        // keep empty on error
+      } finally {
+        if (isMounted) setPaymentsLoading(false)
+      }
+    }
+
+    loadPayments()
+    return () => { isMounted = false }
+  }, [user?.id])
+
+  // highlight a specific plan when redirected from other pages
+  useEffect(() => {
+    const targetPlan = normalizePlan(location?.state?.highlightPlan)
+    if (!location?.state?.highlightPlan) return
+
+    setSelectedPlan(targetPlan)
+
+    const refMap = {
+      free: freePlanRef,
+      professional: professionalPlanRef,
+      business: businessPlanRef,
+      enterprise: enterprisePlanRef
+    }
+    if (location?.state?.scrollToPlan) {
+      const targetRef = refMap[targetPlan]
+      targetRef?.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [location?.state?.highlightPlan, location?.state?.scrollToPlan])
+
+  // apply current plan passed from other pages (e.g., after upgrade flow)
+  useEffect(() => {
+    if (!location?.state?.currentPlan) return
+    applyCurrentSubscription(location.state.currentPlan, location.state.billingCycle || currentBillingCycle)
+  }, [location?.state?.currentPlan, location?.state?.billingCycle])
 
   // listen for organization changes
   useEffect(() => {
@@ -99,7 +243,45 @@ export default function Subscription() {
     })
   }
 
-  return (
+  async function handleConfirmSubscribe() {
+    const planValue = modalPlan || selectedPlan
+    if (!planValue) return
+    setShowUpgradeModal(false)
+    await updateCurrentSubscription(planValue, period)
+    navigate('/payment', { state: { plan: planValue, billingCycle: period, paymentMethod: selectedPaymentMethod } })
+  }
+
+  async function handleStartFree() {
+    await updateCurrentSubscription('free', period)
+    navigate('/free-plan', { state: { plan: 'free' } })
+  }
+
+  async function handleDownloadInvoice(paymentId) {
+    try {
+      if (!paymentId) return
+      const invoiceUrl = `${API_BASE}/api/payment/${paymentId}/invoice`
+      const opened = window.open(invoiceUrl, '_blank', 'noopener,noreferrer')
+      if (opened) return
+
+      const headers = {}
+      if (user?.id) headers['X-USER-ID'] = String(user.id)
+      const res = await fetch(invoiceUrl, { headers })
+      if (!res.ok) return
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `invoice-${paymentId}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (err) {
+      // ignore download errors
+    }
+  }
+
+return (
     <div className="dashboard-root d-flex">
       <aside className={`sidebar d-flex flex-column ${collapsed ? 'collapsed' : ''} ${mobileOpen ? 'open' : ''}`}>
         <div className="sidebar-top">
@@ -187,20 +369,65 @@ export default function Subscription() {
                     <div className="notification-dropdown">
                       <div className="notification-header">
                         <span>Notifications</span>
-                        {unreadCount > 0 && (
-                          <button className="mark-all-btn" onClick={markAllAsRead}>Mark all read</button>
+                        {(unreadCount > 0 || notifications.length > 0) && (
+                          <div className="notification-actions">
+                            {unreadCount > 0 && (
+                              <button className="mark-all-btn" type="button" onClick={markAllAsRead}>
+                                Mark all read
+                              </button>
+                            )}
+                            {notifications.length > 0 && (
+                              <button className="clear-all-btn" type="button" onClick={clearAllNotifications}>
+                                Clear all
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                       <div className="notification-list">
-                        {notifications.map((n) => (
-                          <button
+                        {notificationsLoading && (
+                          <div className="muted p-3">Loading notifications...</div>
+                        )}
+                        {!notificationsLoading && notifications.length === 0 && (
+                          <div className="muted p-3">{notificationsError || 'No notifications yet'}</div>
+                        )}
+                        {!notificationsLoading && notifications.length > 0 && notifications.map((n) => (
+                          <div
                             key={n.id}
                             className={`notification-item-row ${n.read ? 'read' : 'unread'}`}
-                            onClick={() => markAsRead(n.id)}
+                            data-variant={n.variant}
+                            onClick={() => {
+                              markAsRead(n.id)
+                              setShowNotifications(false)
+                              if (n.href) navigate(n.href)
+                            }}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault()
+                                markAsRead(n.id)
+                                setShowNotifications(false)
+                                if (n.href) navigate(n.href)
+                              }
+                            }}
                           >
-                            <div className="notification-title">{n.title}</div>
-                            <div className="notification-time">{n.time}</div>
-                          </button>
+                            <div className="notification-item-body">
+                              <div className="notification-title">{n.title}</div>
+                              <div className="notification-time">{n.time}</div>
+                            </div>
+                            <button
+                              type="button"
+                              className="notification-dismiss-btn"
+                              aria-label="Dismiss notification"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                dismissNotification(n.id)
+                              }}
+                            >
+                              <FiX size={14} />
+                            </button>
+                          </div>
                         ))}
                       </div>
                     </div>
@@ -213,7 +440,7 @@ export default function Subscription() {
               </div>
 
               <div className="text-center">
-                <div className="current-plan-badge mb-2"> <GiCrown /> Current Plan: <strong>{selectedPlan.charAt(0).toUpperCase() + selectedPlan.slice(1)}</strong></div>
+                <div className="current-plan-badge mb-2"> <GiCrown /> Current Plan: <strong>{formatPlanLabel(currentPlan)}</strong></div>
                 <h1 className="mb-1">Choose Your Plan</h1>
                 <div className="text-muted mb-3">Select the perfect plan for your team. Upgrade, downgrade, or cancel anytime.</div>
 
@@ -245,7 +472,7 @@ export default function Subscription() {
           {showUpgradeModal && (
             <div className="upgrade-modal-overlay" onClick={() => setShowUpgradeModal(false)}>
               <div className="upgrade-modal" onClick={(e) => e.stopPropagation()}>
-                <button className="modal-close btn btn-link" onClick={() => setShowUpgradeModal(false)}>×</button>
+                <button className="modal-close btn btn-link" onClick={() => setShowUpgradeModal(false)}>Ã—</button>
                 <h3>Upgrade to {modalPlan ? modalPlan.charAt(0).toUpperCase() + modalPlan.slice(1) : ''} Plan</h3>
                 <div className="modal-price">{modalPlan === 'professional' ? '$19' : modalPlan === 'business' ? '$25' : modalPlan === 'enterprise' ? 'Custom' : 'Free'} <span className="small-muted">/month</span></div>
                 <ul className="modal-features">
@@ -256,7 +483,6 @@ export default function Subscription() {
 
                 <div className="modal-payments">
                   <div className={`payment-option ${selectedPaymentMethod === 'card' ? 'selected' : ''}`} onClick={() => setSelectedPaymentMethod('card')}>Credit Card</div>
-                  <div className={`payment-option ${selectedPaymentMethod === 'paypal' ? 'selected' : ''}`} onClick={() => setSelectedPaymentMethod('paypal')}>PayPal</div>
                   <div className={`payment-option ${selectedPaymentMethod === 'upi' ? 'selected' : ''}`} onClick={() => setSelectedPaymentMethod('upi')}>UPI</div>
                 </div>
 
@@ -265,7 +491,7 @@ export default function Subscription() {
                   {selectedPaymentMethod === 'card' && (
                     <div className="card-preview">
                       <div className="card-chip" />
-                      <div className="card-number">•••• 4242</div>
+                      <div className="card-number">â€¢â€¢â€¢â€¢ 4242</div>
                       <div className="card-meta"><div>JOHN DOE</div><div>12/26</div></div>
                     </div>
                   )}
@@ -287,8 +513,8 @@ export default function Subscription() {
                     )}
                 </div>
 
-                <div className="modal-actions">
-                  <button className="btn btn-warning" onClick={() => { setShowUpgradeModal(false); navigate('/payment', { state: { plan: modalPlan, paymentMethod: selectedPaymentMethod } }); }}>Confirm & Subscribe</button>
+                  <div className="modal-actions">
+                  <button className="btn btn-warning" onClick={handleConfirmSubscribe}>Confirm & Subscribe</button>
                   <button className="btn btn-outline-secondary" onClick={() => setShowUpgradeModal(false)}>Cancel</button>
                 </div>
               </div>
@@ -300,32 +526,33 @@ export default function Subscription() {
               className={`plan card p-4 ${selectedPlan === 'free' ? 'popular highlighted' : ''}`}
               role="button"
               tabIndex={0}
+              ref={freePlanRef}
               onClick={() => setSelectedPlan('free')}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedPlan('free') }}
             >
-              {selectedPlan === 'free' && (
+              {currentPlan === 'free' && (
                 <div className="popular-badge"> <FiCheck /> Current Plan</div>
               )}
               <div className="plan-icon"><FiStar size={28} /></div>
               <h4 className="plan-title">Free</h4>
               <p className="text-muted">Perfect for small teams getting started</p>
               <div className="plan-price mt-3">Free <div className="small-muted">Forever free</div></div>
-                <div className="mt-3 text-center"><button className="plan-cta btn btn-outline-secondary" onClick={() => { setModalPlan('free'); setShowUpgradeModal(true); }}>Start Free <FiArrowRight className="ms-2"/></button></div>
+                <div className="mt-3 text-center"><button className="plan-cta btn btn-outline-secondary" onClick={handleStartFree}>Start Free <FiArrowRight className="ms-2"/></button></div>
               <hr className="plan-divider" />
 
               <ul className="plan-features mt-3">
-                <li>Up to 50 team members <FiCheck className="feature-check" /></li>
-                <li>Unlimited projects <FiCheck className="feature-check" /></li>
-                <li>Advanced Kanban &amp; Scrum boards <FiCheck className="feature-check" /></li>
-                <li>Issue tracking &amp; subtasks <FiCheck className="feature-check" /></li>
-                <li>Mobile app access <FiCheck className="feature-check" /></li>
-                <li>100 GB storage <FiCheck className="feature-check" /></li>
-                <li>Advanced reporting &amp; analytics <FiCheck className="feature-check" /></li>
-                <li>Custom workflows <FiCheck className="feature-check" /></li>
-                <li>Time tracking <FiCheck className="feature-check" /></li>
-                <li>Email &amp; chat support <FiCheck className="feature-check" /></li>
-                <li>Sprint planning <FiCheck className="feature-check" /></li>
-                <li>SSO / SAML <FiCheck className="feature-check" /></li>
+                <li><FiCheck className="feature-check" />Up to 5 team members</li>
+                <li><FiCheck className="feature-check" />3 projects</li>
+                <li><FiCheck className="feature-check" />Basic Kanban board</li>
+                <li><FiCheck className="feature-check" />Issue tracking</li>
+                <li><FiCheck className="feature-check" />Mobile app access</li>
+                <li><FiCheck className="feature-check" />1 GB storage</li>
+                <li><FiCheck className="feature-check" />Community support</li>
+                <li className="text-muted"><FiX className="feature-cross" />Advanced reporting</li>
+                <li className="text-muted"><FiX className="feature-cross" />Custom workflows</li>
+                <li className="text-muted"><FiX className="feature-cross" />Time tracking</li>
+                <li className="text-muted"><FiX className="feature-cross" />Priority support</li>
+                <li className="text-muted"><FiX className="feature-cross" />SSO / SAML</li>
               </ul>
             </div>
 
@@ -333,10 +560,11 @@ export default function Subscription() {
               className={`plan card p-4 ${selectedPlan === 'professional' ? 'popular highlighted' : ''}`}
               role="button"
               tabIndex={0}
+              ref={professionalPlanRef}
               onClick={() => setSelectedPlan('professional')}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedPlan('professional') }}
             >
-              {selectedPlan === 'professional' && (
+              {currentPlan === 'professional' && (
                 <div className="popular-badge"> <FiCheck /> Current Plan</div>
               )}
               <div className="plan-icon"><FiZap size={32} /></div>
@@ -358,7 +586,7 @@ export default function Subscription() {
                 <li>Time tracking <FiCheck className="feature-check" /></li>
                 <li>Email &amp; chat support <FiCheck className="feature-check" /></li>
                 <li>Sprint planning <FiCheck className="feature-check" /></li>
-                <li>SSO / SAML <FiCheck className="feature-check" /></li>
+                <li className="text-muted"><FiX className="feature-cross" />SSO / SAML</li>
               </ul>
             </div>
 
@@ -366,10 +594,11 @@ export default function Subscription() {
               className={`plan card p-4 ${selectedPlan === 'business' ? 'popular highlighted' : ''}`}
               role="button"
               tabIndex={0}
+              ref={businessPlanRef}
               onClick={() => setSelectedPlan('business')}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedPlan('business') }}
             >
-              {selectedPlan === 'business' && (
+              {currentPlan === 'business' && (
                 <div className="popular-badge"> <FiCheck /> Current Plan</div>
               )}
               <div className="plan-icon"><FiBriefcase size={32} /></div>
@@ -385,13 +614,17 @@ export default function Subscription() {
                 <li>Advanced Kanban &amp; Scrum boards <FiCheck className="feature-check" /></li>
                 <li>Issue tracking &amp; subtasks <FiCheck className="feature-check" /></li>
                 <li>Mobile app access <FiCheck className="feature-check" /></li>
-                <li>100 GB storage <FiCheck className="feature-check" /></li>
+                <li>500 GB storage <FiCheck className="feature-check" /></li>
                 <li>Advanced reporting &amp; analytics <FiCheck className="feature-check" /></li>
                 <li>Custom workflows <FiCheck className="feature-check" /></li>
-                <li>Time tracking <FiCheck className="feature-check" /></li>
+                <li>Time tracking &amp; billing <FiCheck className="feature-check" /></li>
+                <li>Priority support <FiCheck className="feature-check" /></li>
+                <li>Sprint planning &amp; velocity <FiCheck className="feature-check" /></li>
+                <li>Portfolio management <FiCheck className="feature-check" /></li>
                 <li>Email &amp; chat support <FiCheck className="feature-check" /></li>
-                <li>Sprint planning <FiCheck className="feature-check" /></li>
                 <li>SSO / SAML <FiCheck className="feature-check" /></li>
+                <li>Advanced permissions <FiCheck className="feature-check" /></li>
+                <li>API access <FiCheck className="feature-check" /></li>
               </ul>
             </div>
 
@@ -399,10 +632,11 @@ export default function Subscription() {
               className={`plan card p-4 ${selectedPlan === 'enterprise' ? 'popular highlighted' : ''}`}
               role="button"
               tabIndex={0}
+              ref={enterprisePlanRef}
               onClick={() => setSelectedPlan('enterprise')}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedPlan('enterprise') }}
             >
-              {selectedPlan === 'enterprise' && (
+              {currentPlan === 'enterprise' && (
                 <div className="popular-badge"> <FiCheck /> Current Plan</div>
               )}
               <div className="plan-icon"><FiServer size={28} /></div>
@@ -413,18 +647,25 @@ export default function Subscription() {
               <hr className="plan-divider" />
 
               <ul className="plan-features mt-3">
-                <li>Up to 50 team members <FiCheck className="feature-check" /></li>
+                <li>Unlimited team members <FiCheck className="feature-check" /></li>
                 <li>Unlimited projects <FiCheck className="feature-check" /></li>
                 <li>Advanced Kanban &amp; Scrum boards <FiCheck className="feature-check" /></li>
                 <li>Issue tracking &amp; subtasks <FiCheck className="feature-check" /></li>
                 <li>Mobile app access <FiCheck className="feature-check" /></li>
-                <li>100 GB storage <FiCheck className="feature-check" /></li>
+                <li>Unlimited storage <FiCheck className="feature-check" /></li>
                 <li>Advanced reporting &amp; analytics <FiCheck className="feature-check" /></li>
                 <li>Custom workflows <FiCheck className="feature-check" /></li>
-                <li>Time tracking <FiCheck className="feature-check" /></li>
-                <li>Email &amp; chat support <FiCheck className="feature-check" /></li>
-                <li>Sprint planning <FiCheck className="feature-check" /></li>
+                <li>Time tracking &amp; billing <FiCheck className="feature-check" /></li>
+                <li>24/7 dedicated support <FiCheck className="feature-check" /></li>
+                <li>Sprint planning &amp; velocity <FiCheck className="feature-check" /></li>
+                <li>Portfolio management <FiCheck className="feature-check" /></li>
                 <li>SSO / SAML <FiCheck className="feature-check" /></li>
+                <li>Advanced permissions <FiCheck className="feature-check" /></li>
+                <li>API access &amp; webhooks <FiCheck className="feature-check" /></li>
+                <li>Custom integrations <FiCheck className="feature-check" /></li>
+                <li>On-premise deployment <FiCheck className="feature-check" /></li>
+                <li>Dedicated account manager <FiCheck className="feature-check" /></li>
+                <li>SLA guarantee <FiCheck className="feature-check" /></li>
               </ul>
             </div>
           </section>
@@ -447,12 +688,12 @@ export default function Subscription() {
 
                 <div className="sub-item">
                   <div className="sub-label">Current Plan</div>
-                  <div className="sub-value mt-2"><strong>{selectedPlan.charAt(0).toUpperCase() + selectedPlan.slice(1)}</strong></div>
+                  <div className="sub-value mt-2"><strong>{formatPlanLabel(currentPlan)}</strong></div>
                 </div>
 
                 <div className="sub-item">
                   <div className="sub-label">Billing Cycle</div>
-                  <div className="sub-value mt-2">{period === 'monthly' ? 'Monthly' : 'Yearly'}</div>
+                  <div className="sub-value mt-2">{currentBillingCycle === 'monthly' ? 'Monthly' : 'Yearly'}</div>
                 </div>
               </div>
 
@@ -489,50 +730,34 @@ export default function Subscription() {
               <div className="text-muted mb-3">Your recent invoices and payments</div>
 
               <div className="invoice-list">
-                <div className="invoice-row">
-                  <div className="invoice-left d-flex align-items-center">
-                    <div className="invoice-icon"><FiCheck /></div>
-                    <div className="invoice-text ms-3">
-                      <div className="invoice-id">INV-2024-002</div>
-                      <div className="invoice-date text-muted">February 1, 2024</div>
-                    </div>
-                  </div>
-                  <div className="invoice-right d-flex align-items-center gap-3">
-                    <div className="invoice-amount">$600</div>
-                    <div className="invoice-status text-success">Paid</div>
-                    <button className="btn btn-link invoice-download"><FiDownload /> Download</button>
-                  </div>
-                </div>
+                {paymentsLoading && (
+                  <div className="text-muted">Loading billing history...</div>
+                )}
 
-                <div className="invoice-row">
-                  <div className="invoice-left d-flex align-items-center">
-                    <div className="invoice-icon"><FiCheck /></div>
-                    <div className="invoice-text ms-3">
-                      <div className="invoice-id">INV-2024-001</div>
-                      <div className="invoice-date text-muted">January 1, 2024</div>
-                    </div>
-                  </div>
-                  <div className="invoice-right d-flex align-items-center gap-3">
-                    <div className="invoice-amount">$600</div>
-                    <div className="invoice-status text-success">Paid</div>
-                    <button className="btn btn-link invoice-download"><FiDownload /> Download</button>
-                  </div>
-                </div>
+                {!paymentsLoading && payments.length === 0 && (
+                  <div className="text-muted">No payments yet.</div>
+                )}
 
-                <div className="invoice-row">
-                  <div className="invoice-left d-flex align-items-center">
-                    <div className="invoice-icon"><FiCheck /></div>
-                    <div className="invoice-text ms-3">
-                      <div className="invoice-id">INV-2023-012</div>
-                      <div className="invoice-date text-muted">December 1, 2023</div>
+                {!paymentsLoading && payments.map((p) => {
+                  const invoiceId = p.id || p.referenceId
+                
+
+  return (
+                  <div className="invoice-row" key={p.id}>
+                    <div className="invoice-left d-flex align-items-center">
+                      <div className="invoice-icon"><FiCheck /></div>
+                      <div className="invoice-text ms-3">
+                        <div className="invoice-id">{p.referenceId || p.id}</div>
+                        <div className="invoice-date text-muted">{formatPaymentDate(p.createdAt)} â€¢ {p.planName || 'Plan'}</div>
+                      </div>
+                    </div>
+                    <div className="invoice-right d-flex align-items-center gap-3">
+                      <div className="invoice-amount">{formatPaymentAmount(p.amount, p.currency)}</div>
+                      <div className="invoice-status text-success">{p.status || 'Paid'}</div>
+                      <button className="btn btn-link invoice-download" onClick={() => handleDownloadInvoice(invoiceId)}><FiDownload /> Download</button>
                     </div>
                   </div>
-                  <div className="invoice-right d-flex align-items-center gap-3">
-                    <div className="invoice-amount">$600</div>
-                    <div className="invoice-status text-success">Paid</div>
-                    <button className="btn btn-link invoice-download"><FiDownload /> Download</button>
-                  </div>
-                </div>
+                )})}
               </div>
             </div>
           </section>
@@ -562,15 +787,22 @@ export default function Subscription() {
               <h2 className="cta-title">Need help choosing?</h2>
               <p className="cta-sub">Our team is here to help you find the perfect plan</p>
               <div className="cta-actions d-inline-flex align-items-center gap-3 mt-3">
-                <button className="btn btn-outline-light cta-schedule">Schedule a Demo</button>
-                <button className="btn btn-dark cta-contact">Contact Sales <span className="cta-arrow">→</span></button>
+                <button type="button" className="btn btn-dark cta-contact">
+                  Contact Sales <span className="cta-arrow">→</span>
+                </button>
               </div>
             </div>
 
           </footer>
+
       </main>
     </div>
     
   )
 }
   
+
+
+
+
+

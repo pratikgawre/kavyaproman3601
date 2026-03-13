@@ -24,6 +24,7 @@ import {
   FiX
 } from 'react-icons/fi'
 import { useAuth } from '../context/AuthContext'
+import useIssueNotifications from '../hooks/useIssueNotifications'
 
 function getInitials(name) {
   return name
@@ -60,11 +61,16 @@ export default function Board() {
   const [showNotifications, setShowNotifications] = useState(false)
   const [showAssigneeDropdown, setShowAssigneeDropdown] = useState(false)
   const [showTypeDropdown, setShowTypeDropdown] = useState(false)
-  const [notifications, setNotifications] = useState([
-    { id: 1, title: 'KPM-5 moved to In Review', time: '2m ago', read: false },
-    { id: 2, title: 'Sprint board updated with new tasks', time: '16m ago', read: false },
-    { id: 3, title: 'Daily standup starts in 20 minutes', time: '1h ago', read: true }
-  ])
+  const {
+    notifications,
+    unreadCount,
+    loading: notificationsLoading,
+    error: notificationsError,
+    markAsRead: markNotificationRead,
+    markAllAsRead: markAllNotificationsRead,
+    dismissNotification,
+    clearAllNotifications
+  } = useIssueNotifications({ limit: 6 })
   const notificationRef = useRef(null)
   const assigneeDropdownRef = useRef(null)
   const typeDropdownRef = useRef(null)
@@ -83,8 +89,6 @@ export default function Board() {
     const raw = new URLSearchParams(location.search).get('issue') || ''
     return raw.trim().toLowerCase()
   }, [location.search])
-  const unreadCount = notifications.filter((item) => !item.read).length
-
   const allAssignees = useMemo(() => (
     [...new Set(BOARD_COLUMNS.flatMap((column) => column.issues.map((issue) => issue.assignee)))]
   ), [])
@@ -166,14 +170,6 @@ export default function Board() {
 
   function toggleNotifications() {
     setShowNotifications((value) => !value)
-  }
-
-  function markNotificationRead(id) {
-    setNotifications((current) => current.map((item) => (item.id === id ? { ...item, read: true } : item)))
-  }
-
-  function markAllNotificationsRead() {
-    setNotifications((current) => current.map((item) => ({ ...item, read: true })))
   }
 
   function toggleSidebarForScreen() {
@@ -291,23 +287,65 @@ export default function Board() {
                 <div className="notification-dropdown">
                   <div className="notification-header">
                     <span>Notifications</span>
-                    {unreadCount > 0 && (
-                      <button className="mark-all-btn" type="button" onClick={markAllNotificationsRead}>
-                        Mark all read
-                      </button>
+                    {(unreadCount > 0 || notifications.length > 0) && (
+                      <div className="notification-actions">
+                        {unreadCount > 0 && (
+                          <button className="mark-all-btn" type="button" onClick={markAllNotificationsRead}>
+                            Mark all read
+                          </button>
+                        )}
+                        {notifications.length > 0 && (
+                          <button className="clear-all-btn" type="button" onClick={clearAllNotifications}>
+                            Clear all
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                   <div className="notification-list">
-                    {notifications.map((item) => (
-                      <button
+                    {notificationsLoading && (
+                      <div className="muted p-3">Loading notifications...</div>
+                    )}
+                    {!notificationsLoading && notifications.length === 0 && (
+                      <div className="muted p-3">{notificationsError || 'No notifications yet'}</div>
+                    )}
+                    {!notificationsLoading && notifications.length > 0 && notifications.map((item) => (
+                      <div
                         key={item.id}
                         className={`notification-item-row ${item.read ? 'read' : 'unread'}`}
-                        onClick={() => markNotificationRead(item.id)}
-                        type="button"
+                        data-variant={item.variant}
+                        onClick={() => {
+                          markNotificationRead(item.id)
+                          setShowNotifications(false)
+                          if (item.href) navigate(item.href)
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            markNotificationRead(item.id)
+                            setShowNotifications(false)
+                            if (item.href) navigate(item.href)
+                          }
+                        }}
                       >
-                        <div className="notification-title">{item.title}</div>
-                        <div className="notification-time">{item.time}</div>
-                      </button>
+                        <div className="notification-item-body">
+                          <div className="notification-title">{item.title}</div>
+                          <div className="notification-time">{item.time}</div>
+                        </div>
+                        <button
+                          type="button"
+                          className="notification-dismiss-btn"
+                          aria-label="Dismiss notification"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            dismissNotification(item.id)
+                          }}
+                        >
+                          <FiX size={14} />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 </div>

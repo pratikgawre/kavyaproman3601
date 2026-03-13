@@ -247,7 +247,6 @@ function ProfileSection() {
     formData.email || user?.email
   )
 
-  
   const handleChange = (e) => {
     const { name, value } = e.target
     const nextValue = name === 'email' ? sanitizeEmail(value) : value
