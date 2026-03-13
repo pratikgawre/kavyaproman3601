@@ -19,6 +19,7 @@ import Subscription from './pages/Subscription'
 import ContactSales from './pages/ContactSales'
 import PaymentMethod from './pages/PaymentMethod'
 import PaymentSuccess from './pages/PaymentSuccess'
+import UpdatePayment from './pages/UpdatePayment'
 import FreePlan from './pages/FreePlan'
 import Project from './pages/Project'
 import Board from './pages/Board'
@@ -40,7 +41,35 @@ function AuthThemeGuard() {
 }
 
 function App() {
-  const { user } = useAuth()
+  const API_BASE = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:8080'
+  const { user, setUser } = useAuth()
+
+  useEffect(() => {
+    async function syncUserFromDb() {
+      try {
+        if (!user?.id) return
+
+        const res = await fetch(`${API_BASE}/api/user`, {
+          headers: { 'X-USER-ID': String(user.id) }
+        })
+        if (!res.ok) return
+
+        const dbUser = await res.json()
+        setUser({
+          id: dbUser.id,
+          email: dbUser.email,
+          name: dbUser.name,
+          role: dbUser.role,
+          avatar: dbUser.avatar,
+          timezone: dbUser.timezone
+        })
+      } catch {
+        // Keep existing session data when refresh fails.
+      }
+    }
+
+    syncUserFromDb()
+  }, [API_BASE, setUser, user?.id])
 
   return (
     <BrowserRouter>
@@ -62,6 +91,7 @@ function App() {
         <Route path="/free-plan" element={<FreePlan />} />
         <Route path="/payment" element={<PaymentMethod />} />
         <Route path="/payment-success" element={<PaymentSuccess />} />
+        <Route path="/update-payment" element={<UpdatePayment />} />
         <Route path="/contact-sales" element={<ContactSales />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/projects" element={<Project />} />

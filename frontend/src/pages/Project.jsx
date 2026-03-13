@@ -14,7 +14,6 @@ import {
   FiSearch,
   FiBell,
   FiPlus,
-  FiUser,
   FiRepeat,
   FiArrowRight,
   FiArchive,
@@ -28,6 +27,15 @@ import {
 } from 'react-icons/fi'
 import { useAuth } from '../context/AuthContext'
 import useIssueNotifications from '../hooks/useIssueNotifications'
+
+const getAvatarInitials = (name, email) => {
+  const source = (name || '').trim() || (email || '').trim()
+  if (!source) return 'G'
+  const parts = source.split(/[\s._-]+/).filter(Boolean)
+  if (parts.length === 0) return source.charAt(0).toUpperCase()
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase()
+  return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase()
+}
 
 const PROJECTS = [
   {
@@ -79,6 +87,7 @@ export default function Project() {
   const navigate = useNavigate()
   const { user, clearUser } = useAuth()
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
+  const avatarInitials = getAvatarInitials(user?.name, user?.email)
   const [selectedOrg, setSelectedOrg] = useState(() => {
     try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null }
   })
@@ -595,7 +604,9 @@ export default function Project() {
 
           <div className="sidebar-footer mt-3 d-flex flex-column align-items-start">
             <div className="profile d-flex align-items-center w-100">
-              <div className="avatar-icon"><FiUser size={20} /></div>
+              <div className="avatar-icon">
+                {user?.avatar ? <img src={user.avatar} alt="avatar" /> : avatarInitials}
+              </div>
               <div className="ms-2 user-info">
                 <div className="user-name">{displayName}</div>
                 <div className="user-role">{user?.role || 'Member'}</div>

@@ -45,6 +45,7 @@ export default function Login() {
       if (body.name) userToStore.name = body.name
       if (body.firstName && !userToStore.name) userToStore.name = body.firstName
       if (body.role) userToStore.role = body.role
+      if (body.avatar) userToStore.avatar = body.avatar
       setUser(userToStore)
       navigate('/organization', { replace: true })
     } catch (err) {

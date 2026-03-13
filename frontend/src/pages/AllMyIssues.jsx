@@ -21,6 +21,7 @@ export default function AllMyIssues(){
   const navigate = useNavigate()
   const { user, clearUser } = useAuth()
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
+  const avatarInitials = getInitials(user?.name || displayName, user?.email)
   const [selectedOrg, setSelectedOrg] = useState(() => { try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null } })
   useEffect(() => {
     function onOrgChanged(e){ const org = e?.detail || null; setSelectedOrg(org); try { if (org) localStorage.setItem('org', JSON.stringify(org)) } catch(err){} }
@@ -49,23 +50,34 @@ export default function AllMyIssues(){
   const [editErrors, setEditErrors] = useState({})
   const editFileInputRef = useRef(null)
   const editDescRef = useRef(null)
-  // helper to convert File -> data URL for persistence and later opening
-  function fileToDataUrl(file){
-    return new Promise((res, rej) => {
-      const reader = new FileReader()
-      reader.onload = ()=> res({ name: file.name, size: file.size, type: file.type, data: reader.result })
-      reader.onerror = rej
-      reader.readAsDataURL(file)
-    })
+  const [uploadingEditAttachments, setUploadingEditAttachments] = useState(false)
+  function attachmentFromUpload(file, upload) {
+    return {
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      url: upload.url,
+      publicId: upload.publicId,
+      resourceType: upload.resourceType,
+      format: upload.format,
+      bytes: upload.bytes
+    }
   }
   async function handleEditAddFiles(files){
     const arr = Array.from(files || [])
     if(arr.length === 0) return
+    setUploadingEditAttachments(true)
     try{
-      const converted = await Promise.all(arr.map(f => fileToDataUrl(f)))
-      setEditFields(prev => ({...prev, attachments: [...(prev.attachments||[]), ...converted]}))
-    }catch(err){ console.error('file read error', err) }
-    if(editFileInputRef.current) editFileInputRef.current.value = ''
+      const uploaded = await uploadFiles(arr, { folder: 'issues' })
+      const next = uploaded.map((u, idx) => attachmentFromUpload(arr[idx], u))
+      setEditFields(prev => ({...prev, attachments: [...(prev.attachments||[]), ...next]}))
+    }catch(err){
+      console.error('file upload error', err)
+      alert(err.message || 'File upload failed')
+    } finally {
+      setUploadingEditAttachments(false)
+      if(editFileInputRef.current) editFileInputRef.current.value = ''
+    }
   }
 
   function handleEditRemoveAttachment(idx){
@@ -73,6 +85,12 @@ export default function AllMyIssues(){
   }
 
   async function downloadAttachment(file){
+    const href = file?.url || file?.data
+    if (!href) return
+    if (file.url) {
+      window.open(file.url, '_blank', 'noopener')
+      return
+    }
     try{
       const res = await fetch(file.data)
       const blob = await res.blob()
@@ -396,7 +414,7 @@ export default function AllMyIssues(){
 
           <div className="sidebar-footer mt-3 d-flex flex-column align-items-start">
             <div className="profile d-flex align-items-center w-100">
-              <div className="avatar-icon">{displayName ? displayName.charAt(0) : 'G'}</div>
+              <div className="avatar-icon">{avatarInitials}</div>
               <div className="ms-2 user-info">
                 <div className="user-name">{displayName}</div>
                 <div className="user-role">{user?.role || 'Member'}</div>
@@ -611,7 +629,7 @@ export default function AllMyIssues(){
                 <div style={{marginTop:12,display:'flex',flexWrap:'wrap',gap:8}}>
                   {it.attachments.map((f,i)=> (
                     <div key={i} className="attachment-item" title={f.name}>
-                      {f.data ? (
+                      {(f.url || f.data) ? (
                         <button type="button" className="attachment-name link-like" onClick={(e)=>{ e.preventDefault(); downloadAttachment(f) }}>{f.name}</button>
                       ) : (
                         <span>{f.name}</span>
@@ -707,7 +725,7 @@ export default function AllMyIssues(){
                   </div>
 
                   <input type="color" className="color-input" defaultValue="#10b981" onMouseDown={e=>e.preventDefault()} onChange={(e)=>document.execCommand('foreColor', false, e.target.value)} title="Text color" />
-                  <button type="button" className="format-btn upload-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>editFileInputRef.current?.click()} title="Attach files">
+                  <button type="button" className="format-btn upload-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>editFileInputRef.current?.click()} title={uploadingEditAttachments ? 'Uploading...' : 'Attach files'} disabled={uploadingEditAttachments}>
                     <FiUpload />
                   </button>
                   <input type="file" ref={editFileInputRef} style={{display:'none'}} accept=".pdf,image/*,.doc,.docx" multiple onChange={(e)=>{ handleEditAddFiles(e.target.files) }} />
@@ -719,7 +737,7 @@ export default function AllMyIssues(){
                   <div className="attachments" style={{marginTop:8}}>
                     {editFields.attachments.map((f,i)=> (
                       <div className="attachment-item" key={i} title={f.name}>
-                        {f.data ? (
+                        {(f.url || f.data) ? (
                           <button type="button" className="attachment-name link-like" onClick={(e)=>{ e.preventDefault(); downloadAttachment(f) }}>{f.name}</button>
                         ) : (
                           <span className="attachment-name">{f.name}</span>
@@ -737,7 +755,7 @@ export default function AllMyIssues(){
                 <div className="flex-fill" />
                 <div className="action-right d-flex align-items-center gap-3">
                   <button type="button" className="btn btn-outline-secondary cancel-btn" onClick={closeEdit}>Cancel</button>
-                  <button type="button" className="btn btn-primary create-btn" onClick={saveEdit}>Save</button>
+                  <button type="button" className="btn btn-primary create-btn" onClick={saveEdit} disabled={uploadingEditAttachments}>Save</button>
                 </div>
               </div>
             </div>

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 
 const AuthContext = createContext(null)
+const USER_STORAGE_KEY = 'kpm360.authUser'
 
 const AUTH_USER_STORAGE_KEY = 'kpm360.auth.user'
 const API_BASE = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:8080'
@@ -20,61 +21,30 @@ function readStoredUser() {
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUserState] = useState(() => readStoredUser())
+  const [user, setUserState] = useState(() => {
+    if (typeof window === 'undefined') return null
+    try {
+      const stored = window.localStorage.getItem(USER_STORAGE_KEY)
+      if (!stored) return null
+      return JSON.parse(stored)
+    } catch {
+      window.localStorage.removeItem(USER_STORAGE_KEY)
+      return null
+    }
+  })
   const [pendingUserId, setPendingUserId] = useState('')
   const [pendingFlow, setPendingFlow] = useState('')
 
-  const setUser = useCallback((nextUser) => {
-    setUserState((prevUser) => {
-      const resolvedUser = typeof nextUser === 'function' ? nextUser(prevUser) : nextUser
-      try {
-        if (typeof window !== 'undefined') {
-          if (resolvedUser) {
-            window.localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(resolvedUser))
-          } else {
-            window.localStorage.removeItem(AUTH_USER_STORAGE_KEY)
-          }
-        }
-      } catch {
-        // ignore storage failures (private mode, quota, etc.)
-      }
-      return resolvedUser
-    })
-  }, [])
-
-  const clearUser = useCallback(() => setUser(null), [setUser])
-
-  useEffect(() => {
-    const userId = user?.id ? String(user.id) : ''
-    if (!userId) return
-
-    const controller = new AbortController()
-
-    async function syncUserFromDb() {
-      try {
-        const res = await fetch(`${API_BASE}/api/user`, {
-          headers: { 'X-USER-ID': userId },
-          signal: controller.signal
-        })
-        if (!res.ok) return
-        const dbUser = await res.json()
-        setUser((prev) => ({
-          ...(prev || {}),
-          id: dbUser.id,
-          email: dbUser.email,
-          name: dbUser.name,
-          role: dbUser.role,
-          avatar: dbUser.avatar,
-          timezone: dbUser.timezone
-        }))
-      } catch {
-        // Keep existing session data when refresh fails.
-      }
+  const setUser = (nextUser) => {
+    const safeUser = nextUser || null
+    setUserState(safeUser)
+    if (typeof window === 'undefined') return
+    if (safeUser) {
+      window.localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(safeUser))
+    } else {
+      window.localStorage.removeItem(USER_STORAGE_KEY)
     }
-
-    syncUserFromDb()
-    return () => controller.abort()
-  }, [setUser, user?.id])
+  }
 
   const value = useMemo(
     () => ({
