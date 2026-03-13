@@ -163,6 +163,6 @@ public class AuthService {
     }
 
     private AuthResponse successWithUser(String message, User user) {
-        return new AuthResponse(true, message, user.getId(), user.getEmail(), user.getName(), user.getRole());
+        return new AuthResponse(true, message, user.getId(), user.getEmail(), user.getName(), user.getRole(), user.getAvatar());
     }
 }

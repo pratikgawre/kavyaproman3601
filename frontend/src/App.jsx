@@ -41,7 +41,35 @@ function AuthThemeGuard() {
 }
 
 function App() {
-  const { user } = useAuth()
+  const API_BASE = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:8080'
+  const { user, setUser } = useAuth()
+
+  useEffect(() => {
+    async function syncUserFromDb() {
+      try {
+        if (!user?.id) return
+
+        const res = await fetch(`${API_BASE}/api/user`, {
+          headers: { 'X-USER-ID': String(user.id) }
+        })
+        if (!res.ok) return
+
+        const dbUser = await res.json()
+        setUser({
+          id: dbUser.id,
+          email: dbUser.email,
+          name: dbUser.name,
+          role: dbUser.role,
+          avatar: dbUser.avatar,
+          timezone: dbUser.timezone
+        })
+      } catch {
+        // Keep existing session data when refresh fails.
+      }
+    }
+
+    syncUserFromDb()
+  }, [API_BASE, setUser, user?.id])
 
   return (
     <BrowserRouter>

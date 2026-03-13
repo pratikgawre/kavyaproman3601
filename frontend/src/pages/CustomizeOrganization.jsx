@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import "./Auth.css";
+import { uploadFile } from "../utils/upload";
 
 function CustomizeOrganization() {
   const navigate = useNavigate();
@@ -8,14 +9,25 @@ function CustomizeOrganization() {
 
   const { orgName, slug, desc } = location.state || {};
 
-  const [file, setFile] = useState(null);
+  const [logo, setLogo] = useState({ name: "", url: "" });
+  const [logoUploading, setLogoUploading] = useState(false);
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
 
-    console.log("Selected file:", selectedFile);
-    setFile(selectedFile);
+    setLogoUploading(true);
+    try {
+      const uploaded = await uploadFile(selectedFile, { folder: "organizations" });
+      const url = uploaded?.url;
+      if (!url) throw new Error("Upload did not return a URL");
+      setLogo({ name: selectedFile.name, url });
+    } catch (err) {
+      alert(err.message || "Logo upload failed");
+    } finally {
+      setLogoUploading(false);
+      e.target.value = "";
+    }
   };
 
   return (
@@ -58,15 +70,20 @@ function CustomizeOrganization() {
           />
 
           <label htmlFor="fileUpload" className="upload-box">
-            <p>⬆ Click to upload or drag and drop</p>
+            <p>{logoUploading ? "Uploading..." : "Click to upload or drag and drop"}</p>
             <span>SVG, PNG, JPG (max 2MB)</span>
           </label>
 
           {/* Preview */}
-          {file && (
-            <p style={{ marginTop: "10px" }}>
-              Selected: {file.name}
-            </p>
+          {logo.url && (
+            <div style={{ marginTop: "10px", display: "flex", alignItems: "center", gap: "12px" }}>
+              <img
+                src={logo.url}
+                alt="Organization logo"
+                style={{ width: "48px", height: "48px", objectFit: "cover", borderRadius: "8px", border: "1px solid #e5e7eb" }}
+              />
+              <div>Uploaded: {logo.name}</div>
+            </div>
           )}
 
           {/* Next Steps */}
@@ -127,3 +144,4 @@ function CustomizeOrganization() {
 }
 
 export default CustomizeOrganization;
+

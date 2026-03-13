@@ -17,6 +17,8 @@ import './Settings.css'
 import './Dashboard.css'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { uploadFile } from '../utils/upload'
+import { getInitials } from '../utils/initials'
 
 const stripLeadingSpace = (value) => value.replace(/^\s+/, '')
 const sanitizeEmail = (value) => stripLeadingSpace(value).replace(/[^A-Za-z0-9@.]/g, '')
@@ -33,7 +35,6 @@ const getAvatarInitials = (name, email) => {
 }
 
 export default function Settings() {
-  const API_BASE = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:8080'
   // basic UI state
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -229,9 +230,9 @@ function ProfileSection() {
     const nameParts = fullName ? fullName.split(/\s+/) : []
 
     return {
-      firstName: nameParts[0] || 'Sarah',
-      lastName: nameParts.slice(1).join(' ') || 'Johnson',
-      email: user?.email || 'sarah@kavyaproman.com',
+      firstName: nameParts[0] || '',
+      lastName: nameParts.slice(1).join(' ') || '',
+      email: user?.email || '',
       role: user?.role || 'Member',
       timezone: 'UTC'
     }
@@ -267,7 +268,7 @@ function ProfileSection() {
     fileInputRef.current?.click()
   }
 
-  const handleAvatarUpload = (e) => {
+  const handleAvatarUpload = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
 
@@ -295,9 +296,12 @@ function ProfileSection() {
         setUser({ ...user, avatar: result })
       }
       alert('Avatar uploaded successfully!')
+    } catch (err) {
+      alert(err.message || 'Avatar upload failed')
+    } finally {
+      setAvatarUploading(false)
+      e.target.value = ''
     }
-    reader.readAsDataURL(file)
-    e.target.value = ''
   }
 
   const handleAvatarPreview = () => {
@@ -305,7 +309,7 @@ function ProfileSection() {
     setShowAvatarViewer(true)
   }
 
-  const handleRemoveAvatar = () => {
+  const handleRemoveAvatar = async () => {
     setAvatar('')
     setShowAvatarViewer(false)
     localStorage.removeItem('userAvatar')
@@ -350,8 +354,8 @@ function ProfileSection() {
         >
           {avatar ? <img src={avatar} alt="avatar preview" /> : getAvatarInitials(`${formData.firstName} ${formData.lastName}`, formData.email)}
         </div>
-        <button className="btn btn-outline-secondary btn-sm ms-3" onClick={handleAvatarClick}>
-          Change Avatar
+        <button className="btn btn-outline-secondary btn-sm ms-3" onClick={handleAvatarClick} disabled={avatarUploading}>
+          {avatarUploading ? 'Uploading...' : 'Change Avatar'}
         </button>
         <button className="btn btn-outline-danger btn-sm ms-2" onClick={handleRemoveAvatar} disabled={!avatar}>
           Remove Avatar
