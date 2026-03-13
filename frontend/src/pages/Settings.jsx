@@ -240,7 +240,6 @@ function ProfileSection() {
     }
   }, [])
 
-  
   const handleChange = (e) => {
     const { name, value } = e.target
     const nextValue = name === 'email' ? sanitizeEmail(value) : value
