@@ -4,6 +4,7 @@ import "./Teams.css";
 import { FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLogOut, FiMenu, FiSearch, FiBell, FiPlus, FiUser, FiX, FiCheck, FiRepeat, FiArrowRight } from 'react-icons/fi'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import useIssueNotifications from '../hooks/useIssueNotifications'
 
 const FALLBACK_MEMBERS = [
   { id: 1, name: 'Sarah Johnson', email: 'sarah.johnson@kavyapro.com', role: 'Admin', projects: 3, activeIssues: 8, image: 'https://randomuser.me/api/portraits/women/44.jpg' },
@@ -46,18 +47,26 @@ export default function Teams() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRole, setSelectedRole] = useState("All Roles");
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showMemberModal, setShowMemberModal] = useState(false);
+  const [selectedMember, setSelectedMember] = useState(null);
   const [showNotifications, setShowNotifications] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [topSearchText, setTopSearchText] = useState("");
-  const [notifications, setNotifications] = useState([
-    { id: 1, title: "New member request pending approval", time: "5m ago", read: false },
-    { id: 2, title: "Role updated for Sarah Johnson", time: "25m ago", read: false },
-    { id: 3, title: "Weekly team summary generated", time: "1h ago", read: true }
-  ]);
+  const {
+    notifications,
+    unreadCount,
+    loading: notificationsLoading,
+    error: notificationsError,
+    markAsRead,
+    markAllAsRead,
+    addNotification,
+    dismissNotification,
+    clearAllNotifications
+  } = useIssueNotifications({ limit: 6 })
   const [editingId, setEditingId] = useState(null);
   const [editingMember, setEditingMember] = useState(null);
   const notificationRef = useRef(null);
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const memberListRef = useRef(null);
 
   const [inviteFormData, setInviteFormData] = useState({
     name: '',
@@ -92,15 +101,6 @@ export default function Teams() {
     setShowNotifications((prev) => !prev);
   };
 
-  const markAsRead = (id) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-    );
-  };
-
-  const markAllAsRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-  };
 
   const fetchTeamMembers = async () => {
     const controller = new AbortController();
@@ -165,7 +165,16 @@ export default function Teams() {
 
   const handleCardClick = (memberId) => {
     const member = members.find(m => m.id === memberId);
-    alert(`Viewing ${member?.name} details`);
+    if (!member || editingId === memberId) {
+      return;
+    }
+    setSelectedMember(member);
+    setShowMemberModal(true);
+  };
+
+  const handleCloseMemberModal = () => {
+    setShowMemberModal(false);
+    setSelectedMember(null);
   };
 
   const handleStatClick = (statName) => {
@@ -173,7 +182,21 @@ export default function Teams() {
       navigate('/projects');
       return;
     }
-    alert(`Viewing ${statName} details`);
+    if (statName === 'Admins') {
+      setActiveTab('Members');
+      setSelectedRole('Admin');
+      setSearchTerm('');
+      memberListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    if (statName === 'Total Members') {
+      setActiveTab('Members');
+      setSelectedRole('All Roles');
+      setSearchTerm('');
+      memberListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    memberListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   const handleInviteSubmit = async (e) => {
@@ -201,6 +224,19 @@ export default function Teams() {
       setMembers([...members, newMember]);
       setShowInviteModal(false);
       setInviteFormData({ name: '', email: '', role: 'Developer' });
+
+      const invitedName = (newMember?.name || inviteFormData.name || '').toString().trim()
+      const invitedEmail = (newMember?.email || inviteFormData.email || '').toString().trim()
+      addNotification({
+        id: `member-invited-${newMember?.id || invitedEmail || Date.now()}`,
+        type: 'member_invited',
+        title: invitedName && invitedEmail
+          ? `Member invited: ${invitedName} (${invitedEmail})`
+          : invitedEmail
+            ? `Member invited: ${invitedEmail}`
+            : 'Member invited'
+      })
+
       alert('Member invited successfully');
     } catch (err) {
       if (usingFallbackData) {
@@ -214,6 +250,11 @@ export default function Teams() {
         setMembers([...members, localMember]);
         setShowInviteModal(false);
         setInviteFormData({ name: '', email: '', role: 'Developer' });
+        addNotification({
+          id: `member-invited-${localMember.id}`,
+          type: 'member_invited',
+          title: `Member invited: ${localMember.name} (${localMember.email})`
+        })
         return;
       }
       alert('Error inviting member: ' + err.message);
@@ -410,23 +451,66 @@ export default function Teams() {
                       <div className="notification-dropdown">
                         <div className="notification-header">
                           <span>Notifications</span>
-                          {unreadCount > 0 && (
-                            <button className="mark-all-btn" onClick={markAllAsRead}>
-                              Mark all read
-                            </button>
+                          {(unreadCount > 0 || notifications.length > 0) && (
+                            <div className="notification-actions">
+                              {unreadCount > 0 && (
+                                <button className="mark-all-btn" type="button" onClick={markAllAsRead}>
+                                  Mark all read
+                                </button>
+                              )}
+                              {notifications.length > 0 && (
+                                <button className="clear-all-btn" type="button" onClick={clearAllNotifications}>
+                                  Clear all
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
 
                         <div className="notification-list">
-                          {notifications.map((n) => (
-                            <button
+                          {notificationsLoading && (
+                            <div className="muted p-3">Loading notifications...</div>
+                          )}
+                          {!notificationsLoading && notifications.length === 0 && (
+                            <div className="muted p-3">{notificationsError || "No notifications yet"}</div>
+                          )}
+                          {!notificationsLoading && notifications.length > 0 && notifications.map((n) => (
+                            <div
                               key={n.id}
                               className={`notification-item-row ${n.read ? "read" : "unread"}`}
-                              onClick={() => markAsRead(n.id)}
+                              data-variant={n.variant}
+                              onClick={() => {
+                                markAsRead(n.id)
+                                setShowNotifications(false)
+                                if (n.href) navigate(n.href)
+                              }}
+                              role="button"
+                              tabIndex={0}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                  event.preventDefault()
+                                  markAsRead(n.id)
+                                  setShowNotifications(false)
+                                  if (n.href) navigate(n.href)
+                                }
+                              }}
                             >
-                              <div className="notification-title">{n.title}</div>
-                              <div className="notification-time">{n.time}</div>
-                            </button>
+                              <div className="notification-item-body">
+                                <div className="notification-title">{n.title}</div>
+                                <div className="notification-time">{n.time}</div>
+                              </div>
+                              <button
+                                type="button"
+                                className="notification-dismiss-btn"
+                                aria-label="Dismiss notification"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  dismissNotification(n.id)
+                                }}
+                              >
+                                <FiX size={14} />
+                              </button>
+                            </div>
                           ))}
                         </div>
                       </div>
@@ -533,112 +617,122 @@ export default function Teams() {
           </div>
 
           {/* Member Cards */}
-          {filteredMembers.length > 0 ? (
-            filteredMembers.map((member) => (
-              <div 
-                key={member.id}
-                className="member-card"
-                onClick={() => handleCardClick(member.id)}
-              >
-                <div className="member-left">
-                  <img
-                    src={member.image || 'https://randomuser.me/api/portraits/lego/1.jpg'}
-                    alt={member.name}
-                  />
-                  <div>
+          <div className="member-cards" ref={memberListRef}>
+            {filteredMembers.length > 0 ? (
+              filteredMembers.map((member) => (
+                <div 
+                  key={member.id}
+                  className="member-card"
+                  onClick={() => handleCardClick(member.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      handleCardClick(member.id);
+                    }
+                  }}
+                  role="button"
+                  tabIndex="0"
+                >
+                  <div className="member-left">
+                    <img
+                      src={member.image || 'https://randomuser.me/api/portraits/lego/1.jpg'}
+                      alt={member.name}
+                    />
+                    <div>
+                      {editingId === member.id ? (
+                        <div className="edit-form">
+                          <input
+                            type="text"
+                            value={editingMember.name}
+                            onChange={(e) => setEditingMember({...editingMember, name: e.target.value})}
+                            placeholder="Name"
+                          />
+                          <input
+                            type="email"
+                            value={editingMember.email}
+                            onChange={(e) => setEditingMember({...editingMember, email: e.target.value})}
+                            placeholder="Email"
+                          />
+                          <select
+                            value={editingMember.role}
+                            onChange={(e) => setEditingMember({...editingMember, role: e.target.value})}
+                          >
+                            <option>Admin</option>
+                            <option>Developer</option>
+                            <option>Tester</option>
+                          </select>
+                        </div>
+                      ) : (
+                        <>
+                          <h3>
+                            {member.name} 
+                            <span className={`role ${member.role.toLowerCase()}`}>
+                              {member.role}
+                            </span>
+                          </h3>
+                          <p>{member.email}</p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="member-right">
+                    {editingId !== member.id && (
+                      <>
+                        <div className="member-stat">
+                          <strong>{member.projects || 0}</strong>
+                          <p>Projects</p>
+                        </div>
+                        <div className="member-stat">
+                          <strong>{member.activeIssues || 0}</strong>
+                          <p>Active Issues</p>
+                        </div>
+                      </>
+                    )}
+                    
                     {editingId === member.id ? (
-                      <div className="edit-form">
-                        <input
-                          type="text"
-                          value={editingMember.name}
-                          onChange={(e) => setEditingMember({...editingMember, name: e.target.value})}
-                          placeholder="Name"
-                        />
-                        <input
-                          type="email"
-                          value={editingMember.email}
-                          onChange={(e) => setEditingMember({...editingMember, email: e.target.value})}
-                          placeholder="Email"
-                        />
-                        <select
-                          value={editingMember.role}
-                          onChange={(e) => setEditingMember({...editingMember, role: e.target.value})}
+                      <div className="edit-actions">
+                        <button 
+                          className="save-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSaveEdit(member.id);
+                          }}
+                          title="Save"
                         >
-                          <option>Admin</option>
-                          <option>Developer</option>
-                          <option>Tester</option>
-                        </select>
+                          <FiCheck size={18} />
+                        </button>
+                        <button 
+                          className="cancel-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCancelEdit();
+                          }}
+                          title="Cancel"
+                        >
+                          <FiX size={18} />
+                        </button>
                       </div>
                     ) : (
-                      <>
-                        <h3>
-                          {member.name} 
-                          <span className={`role ${member.role.toLowerCase()}`}>
-                            {member.role}
-                          </span>
-                        </h3>
-                        <p>{member.email}</p>
-                      </>
+                      <button 
+                        className="edit-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEdit(member);
+                        }}
+                      >
+                        Edit
+                      </button>
                     )}
                   </div>
                 </div>
-
-                <div className="member-right">
-                  {editingId !== member.id && (
-                    <>
-                      <div className="member-stat">
-                        <strong>{member.projects || 0}</strong>
-                        <p>Projects</p>
-                      </div>
-                      <div className="member-stat">
-                        <strong>{member.activeIssues || 0}</strong>
-                        <p>Active Issues</p>
-                      </div>
-                    </>
-                  )}
-                  
-                  {editingId === member.id ? (
-                    <div className="edit-actions">
-                      <button 
-                        className="save-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSaveEdit(member.id);
-                        }}
-                        title="Save"
-                      >
-                        <FiCheck size={18} />
-                      </button>
-                      <button 
-                        className="cancel-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCancelEdit();
-                        }}
-                        title="Cancel"
-                      >
-                        <FiX size={18} />
-                      </button>
-                    </div>
-                  ) : (
-                    <button 
-                      className="edit-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEdit(member);
-                      }}
-                    >
-                      Edit
-                    </button>
-                  )}
-                </div>
+              ))
+            ) : (
+              <div style={{ textAlign: 'center', padding: '40px' }}>
+                <p>No team members found</p>
               </div>
-            ))
-          ) : (
-            <div style={{ textAlign: 'center', padding: '40px' }}>
-              <p>No team members found</p>
-            </div>
-          )}
+            )}
+          </div>
 
         </div>
       </main>
@@ -712,6 +806,61 @@ export default function Teams() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showMemberModal && selectedMember && (
+        <div className="modal-overlay" onClick={handleCloseMemberModal}>
+          <div className="modal-content member-detail-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Member Details</h2>
+              <button 
+                className="modal-close"
+                onClick={handleCloseMemberModal}
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+
+            <div className="member-detail-body">
+              <div className="member-detail-profile">
+                <img
+                  src={selectedMember.image || 'https://randomuser.me/api/portraits/lego/1.jpg'}
+                  alt={selectedMember.name}
+                />
+                <div className="member-detail-info">
+                  <div className="member-detail-name-row">
+                    <h3>{selectedMember.name}</h3>
+                    <span className={`role ${selectedMember.role.toLowerCase()}`}>
+                      {selectedMember.role}
+                    </span>
+                  </div>
+                  <p className="member-detail-email">{selectedMember.email}</p>
+                </div>
+              </div>
+
+              <div className="member-detail-stats">
+                <div className="member-detail-stat">
+                  <strong>{selectedMember.projects || 0}</strong>
+                  <span>Projects</span>
+                </div>
+                <div className="member-detail-stat">
+                  <strong>{selectedMember.activeIssues || 0}</strong>
+                  <span>Active Issues</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button 
+                type="button"
+                className="btn-cancel"
+                onClick={handleCloseMemberModal}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

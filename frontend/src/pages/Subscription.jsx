@@ -5,6 +5,7 @@ import { FiSearch, FiBell, FiPlus, FiZap, FiStar, FiCheck, FiGrid, FiFolder, FiU
 import { GiCrown } from 'react-icons/gi'
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
+import useIssueNotifications from '../hooks/useIssueNotifications'
 
 export default function Subscription() {
   const navigate = useNavigate()
@@ -23,13 +24,17 @@ export default function Subscription() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('card')
   const [upiCopied, setUpiCopied] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
-  const [notifications, setNotifications] = useState([
-    { id: 1, title: 'Your invoice INV-2024-002 is ready', time: '3m ago', read: false },
-    { id: 2, title: 'Professional plan renewal in 2 days', time: '40m ago', read: false },
-    { id: 3, title: 'Payment method updated successfully', time: '1h ago', read: true }
-  ])
+  const {
+    notifications,
+    unreadCount,
+    loading: notificationsLoading,
+    error: notificationsError,
+    markAsRead,
+    markAllAsRead,
+    dismissNotification,
+    clearAllNotifications
+  } = useIssueNotifications({ limit: 6 })
   const notificationRef = useRef(null)
-  const unreadCount = notifications.filter(n => !n.read).length
 
   useEffect(() => {
     const handleOutsideClick = (e) => {
@@ -42,12 +47,6 @@ export default function Subscription() {
   }, [])
 
   const toggleNotifications = () => setShowNotifications(prev => !prev)
-  const markAsRead = (id) => {
-    setNotifications(prev => prev.map(n => (n.id === id ? { ...n, read: true } : n)))
-  }
-  const markAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })))
-  }
 
   function handleLogout() {
     clearUser()
@@ -187,20 +186,65 @@ export default function Subscription() {
                     <div className="notification-dropdown">
                       <div className="notification-header">
                         <span>Notifications</span>
-                        {unreadCount > 0 && (
-                          <button className="mark-all-btn" onClick={markAllAsRead}>Mark all read</button>
+                        {(unreadCount > 0 || notifications.length > 0) && (
+                          <div className="notification-actions">
+                            {unreadCount > 0 && (
+                              <button className="mark-all-btn" type="button" onClick={markAllAsRead}>
+                                Mark all read
+                              </button>
+                            )}
+                            {notifications.length > 0 && (
+                              <button className="clear-all-btn" type="button" onClick={clearAllNotifications}>
+                                Clear all
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                       <div className="notification-list">
-                        {notifications.map((n) => (
-                          <button
+                        {notificationsLoading && (
+                          <div className="muted p-3">Loading notifications...</div>
+                        )}
+                        {!notificationsLoading && notifications.length === 0 && (
+                          <div className="muted p-3">{notificationsError || 'No notifications yet'}</div>
+                        )}
+                        {!notificationsLoading && notifications.length > 0 && notifications.map((n) => (
+                          <div
                             key={n.id}
                             className={`notification-item-row ${n.read ? 'read' : 'unread'}`}
-                            onClick={() => markAsRead(n.id)}
+                            data-variant={n.variant}
+                            onClick={() => {
+                              markAsRead(n.id)
+                              setShowNotifications(false)
+                              if (n.href) navigate(n.href)
+                            }}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault()
+                                markAsRead(n.id)
+                                setShowNotifications(false)
+                                if (n.href) navigate(n.href)
+                              }
+                            }}
                           >
-                            <div className="notification-title">{n.title}</div>
-                            <div className="notification-time">{n.time}</div>
-                          </button>
+                            <div className="notification-item-body">
+                              <div className="notification-title">{n.title}</div>
+                              <div className="notification-time">{n.time}</div>
+                            </div>
+                            <button
+                              type="button"
+                              className="notification-dismiss-btn"
+                              aria-label="Dismiss notification"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                dismissNotification(n.id)
+                              }}
+                            >
+                              <FiX size={14} />
+                            </button>
+                          </div>
                         ))}
                       </div>
                     </div>
