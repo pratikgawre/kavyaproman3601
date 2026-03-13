@@ -9,7 +9,6 @@ import {
   FiSettings,
   FiLogOut,
   FiMenu,
-  FiUser,
   FiRepeat,
   FiArrowRight,
   FiX
@@ -18,15 +17,17 @@ import './Settings.css'
 import './Dashboard.css'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { uploadFile } from '../utils/upload'
+import { getInitials } from '../utils/initials'
 
 const stripLeadingSpace = (value) => value.replace(/^\s+/, '')
 const sanitizeEmail = (value) => stripLeadingSpace(value).replace(/[^A-Za-z0-9@.]/g, '')
 const preventLeadingSpace = (e) => {
   if (e.key === ' ' && (e.currentTarget.selectionStart ?? 0) === 0) e.preventDefault()
 }
+const API_BASE = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:8080'
 
 export default function Settings() {
-  const API_BASE = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:8080'
   // basic UI state
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -56,6 +57,7 @@ export default function Settings() {
 
   const { user, clearUser } = useAuth()
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
+  const sidebarInitials = getInitials(user?.name || displayName, user?.email)
 
   function toggleSidebarForScreen() {
     setCollapsed((prev) => {
@@ -123,7 +125,9 @@ export default function Settings() {
 
           <div className="sidebar-footer mt-3 d-flex flex-column align-items-start">
             <div className="profile d-flex align-items-center w-100">
-              <div className="avatar-icon"><FiUser size={20} /></div>
+              <div className="avatar-icon">
+                {user?.avatar ? <img src={user.avatar} alt="avatar" /> : sidebarInitials}
+              </div>
               <div className="ms-2 user-info">
                 <div className="user-name">{displayName}</div>
                 <div className="user-role">{user?.role || 'Member'}</div>
@@ -219,9 +223,9 @@ function ProfileSection() {
     const nameParts = fullName ? fullName.split(/\s+/) : []
 
     return {
-      firstName: nameParts[0] || 'Sarah',
-      lastName: nameParts.slice(1).join(' ') || 'Johnson',
-      email: user?.email || 'sarah@kavyaproman.com',
+      firstName: nameParts[0] || '',
+      lastName: nameParts.slice(1).join(' ') || '',
+      email: user?.email || '',
       role: user?.role || 'Member',
       timezone: 'UTC'
     }
@@ -229,16 +233,19 @@ function ProfileSection() {
   const roleOptions = formData.role && !registrationRoles.includes(formData.role)
     ? [formData.role, ...registrationRoles]
     : registrationRoles
-  const [avatar, setAvatar] = useState('')
+  const [avatar, setAvatar] = useState(user?.avatar || '')
+  const [avatarUploading, setAvatarUploading] = useState(false)
   const [showAvatarViewer, setShowAvatarViewer] = useState(false)
   const fileInputRef = useRef(null)
 
   useEffect(() => {
-    const stored = localStorage.getItem('userAvatar')
-    if (stored) {
-      setAvatar(stored)
-    }
-  }, [])
+    setAvatar(user?.avatar || '')
+  }, [user])
+
+  const avatarInitials = getInitials(
+    `${formData.firstName} ${formData.lastName}`.trim(),
+    formData.email || user?.email
+  )
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -250,7 +257,7 @@ function ProfileSection() {
     fileInputRef.current?.click()
   }
 
-  const handleAvatarUpload = (e) => {
+  const handleAvatarUpload = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
 
@@ -268,16 +275,40 @@ function ProfileSection() {
       return
     }
 
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = typeof reader.result === 'string' ? reader.result : ''
-      if (!result) return
-      setAvatar(result)
-      localStorage.setItem('userAvatar', result)
+    setAvatarUploading(true)
+    try {
+      const uploaded = await uploadFile(file, { folder: 'avatars' })
+      const url = uploaded?.url
+      if (!url) throw new Error('Upload did not return a URL')
+      setAvatar(url)
+      if (user) {
+        const updatedUser = { ...user, avatar: url }
+        setUser(updatedUser)
+      }
+      if (user?.id) {
+        const fullName = `${formData.firstName} ${formData.lastName}`.trim()
+        await fetch(`${API_BASE}/api/user`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-USER-ID': user.id
+          },
+          body: JSON.stringify({
+            name: fullName || user.name || '',
+            email: formData.email || user.email || '',
+            avatar: url,
+            role: formData.role,
+            timezone: formData.timezone
+          })
+        })
+      }
       alert('Avatar uploaded successfully!')
+    } catch (err) {
+      alert(err.message || 'Avatar upload failed')
+    } finally {
+      setAvatarUploading(false)
+      e.target.value = ''
     }
-    reader.readAsDataURL(file)
-    e.target.value = ''
   }
 
   const handleAvatarPreview = () => {
@@ -285,10 +316,33 @@ function ProfileSection() {
     setShowAvatarViewer(true)
   }
 
-  const handleRemoveAvatar = () => {
+  const handleRemoveAvatar = async () => {
     setAvatar('')
     setShowAvatarViewer(false)
-    localStorage.removeItem('userAvatar')
+    if (user) {
+      setUser({ ...user, avatar: '' })
+    }
+    if (user?.id) {
+      try {
+        const fullName = `${formData.firstName} ${formData.lastName}`.trim()
+        await fetch(`${API_BASE}/api/user`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-USER-ID': user.id
+          },
+          body: JSON.stringify({
+            name: fullName || user.name || '',
+            email: formData.email || user.email || '',
+            avatar: '',
+            role: formData.role,
+            timezone: formData.timezone
+          })
+        })
+      } catch (err) {
+        console.error('Failed to clear avatar', err)
+      }
+    }
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -325,10 +379,10 @@ function ProfileSection() {
           onClick={handleAvatarPreview}
           title={avatar ? 'Click to view avatar' : ''}
         >
-          {avatar ? <img src={avatar} alt="avatar preview" /> : 'SJ'}
+          {avatar ? <img src={avatar} alt="avatar preview" /> : avatarInitials}
         </div>
-        <button className="btn btn-outline-secondary btn-sm ms-3" onClick={handleAvatarClick}>
-          Change Avatar
+        <button className="btn btn-outline-secondary btn-sm ms-3" onClick={handleAvatarClick} disabled={avatarUploading}>
+          {avatarUploading ? 'Uploading...' : 'Change Avatar'}
         </button>
         <button className="btn btn-outline-danger btn-sm ms-2" onClick={handleRemoveAvatar} disabled={!avatar}>
           Remove Avatar

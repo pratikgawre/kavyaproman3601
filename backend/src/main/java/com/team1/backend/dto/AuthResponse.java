@@ -7,6 +7,7 @@ public class AuthResponse {
     private String email;
     private String name;
     private String role;
+    private String avatar;
 
     public AuthResponse() {}
 
@@ -29,6 +30,16 @@ public class AuthResponse {
         this.email = email;
         this.name = name;
         this.role = role;
+    }
+
+    public AuthResponse(boolean success, String message, String userId, String email, String name, String role, String avatar) {
+        this.success = success;
+        this.message = message;
+        this.userId = userId;
+        this.email = email;
+        this.name = name;
+        this.role = role;
+        this.avatar = avatar;
     }
 
     public boolean isSuccess() {
@@ -77,5 +88,13 @@ public class AuthResponse {
 
     public void setRole(String role) {
         this.role = role;
+    }
+
+    public String getAvatar() {
+        return avatar;
+    }
+
+    public void setAvatar(String avatar) {
+        this.avatar = avatar;
     }
 }
