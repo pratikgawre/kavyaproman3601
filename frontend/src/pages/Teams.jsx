@@ -6,6 +6,12 @@ import { NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import useIssueNotifications from '../hooks/useIssueNotifications'
 
+const stripLeadingSpace = (value) => value.replace(/^\s+/, '')
+const sanitizeEmail = (value) => stripLeadingSpace(value).replace(/[^A-Za-z0-9@.]/g, '')
+const preventLeadingSpace = (e) => {
+  if (e.key === ' ' && (e.currentTarget.selectionStart ?? 0) === 0) e.preventDefault()
+}
+
 const FALLBACK_MEMBERS = [
   { id: 1, name: 'Sarah Johnson', email: 'sarah.johnson@kavyapro.com', role: 'Admin', projects: 3, activeIssues: 8, image: 'https://randomuser.me/api/portraits/women/44.jpg' },
   { id: 2, name: 'Michael Chen', email: 'michael.chen@kavyapro.com', role: 'Developer', projects: 2, activeIssues: 6, image: 'https://randomuser.me/api/portraits/men/32.jpg' },
@@ -616,6 +622,97 @@ export default function Teams() {
             </button>
           </div>
 
+          {/* Roles & Permissions Tab Content */}
+          {activeTab === "Roles & Permissions" && (
+            <div className="roles-permissions-container">
+              <div className="roles-grid">
+                {/* Admin Role Card */}
+                <div className="role-card admin-card">
+                  <div className="role-icon">🛡️</div>
+                  <h3 className="role-title">Admin</h3>
+                  <p className="role-description">Full system access and configuration</p>
+                  <ul className="permissions-list">
+                    <li>✓ Manage users and roles</li>
+                    <li>✓ Create and delete projects</li>
+                    <li>✓ Configure workflows</li>
+                    <li>✓ Access all reports</li>
+                    <li>✓ System settings</li>
+                  </ul>
+                </div>
+
+                {/* Project Manager Role Card */}
+                <div className="role-card pm-card">
+                  <div className="role-icon">👤</div>
+                  <h3 className="role-title">Project Manager</h3>
+                  <p className="role-description">Manage projects and sprints</p>
+                  <ul className="permissions-list">
+                    <li>✓ Create and manage projects</li>
+                    <li>✓ Plan and manage sprints</li>
+                    <li>✓ Assign issues to team</li>
+                    <li>✓ View reports and analytics</li>
+                    <li>✓ Manage project settings</li>
+                  </ul>
+                </div>
+
+                {/* Developer Role Card */}
+                <div className="role-card dev-card">
+                  <div className="role-icon">💻</div>
+                  <h3 className="role-title">Developer</h3>
+                  <p className="role-description">Work on assigned tasks</p>
+                  <ul className="permissions-list">
+                    <li>✓ View and update issues</li>
+                    <li>✓ Log time on tasks</li>
+                    <li>✓ Comment and collaborate</li>
+                    <li>✓ Move issues on board</li>
+                    <li>✓ Create sub-tasks</li>
+                  </ul>
+                </div>
+
+                {/* Tester Role Card */}
+                <div className="role-card tester-card">
+                  <div className="role-icon">✓</div>
+                  <h3 className="role-title">Tester</h3>
+                  <p className="role-description">Test and verify issues</p>
+                  <ul className="permissions-list">
+                    <li>✓ Create bug reports</li>
+                    <li>✓ Test and verify fixes</li>
+                    <li>✓ Comment on issues</li>
+                    <li>✓ Update issue status</li>
+                    <li>✓ View test reports</li>
+                  </ul>
+                </div>
+
+                {/* Business Analyst Role Card */}
+                <div className="role-card ba-card">
+                  <div className="role-icon">📋</div>
+                  <h3 className="role-title">Business Analyst</h3>
+                  <p className="role-description">Requirements and documentation</p>
+                  <ul className="permissions-list">
+                    <li>✓ Create stories and epics</li>
+                    <li>✓ Define requirements</li>
+                    <li>✓ Manage backlog</li>
+                    <li>✓ View reports</li>
+                    <li>✓ Document features</li>
+                  </ul>
+                </div>
+
+                {/* Viewer Role Card */}
+                <div className="role-card viewer-card">
+                  <div className="role-icon">👁️</div>
+                  <h3 className="role-title">Viewer</h3>
+                  <p className="role-description">Read-only access</p>
+                  <ul className="permissions-list">
+                    <li>✓ View projects and issues</li>
+                    <li>✓ View boards and backlogs</li>
+                    <li>✓ View reports</li>
+                    <li>✓ Comment on issues</li>
+                    <li>✓ No edit permissions</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Member Cards */}
           <div className="member-cards" ref={memberListRef}>
             {filteredMembers.length > 0 ? (
@@ -771,7 +868,8 @@ export default function Teams() {
                   type="email"
                   placeholder="Enter member email"
                   value={inviteFormData.email}
-                  onChange={(e) => setInviteFormData({...inviteFormData, email: e.target.value})}
+                  onChange={(e) => setInviteFormData({...inviteFormData, email: sanitizeEmail(e.target.value)})}
+                  onKeyDown={preventLeadingSpace}
                   required
                 />
               </div>

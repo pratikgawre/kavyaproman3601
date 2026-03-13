@@ -1,11 +1,15 @@
-package com.team1.backend.subscription.dto;
+package com.team1.backend.subscription.model;
 
 import lombok.Data;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 
 @Data
-public class SubscriptionDto {
+@Document(collection = "subscription-member")
+public class SubscriptionMember {
+    @Id
     private String id;
     private String userId;
     private String organizationName;

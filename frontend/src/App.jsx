@@ -17,6 +17,9 @@ import Teams from "./pages/Teams";
 import Reports from './pages/Reports'
 import Subscription from './pages/Subscription'
 import ContactSales from './pages/ContactSales'
+import PaymentMethod from './pages/PaymentMethod'
+import PaymentSuccess from './pages/PaymentSuccess'
+import FreePlan from './pages/FreePlan'
 import Project from './pages/Project'
 import Board from './pages/Board'
 import Backlog from './pages/Backlog'
@@ -56,6 +59,9 @@ function App() {
         <Route path="/teams" element={<Teams />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/subscription" element={<Subscription />} />
+        <Route path="/free-plan" element={<FreePlan />} />
+        <Route path="/payment" element={<PaymentMethod />} />
+        <Route path="/payment-success" element={<PaymentSuccess />} />
         <Route path="/contact-sales" element={<ContactSales />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/projects" element={<Project />} />

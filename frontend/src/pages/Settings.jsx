@@ -19,6 +19,12 @@ import './Dashboard.css'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
+const stripLeadingSpace = (value) => value.replace(/^\s+/, '')
+const sanitizeEmail = (value) => stripLeadingSpace(value).replace(/[^A-Za-z0-9@.]/g, '')
+const preventLeadingSpace = (e) => {
+  if (e.key === ' ' && (e.currentTarget.selectionStart ?? 0) === 0) e.preventDefault()
+}
+
 export default function Settings() {
   const API_BASE = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:8080'
   // basic UI state
@@ -236,7 +242,8 @@ function ProfileSection() {
 
   const handleChange = (e) => {
     const { name, value } = e.target
-    setFormData(prev => ({ ...prev, [name]: value }))
+    const nextValue = name === 'email' ? sanitizeEmail(value) : value
+    setFormData(prev => ({ ...prev, [name]: nextValue }))
   }
 
   const handleAvatarClick = () => {
@@ -389,6 +396,7 @@ function ProfileSection() {
           name="email"
           value={formData.email}
           onChange={handleChange}
+          onKeyDown={preventLeadingSpace}
           placeholder="email@example.com" 
         />
       </div>
@@ -720,13 +728,13 @@ function SecuritySection({ apiBase }) {
             <button type="button" className="password-toggle" onClick={() => setShowNewPassword(s => !s)} aria-label={showNewPassword ? 'Hide password' : 'Show password'}>
               {showNewPassword ? (
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6">
-                  <path d="M17.94 17.94A10.97 10.97 0 0 1 12 20c-6 0-10-5.5-10-8 1.27-2.2 4.29-5 8.46-6.18" strokeLinecap="round" strokeLinejoin="round"></path>
-                  <path d="M1 1l22 22" strokeLinecap="round" strokeLinejoin="round"></path>
+                  <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" strokeLinecap="round" strokeLinejoin="round"></path>
+                  <circle cx="12" cy="12" r="3" strokeLinecap="round" strokeLinejoin="round"></circle>
                 </svg>
               ) : (
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6">
-                  <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" strokeLinecap="round" strokeLinejoin="round"></path>
-                  <circle cx="12" cy="12" r="3" strokeLinecap="round" strokeLinejoin="round"></circle>
+                  <path d="M17.94 17.94A10.97 10.97 0 0 1 12 20c-6 0-10-5.5-10-8 1.27-2.2 4.29-5 8.46-6.18" strokeLinecap="round" strokeLinejoin="round"></path>
+                  <path d="M1 1l22 22" strokeLinecap="round" strokeLinejoin="round"></path>
                 </svg>
               )}
             </button>
@@ -749,13 +757,13 @@ function SecuritySection({ apiBase }) {
             <button type="button" className="password-toggle" onClick={() => setShowConfirmPassword(s => !s)} aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}>
               {showConfirmPassword ? (
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6">
-                  <path d="M17.94 17.94A10.97 10.97 0 0 1 12 20c-6 0-10-5.5-10-8 1.27-2.2 4.29-5 8.46-6.18" strokeLinecap="round" strokeLinejoin="round"></path>
-                  <path d="M1 1l22 22" strokeLinecap="round" strokeLinejoin="round"></path>
+                  <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" strokeLinecap="round" strokeLinejoin="round"></path>
+                  <circle cx="12" cy="12" r="3" strokeLinecap="round" strokeLinejoin="round"></circle>
                 </svg>
               ) : (
                 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6">
-                  <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" strokeLinecap="round" strokeLinejoin="round"></path>
-                  <circle cx="12" cy="12" r="3" strokeLinecap="round" strokeLinejoin="round"></circle>
+                  <path d="M17.94 17.94A10.97 10.97 0 0 1 12 20c-6 0-10-5.5-10-8 1.27-2.2 4.29-5 8.46-6.18" strokeLinecap="round" strokeLinejoin="round"></path>
+                  <path d="M1 1l22 22" strokeLinecap="round" strokeLinejoin="round"></path>
                 </svg>
               )}
             </button>
