@@ -1,8 +1,9 @@
 import { useEffect, useState, useRef } from 'react'
 import { useNavigate, NavLink, useLocation } from 'react-router-dom'
 import './Dashboard.css'
-import { FiArrowLeft, FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLogOut, FiMenu, FiRepeat, FiEdit, FiTrash2, FiUpload, FiAlignLeft, FiAlignCenter, FiAlignRight, FiAlignJustify, FiX } from 'react-icons/fi'
+import { FiArrowLeft, FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLogOut, FiMenu, FiRepeat, FiEdit, FiTrash2, FiUpload, FiAlignLeft, FiAlignCenter, FiAlignRight, FiAlignJustify, FiX, FiSearch, FiBell, FiPlus } from 'react-icons/fi'
 import { useAuth } from '../context/AuthContext'
+import useIssueNotifications from '../hooks/useIssueNotifications'
 
 function stripHtml(value) {
   return (value || '').toString().replace(/<[^>]*>/g, ' ')
@@ -28,6 +29,21 @@ export default function AllMyIssues(){
   }, [])
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+  const [topSearchText, setTopSearchText] = useState('')
+  const [showNotifications, setShowNotifications] = useState(false)
+  const {
+    notifications,
+    unreadCount,
+    loading: notificationsLoading,
+    error: notificationsError,
+    markAsRead,
+    markAllAsRead,
+    dismissNotification,
+    clearAllNotifications
+  } = useIssueNotifications({ limit: 6 })
+  const notificationRef = useRef(null)
+  const topSearchInputRef = useRef(null)
   const [editingIndex, setEditingIndex] = useState(-1)
   const [editFields, setEditFields] = useState({ project:'', issueType:'Story', epicName:'', summary:'', description:'', attachments:[] })
   const [editErrors, setEditErrors] = useState({})
@@ -95,6 +111,58 @@ export default function AllMyIssues(){
     }
   })()
 
+  useEffect(() => {
+    setTopSearchText(searchQuery || '')
+  }, [searchQuery])
+
+  useEffect(() => {
+    function handleOutsideClick(event) {
+      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
+        setShowNotifications(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [])
+
+  useEffect(() => {
+    if (!mobileSearchOpen) return
+    const timeoutId = setTimeout(() => topSearchInputRef.current?.focus(), 0)
+    return () => clearTimeout(timeoutId)
+  }, [mobileSearchOpen])
+
+  function toggleNotifications() {
+    setShowNotifications((prev) => !prev)
+  }
+
+  function isMobileScreen() {
+    return typeof window !== 'undefined' && window.innerWidth <= 768
+  }
+
+  function runIssueSearch() {
+    const query = (topSearchText || '').trim()
+    const params = new URLSearchParams(location.search)
+    if (query) params.set('q', query)
+    else params.delete('q')
+
+    setMobileSearchOpen(false)
+    const qs = params.toString()
+    navigate(qs ? `/all-my-issues?${qs}` : '/all-my-issues')
+  }
+
+  function handleTopSearchIconClick(event) {
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (isMobileScreen() && !mobileSearchOpen) {
+      setMobileSearchOpen(true)
+      return
+    }
+
+    runIssueSearch()
+  }
+
   useEffect(()=>{
     async function load(){
       try{
@@ -114,7 +182,23 @@ export default function AllMyIssues(){
             const key = (p.key || p.issueKey || p.id || '').toString().toLowerCase()
             const title = (p.summary || p.title || '').toString().toLowerCase()
             const description = stripHtml(p.description).toLowerCase()
-            return key.includes(wanted) || title.includes(wanted) || description.includes(wanted)
+            const project = (p.project || p.projectName || '').toString().toLowerCase()
+            const type = (p.issueType || p.type || '').toString().toLowerCase()
+            const status = (p.status || p.issueStatus || '').toString().toLowerCase()
+            const priority = (p.priority || p.difficulty || '').toString().toLowerCase()
+            const assignee = (p.assignee || '').toString().toLowerCase()
+            const creator = (p.creatorName || p.creatorEmail || '').toString().toLowerCase()
+            return (
+              key.includes(wanted) ||
+              title.includes(wanted) ||
+              description.includes(wanted) ||
+              project.includes(wanted) ||
+              type.includes(wanted) ||
+              status.includes(wanted) ||
+              priority.includes(wanted) ||
+              assignee.includes(wanted) ||
+              creator.includes(wanted)
+            )
           })
         }
         if (filterParams.project.length) {
@@ -348,7 +432,140 @@ export default function AllMyIssues(){
       <div className={`mobile-overlay ${mobileOpen ? 'show' : ''}`} onClick={() => { setMobileOpen(false); setCollapsed(true) }} />
 
       <main className={`content flex-grow-1 p-4 ${collapsed ? 'with-topbar' : ''}`}>
-        <div style={{display:'flex',alignItems:'center',gap:12,marginTop:70}}>
+        <div className={`top-search-row mb-3 ${mobileSearchOpen ? 'mobile-search-open' : ''}`}>
+          <div
+            className={`input-group top-search-medium ${mobileSearchOpen ? 'mobile-open' : ''}`}
+            onClick={() => {
+              if (isMobileScreen() && !mobileSearchOpen) {
+                setMobileSearchOpen(true)
+                return
+              }
+              topSearchInputRef.current?.focus()
+            }}
+          >
+            <button
+              type="button"
+              className="input-group-text"
+              aria-label="Search"
+              onClick={handleTopSearchIconClick}
+            >
+              <FiSearch />
+            </button>
+            <input
+              ref={topSearchInputRef}
+              className="form-control"
+              placeholder="Search issues, projects..."
+              aria-label="Search projects and issues"
+              value={topSearchText}
+              onChange={(event) => setTopSearchText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') runIssueSearch()
+              }}
+              onFocus={() => {
+                if (isMobileScreen()) setMobileSearchOpen(true)
+              }}
+            />
+            {mobileSearchOpen && (
+              <button
+                type="button"
+                className="dashboard-search-close"
+                aria-label="Close search"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setMobileSearchOpen(false)
+                }}
+              >
+                <FiX size={16} />
+              </button>
+            )}
+          </div>
+
+          <div className="notification-wrapper me-2" ref={notificationRef}>
+            <button
+              className={`btn btn-link bell-black ${unreadCount > 0 ? 'has-unread' : ''}`}
+              title="Notifications"
+              onClick={toggleNotifications}
+              type="button"
+            >
+              <FiBell size={20} />
+              {unreadCount > 0 && <span className="notif-count">{unreadCount}</span>}
+            </button>
+
+            {showNotifications && (
+              <div className="notification-dropdown">
+                <div className="notification-header">
+                  <span>Notifications</span>
+                  {(unreadCount > 0 || notifications.length > 0) && (
+                    <div className="notification-actions">
+                      {unreadCount > 0 && (
+                        <button className="mark-all-btn" type="button" onClick={markAllAsRead}>
+                          Mark all read
+                        </button>
+                      )}
+                      {notifications.length > 0 && (
+                        <button className="clear-all-btn" type="button" onClick={clearAllNotifications}>
+                          Clear all
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="notification-list">
+                  {notificationsLoading && (
+                    <div className="muted p-3">Loading notifications...</div>
+                  )}
+                  {!notificationsLoading && notifications.length === 0 && (
+                    <div className="muted p-3">{notificationsError || 'No notifications yet'}</div>
+                  )}
+                  {!notificationsLoading && notifications.length > 0 && notifications.map((n) => (
+                    <div
+                      key={n.id}
+                      className={`notification-item-row ${n.read ? 'read' : 'unread'}`}
+                      data-variant={n.variant}
+                      onClick={() => {
+                        markAsRead(n.id)
+                        setShowNotifications(false)
+                        if (n.href) navigate(n.href)
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          markAsRead(n.id)
+                          setShowNotifications(false)
+                          if (n.href) navigate(n.href)
+                        }
+                      }}
+                    >
+                      <div className="notification-item-body">
+                        <div className="notification-title">{n.title}</div>
+                        <div className="notification-time">{n.time}</div>
+                      </div>
+                      <button
+                        type="button"
+                        className="notification-dismiss-btn"
+                        aria-label="Dismiss notification"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          dismissNotification(n.id)
+                        }}
+                      >
+                        <FiX size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button className="btn create-issue-medium" onClick={() => navigate('/create-issue')} type="button">
+            <FiPlus className="me-1" /> Create Issue
+          </button>
+        </div>
+
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
           <button className="view-all-btn" onClick={()=>navigate('/dashboard')}><FiArrowLeft /> Back</button>
           <h2 style={{margin:0}}>All My Issues</h2>
         </div>

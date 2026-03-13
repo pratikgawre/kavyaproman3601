@@ -8,6 +8,22 @@ import { BOARD_COLUMNS } from '../data/boardColumns'
 import { useAuth } from '../context/AuthContext'
 import useIssueNotifications from '../hooks/useIssueNotifications'
 
+function formatDateForInput(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getDefaultDueDateRange(daysBack = 30) {
+  const today = new Date()
+  const to = formatDateForInput(today)
+  const fromDate = new Date(today)
+  fromDate.setDate(fromDate.getDate() - daysBack)
+  const from = formatDateForInput(fromDate)
+  return { from, to }
+}
+
 export default function Dashboard({ initialShowCreate = false }) {
   const API_BASE = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:8080'
   const navigate = useNavigate()
@@ -29,8 +45,8 @@ export default function Dashboard({ initialShowCreate = false }) {
     unreadCount,
     loading: notificationsLoading,
     error: notificationsError,
-    markAsRead,
-    markAllAsRead,
+    markAsRead: markNotificationAsRead,
+    markAllAsRead: markAllNotificationsAsRead,
     dismissNotification,
     clearAllNotifications
   } = useIssueNotifications({ limit: 6 })
@@ -84,6 +100,7 @@ export default function Dashboard({ initialShowCreate = false }) {
   const [savedFilters, setSavedFilters] = useState([])
   const fileInputRef = useRef(null)
   const notificationRef = useRef(null)
+  const topSearchInputRef = useRef(null)
   const activeFilterCount =
     selectedFilters.status.length +
     selectedFilters.issueType.length +
@@ -93,6 +110,7 @@ export default function Dashboard({ initialShowCreate = false }) {
     selectedFilters.project.length +
     (selectedFilters.dueFrom ? 1 : 0) +
     (selectedFilters.dueTo ? 1 : 0)
+  const todayDateValue = formatDateForInput(new Date())
 
   useEffect(() => {
     function handleOutsideClick(e) {
@@ -104,6 +122,25 @@ export default function Dashboard({ initialShowCreate = false }) {
     document.addEventListener('mousedown', handleOutsideClick)
     return () => document.removeEventListener('mousedown', handleOutsideClick)
   }, [])
+
+  useEffect(() => {
+    if (!showFilters) return
+    const { from, to } = getDefaultDueDateRange(30)
+    setSelectedFilters((prev) => {
+      const dueFrom = prev.dueFrom || from
+      return {
+        ...prev,
+        dueFrom: dueFrom > to ? from : dueFrom,
+        dueTo: to
+      }
+    })
+  }, [showFilters])
+
+  useEffect(() => {
+    if (!mobileSearchOpen) return
+    const timeoutId = setTimeout(() => topSearchInputRef.current?.focus(), 0)
+    return () => clearTimeout(timeoutId)
+  }, [mobileSearchOpen])
 
   useEffect(() => {
     try {
@@ -453,6 +490,18 @@ export default function Dashboard({ initialShowCreate = false }) {
     navigate(`/all-my-issues?q=${encodeURIComponent(query)}`)
   }
 
+  function handleTopSearchIconClick(event) {
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (isMobileScreen() && !mobileSearchOpen) {
+      setMobileSearchOpen(true)
+      return
+    }
+
+    runIssueSearch()
+  }
+
   return (
     <div className="dashboard-root d-flex">
       <aside className={`sidebar d-flex flex-column ${collapsed ? 'collapsed' : ''} ${mobileOpen ? 'open' : ''}`}>
@@ -551,11 +600,23 @@ export default function Dashboard({ initialShowCreate = false }) {
               <div
                 className={`input-group top-search-medium ${mobileSearchOpen ? 'mobile-open' : ''}`}
                 onClick={() => {
-                  if (isMobileScreen() && !mobileSearchOpen) setMobileSearchOpen(true)
+                  if (isMobileScreen() && !mobileSearchOpen) {
+                    setMobileSearchOpen(true)
+                    return
+                  }
+                  topSearchInputRef.current?.focus()
                 }}
               >
-                <span className="input-group-text"><FiSearch /></span>
+                <button
+                  type="button"
+                  className="input-group-text"
+                  aria-label="Search"
+                  onClick={handleTopSearchIconClick}
+                >
+                  <FiSearch />
+                </button>
                 <input
+                  ref={topSearchInputRef}
                   className="form-control"
                   placeholder="Search issues, projects..."
                   aria-label="Search projects and issues"
@@ -600,7 +661,7 @@ export default function Dashboard({ initialShowCreate = false }) {
                       {(unreadCount > 0 || notifications.length > 0) && (
                         <div className="notification-actions">
                           {unreadCount > 0 && (
-                            <button className="mark-all-btn" type="button" onClick={markAllAsRead}>
+                            <button className="mark-all-btn" type="button" onClick={markAllNotificationsAsRead}>
                               Mark all read
                             </button>
                           )}
@@ -625,7 +686,7 @@ export default function Dashboard({ initialShowCreate = false }) {
                           className={`notification-item-row ${n.read ? 'read' : 'unread'}`}
                           data-variant={n.variant}
                           onClick={() => {
-                            markAsRead(n.id)
+                            markNotificationAsRead(n.id)
                             setShowNotifications(false)
                             if (n.href) navigate(n.href)
                           }}
@@ -634,7 +695,7 @@ export default function Dashboard({ initialShowCreate = false }) {
                           onKeyDown={(event) => {
                             if (event.key === 'Enter' || event.key === ' ') {
                               event.preventDefault()
-                              markAsRead(n.id)
+                              markNotificationAsRead(n.id)
                               setShowNotifications(false)
                               if (n.href) navigate(n.href)
                             }
@@ -717,11 +778,11 @@ export default function Dashboard({ initialShowCreate = false }) {
                     <div className="filter-section">
                       <h6>Issue Type</h6>
                       <div className="filter-list">
-                        <label><input type="checkbox" checked={selectedFilters.issueType.includes('Epic')} onChange={() => toggleFilterSelection('issueType', 'Epic')} /> ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ Epic</label>
-                        <label><input type="checkbox" checked={selectedFilters.issueType.includes('Story')} onChange={() => toggleFilterSelection('issueType', 'Story')} /> ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã¢â‚¬Â¹Ãƒâ€¦Ã¢â‚¬Å“ Story</label>
-                        <label><input type="checkbox" checked={selectedFilters.issueType.includes('Task')} onChange={() => toggleFilterSelection('issueType', 'Task')} /> ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ Task</label>
-                        <label><input type="checkbox" checked={selectedFilters.issueType.includes('Bug')} onChange={() => toggleFilterSelection('issueType', 'Bug')} /> ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Âº Bug</label>
-                        <label><input type="checkbox" checked={selectedFilters.issueType.includes('Sub-task')} onChange={() => toggleFilterSelection('issueType', 'Sub-task')} /> ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ Sub-task</label>
+                        <label><input type="checkbox" checked={selectedFilters.issueType.includes('Epic')} onChange={() => toggleFilterSelection('issueType', 'Epic')} /> Epic</label>
+                        <label><input type="checkbox" checked={selectedFilters.issueType.includes('Story')} onChange={() => toggleFilterSelection('issueType', 'Story')} /> Story</label>
+                        <label><input type="checkbox" checked={selectedFilters.issueType.includes('Task')} onChange={() => toggleFilterSelection('issueType', 'Task')} /> Task</label>
+                        <label><input type="checkbox" checked={selectedFilters.issueType.includes('Bug')} onChange={() => toggleFilterSelection('issueType', 'Bug')} /> Bug</label>
+                        <label><input type="checkbox" checked={selectedFilters.issueType.includes('Sub-task')} onChange={() => toggleFilterSelection('issueType', 'Sub-task')} /> Sub-task</label>
                       </div>
                     </div>
 
@@ -740,7 +801,7 @@ export default function Dashboard({ initialShowCreate = false }) {
                       <h6>Priority</h6>
                       <div className="filter-list priority-list">
                         <label><input type="checkbox" checked={selectedFilters.priority.includes('High')} onChange={() => toggleFilterSelection('priority', 'High')} /><span className="dot dot-red"/> High</label>
-                        <label><input type="checkbox" checked={selectedFilters.priority.includes('Medium')} onChange={() => toggleFilterSelection('priority', 'Medium')} /><span className="dot dot-orange"/> Medium</label>
+                        <label><input type="checkbox" checked={selectedFilters.priority.includes('Medium')} onChange={() => toggleFilterSelection('priority', 'Medium')} /><span className="dot dot-yellow"/> Medium</label>
                         <label><input type="checkbox" checked={selectedFilters.priority.includes('Low')} onChange={() => toggleFilterSelection('priority', 'Low')} /><span className="dot dot-green"/> Low</label>
                       </div>
                     </div>
@@ -758,9 +819,9 @@ export default function Dashboard({ initialShowCreate = false }) {
                     <div className="filter-section">
                       <h6>Project</h6>
                       <div className="filter-list project-list">
-                        <label><input type="checkbox" checked={selectedFilters.project.includes('KavyaProMan 360')} onChange={() => toggleFilterSelection('project', 'KavyaProMan 360')} /> ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ KavyaProMan 360</label>
-                        <label><input type="checkbox" checked={selectedFilters.project.includes('Website Redesign')} onChange={() => toggleFilterSelection('project', 'Website Redesign')} /> ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â Website Redesign</label>
-                        <label><input type="checkbox" checked={selectedFilters.project.includes('Mobile App')} onChange={() => toggleFilterSelection('project', 'Mobile App')} /> ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â± Mobile App</label>
+                        <label><input type="checkbox" checked={selectedFilters.project.includes('KavyaProMan 360')} onChange={() => toggleFilterSelection('project', 'KavyaProMan 360')} /> KavyaProMan 360</label>
+                        <label><input type="checkbox" checked={selectedFilters.project.includes('Website Redesign')} onChange={() => toggleFilterSelection('project', 'Website Redesign')} /> Website Redesign</label>
+                        <label><input type="checkbox" checked={selectedFilters.project.includes('Mobile App')} onChange={() => toggleFilterSelection('project', 'Mobile App')} /> Mobile App</label>
                       </div>
                     </div>
                   </div>
@@ -776,6 +837,7 @@ export default function Dashboard({ initialShowCreate = false }) {
                       type="date"
                       className="date-input"
                       value={selectedFilters.dueFrom}
+                      max={selectedFilters.dueTo || todayDateValue}
                       onChange={(e) => setSelectedFilters(prev => ({ ...prev, dueFrom: e.target.value }))}
                     />
                   </div>
@@ -785,6 +847,8 @@ export default function Dashboard({ initialShowCreate = false }) {
                       type="date"
                       className="date-input"
                       value={selectedFilters.dueTo}
+                      min={selectedFilters.dueFrom || undefined}
+                      max={todayDateValue}
                       onChange={(e) => setSelectedFilters(prev => ({ ...prev, dueTo: e.target.value }))}
                     />
                   </div>
@@ -1038,7 +1102,7 @@ export default function Dashboard({ initialShowCreate = false }) {
                   <span className="dot dot-red"/> High <span className="legend-count">{difficultyCounts.High}</span>
                 </div>
                 <div className="legend-row clickable legend-medium" onClick={() => navigate('/all-my-issues?difficulty=Medium')} role="button" tabIndex={0} onKeyDown={(e)=>{ if(e.key==='Enter') navigate('/all-my-issues?difficulty=Medium') }}>
-                  <span className="dot dot-orange"/> Medium <span className="legend-count">{difficultyCounts.Medium}</span>
+                  <span className="dot dot-yellow"/> Medium <span className="legend-count">{difficultyCounts.Medium}</span>
                 </div>
                 <div className="legend-row clickable legend-low" onClick={() => navigate('/all-my-issues?difficulty=Low')} role="button" tabIndex={0} onKeyDown={(e)=>{ if(e.key==='Enter') navigate('/all-my-issues?difficulty=Low') }}>
                   <span className="dot dot-green"/> Low <span className="legend-count">{difficultyCounts.Low}</span>

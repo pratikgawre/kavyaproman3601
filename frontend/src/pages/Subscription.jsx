@@ -5,6 +5,7 @@ import { FiSearch, FiBell, FiPlus, FiZap, FiStar, FiCheck, FiGrid, FiFolder, FiU
 import { GiCrown } from 'react-icons/gi'
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
+import API_BASE from '../config/api'
 import useIssueNotifications from '../hooks/useIssueNotifications'
 
 export default function Subscription() {
@@ -40,11 +41,14 @@ export default function Subscription() {
   const [currentBillingCycle, setCurrentBillingCycle] = useState('monthly')
   const [selectedPlan, setSelectedPlan] = useState(DEFAULT_PLAN)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+  const [topSearchText, setTopSearchText] = useState('')
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [modalPlan, setModalPlan] = useState(null)
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('card')
   const [upiCopied, setUpiCopied] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
+  const [payments, setPayments] = useState([])
+  const [paymentsLoading, setPaymentsLoading] = useState(false)
   const {
     notifications,
     unreadCount,
@@ -56,6 +60,11 @@ export default function Subscription() {
     clearAllNotifications
   } = useIssueNotifications({ limit: 6 })
   const notificationRef = useRef(null)
+  const topSearchInputRef = useRef(null)
+  const freePlanRef = useRef(null)
+  const professionalPlanRef = useRef(null)
+  const businessPlanRef = useRef(null)
+  const enterprisePlanRef = useRef(null)
 
   useEffect(() => {
     const handleOutsideClick = (e) => {
@@ -281,6 +290,31 @@ export default function Subscription() {
     }
   }
 
+  function isMobileScreen() {
+    return typeof window !== 'undefined' && window.innerWidth <= 768
+  }
+
+  function runIssueSearch() {
+    const query = (topSearchText || '').trim()
+    if (!query) {
+      navigate('/all-my-issues')
+      return
+    }
+    navigate(`/all-my-issues?q=${encodeURIComponent(query)}`)
+  }
+
+  function handleTopSearchIconClick(event) {
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (isMobileScreen() && !mobileSearchOpen) {
+      setMobileSearchOpen(true)
+      return
+    }
+
+    runIssueSearch()
+  }
+
 return (
     <div className="dashboard-root d-flex">
       <aside className={`sidebar d-flex flex-column ${collapsed ? 'collapsed' : ''} ${mobileOpen ? 'open' : ''}`}>
@@ -354,9 +388,38 @@ return (
           <header className="dash-header mb-4">
             <div>
               <div className="top-search-row mb-3 d-flex align-items-center">
-                <div className="input-group top-search-medium">
-                  <span className="input-group-text" role="button" aria-label="Open search" onClick={() => setMobileSearchOpen(true)}><FiSearch /></span>
-                  <input className="form-control" placeholder="Search issues, projects..." aria-label="Search projects and issues" />
+                <div
+                  className="input-group top-search-medium"
+                  onClick={() => {
+                    if (isMobileScreen() && !mobileSearchOpen) {
+                      setMobileSearchOpen(true)
+                      return
+                    }
+                    topSearchInputRef.current?.focus()
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="input-group-text"
+                    aria-label="Search"
+                    onClick={handleTopSearchIconClick}
+                  >
+                    <FiSearch />
+                  </button>
+                  <input
+                    ref={topSearchInputRef}
+                    className="form-control"
+                    placeholder="Search issues, projects..."
+                    aria-label="Search projects and issues"
+                    value={topSearchText}
+                    onChange={(event) => setTopSearchText(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') runIssueSearch()
+                    }}
+                    onFocus={() => {
+                      if (isMobileScreen()) setMobileSearchOpen(true)
+                    }}
+                  />
                 </div>
 
                 <div className="notification-wrapper me-2" ref={notificationRef}>
@@ -460,8 +523,34 @@ return (
             <div className="mobile-search-overlay" role="dialog" aria-modal="true" onClick={() => setMobileSearchOpen(false)}>
               <div className="mobile-search-box" onClick={(e) => e.stopPropagation()}>
                 <div className="input-group">
-                  <span className="input-group-text"><FiSearch /></span>
-                  <input autoFocus className="form-control" placeholder="Search issues, projects..." aria-label="Mobile search input" />
+                  <button
+                    type="button"
+                    className="input-group-text"
+                    aria-label="Search"
+                    onClick={(event) => {
+                      event.preventDefault()
+                      const query = (topSearchText || '').trim()
+                      if (!query) return
+                      setMobileSearchOpen(false)
+                      runIssueSearch()
+                    }}
+                  >
+                    <FiSearch />
+                  </button>
+                  <input
+                    autoFocus
+                    className="form-control"
+                    placeholder="Search issues, projects..."
+                    aria-label="Mobile search input"
+                    value={topSearchText}
+                    onChange={(event) => setTopSearchText(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        setMobileSearchOpen(false)
+                        runIssueSearch()
+                      }
+                    }}
+                  />
                   <button className="btn btn-link ms-2" aria-label="Close search" onClick={() => setMobileSearchOpen(false)}><FiX size={20} /></button>
                 </div>
               </div>

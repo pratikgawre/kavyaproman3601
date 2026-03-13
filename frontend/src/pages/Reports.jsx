@@ -147,6 +147,7 @@ const Reports = () => {
     clearAllNotifications
   } = useIssueNotifications({ limit: 6 });
   const notificationRef = useRef(null);
+  const topSearchInputRef = useRef(null);
 
   useEffect(() => {
     const handleOutsideClick = (event) => {
@@ -159,6 +160,12 @@ const Reports = () => {
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
 
+  useEffect(() => {
+    if (!mobileSearchOpen) return;
+    const timeoutId = setTimeout(() => topSearchInputRef.current?.focus(), 0);
+    return () => clearTimeout(timeoutId);
+  }, [mobileSearchOpen]);
+
   const toggleSidebarForScreen = () => {
     setCollapsed(prev => {
       const next = !prev;
@@ -170,6 +177,27 @@ const Reports = () => {
   };
 
   const isMobileScreen = () => typeof window !== "undefined" && window.innerWidth <= 768;
+
+  const runIssueSearch = () => {
+    const query = (topSearchText || "").trim();
+    if (!query) {
+      navigate("/all-my-issues");
+      return;
+    }
+    navigate(`/all-my-issues?q=${encodeURIComponent(query)}`);
+  };
+
+  const handleTopSearchIconClick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (isMobileScreen() && !mobileSearchOpen) {
+      setMobileSearchOpen(true);
+      return;
+    }
+
+    runIssueSearch();
+  };
 
   return (
     <div className="dashboard-root d-flex">
@@ -249,15 +277,30 @@ const Reports = () => {
           <div
             className={`input-group top-search-medium ${mobileSearchOpen ? "mobile-open" : ""}`}
             onClick={() => {
-              if (isMobileScreen() && !mobileSearchOpen) setMobileSearchOpen(true);
+              if (isMobileScreen() && !mobileSearchOpen) {
+                setMobileSearchOpen(true);
+                return;
+              }
+              topSearchInputRef.current?.focus();
             }}
           >
-            <span className="input-group-text"><FiSearch /></span>
+            <button
+              type="button"
+              className="input-group-text"
+              aria-label="Search"
+              onClick={handleTopSearchIconClick}
+            >
+              <FiSearch />
+            </button>
             <input
+              ref={topSearchInputRef}
               className="form-control"
               placeholder="Search issues, projects..."
               value={topSearchText}
               onChange={(e) => setTopSearchText(e.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") runIssueSearch();
+              }}
               onFocus={() => {
                 if (isMobileScreen()) setMobileSearchOpen(true);
               }}

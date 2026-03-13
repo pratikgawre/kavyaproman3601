@@ -98,7 +98,7 @@ export default function Project() {
   const [showArchivedProjects, setShowArchivedProjects] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
-  const [searchText, setSearchText] = useState('')
+  const [topSearchText, setTopSearchText] = useState('')
   const {
     notifications,
     unreadCount,
@@ -111,6 +111,7 @@ export default function Project() {
     clearAllNotifications
   } = useIssueNotifications({ limit: 6 })
   const notificationRef = useRef(null)
+  const topSearchInputRef = useRef(null)
   const activeProjects = projects.filter((project) => !project.isArchived)
   const archivedProjects = projects.filter((project) => project.isArchived)
   const visibleProjects = showArchivedProjects ? archivedProjects : activeProjects
@@ -140,6 +141,12 @@ export default function Project() {
     document.addEventListener('mousedown', handleOutsideClick)
     return () => document.removeEventListener('mousedown', handleOutsideClick)
   }, [])
+
+  useEffect(() => {
+    if (!mobileSearchOpen) return
+    const timeoutId = setTimeout(() => topSearchInputRef.current?.focus(), 0)
+    return () => clearTimeout(timeoutId)
+  }, [mobileSearchOpen])
 
 
   function handleLogout() {
@@ -272,6 +279,27 @@ export default function Project() {
 
   function isMobileScreen() {
     return typeof window !== 'undefined' && window.innerWidth <= 768
+  }
+
+  function runIssueSearch() {
+    const query = (topSearchText || '').trim()
+    if (!query) {
+      navigate('/all-my-issues')
+      return
+    }
+    navigate(`/all-my-issues?q=${encodeURIComponent(query)}`)
+  }
+
+  function handleTopSearchIconClick(event) {
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (isMobileScreen() && !mobileSearchOpen) {
+      setMobileSearchOpen(true)
+      return
+    }
+
+    runIssueSearch()
   }
 
   function renderCreateTabContent() {
@@ -607,16 +635,31 @@ export default function Project() {
             <div
               className={`input-group top-search-medium ${mobileSearchOpen ? 'mobile-open' : ''}`}
               onClick={() => {
-                if (isMobileScreen() && !mobileSearchOpen) setMobileSearchOpen(true)
+                if (isMobileScreen() && !mobileSearchOpen) {
+                  setMobileSearchOpen(true)
+                  return
+                }
+                topSearchInputRef.current?.focus()
               }}
             >
-              <span className="input-group-text"><FiSearch /></span>
+              <button
+                type="button"
+                className="input-group-text"
+                aria-label="Search"
+                onClick={handleTopSearchIconClick}
+              >
+                <FiSearch />
+              </button>
               <input
+                ref={topSearchInputRef}
                 className="form-control"
                 placeholder="Search issues, projects..."
                 aria-label="Search issues and projects"
-                value={searchText}
-                onChange={(event) => setSearchText(event.target.value)}
+                value={topSearchText}
+                onChange={(event) => setTopSearchText(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') runIssueSearch()
+                }}
                 onFocus={() => { if (isMobileScreen()) setMobileSearchOpen(true) }}
               />
               {mobileSearchOpen && (
