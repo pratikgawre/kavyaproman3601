@@ -42,7 +42,7 @@ function AuthThemeGuard() {
 
 function App() {
   const API_BASE = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:8080'
-  const { user, setUser } = useAuth()
+  const { user, setUser, clearUser } = useAuth()
 
   useEffect(() => {
     async function syncUserFromDb() {
@@ -52,6 +52,10 @@ function App() {
         const res = await fetch(`${API_BASE}/api/user`, {
           headers: { 'X-USER-ID': String(user.id) }
         })
+        if (res.status === 404) {
+          clearUser()
+          return
+        }
         if (!res.ok) return
 
         const dbUser = await res.json()
@@ -69,7 +73,7 @@ function App() {
     }
 
     syncUserFromDb()
-  }, [API_BASE, setUser, user?.id])
+  }, [API_BASE, clearUser, setUser, user?.id])
 
   return (
     <BrowserRouter>
