@@ -8,7 +8,6 @@ import { useAuth } from '../context/AuthContext'
 import API_BASE from '../config/api'
 import useIssueNotifications from '../hooks/useIssueNotifications'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080'
 const getAvatarInitials = (name, email) => {
   const source = (name || '').trim() || (email || '').trim()
   if (!source) return 'G'

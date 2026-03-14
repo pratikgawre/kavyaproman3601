@@ -66,7 +66,8 @@ public class AuthService {
     }
 
     public AuthResponse login(LoginRequest req) {
-        Optional<User> u = userRepository.findByEmail(req.getEmail());
+        String email = req.getEmail() == null ? "" : req.getEmail().trim().toLowerCase();
+        Optional<User> u = userRepository.findByEmail(email);
         if (u.isEmpty()) {
             return new AuthResponse(false, "Invalid credentials");
         }
@@ -129,7 +130,8 @@ public class AuthService {
 
     // forgot password: send reset OTP to email if user exists
     public AuthResponse forgotPassword(String email) {
-        Optional<User> u = userRepository.findByEmail(email);
+        String normalized = email == null ? "" : email.trim().toLowerCase();
+        Optional<User> u = userRepository.findByEmail(normalized);
         if (u.isEmpty()) return new AuthResponse(false, "User not found");
         User user = u.get();
         SecureRandom rnd = new SecureRandom();

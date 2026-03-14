@@ -11,6 +11,7 @@ import {
   FiMenu,
   FiRepeat,
   FiArrowRight,
+  FiLock,
   FiX
 } from 'react-icons/fi'
 import './Settings.css'
@@ -18,7 +19,7 @@ import './Dashboard.css'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { uploadFile } from '../utils/upload'
-import { getInitials } from '../utils/initials'
+import API_BASE from '../config/api'
 
 const stripLeadingSpace = (value) => value.replace(/^\s+/, '')
 const sanitizeEmail = (value) => stripLeadingSpace(value).replace(/[^A-Za-z0-9@.]/g, '')
@@ -223,9 +224,6 @@ function ProfileSection() {
   const { user, setUser } = useAuth()
   const registrationRoles = ['Admin', 'Project Manager', 'Developer', 'Tester', 'Business Analyst']
   const [formData, setFormData] = useState(() => {
-    const savedProfile = JSON.parse(localStorage.getItem('profileSettings') || 'null')
-    if (savedProfile) return savedProfile
-
     const fullName = (user?.name || '').trim()
     const nameParts = fullName ? fullName.split(/\s+/) : []
 
@@ -234,7 +232,7 @@ function ProfileSection() {
       lastName: nameParts.slice(1).join(' ') || '',
       email: user?.email || '',
       role: user?.role || 'Member',
-      timezone: 'UTC'
+      timezone: user?.timezone || 'UTC'
     }
   })
   const roleOptions = formData.role && !registrationRoles.includes(formData.role)
@@ -242,21 +240,58 @@ function ProfileSection() {
     : registrationRoles
   const [avatar, setAvatar] = useState(user?.avatar || '')
   const [showAvatarViewer, setShowAvatarViewer] = useState(false)
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const [profileLoading, setProfileLoading] = useState(false)
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [profileError, setProfileError] = useState('')
   const fileInputRef = useRef(null)
 
   useEffect(() => {
-    if (user?.avatar) {
-      setAvatar(user.avatar)
-      return
-    }
-    const stored = localStorage.getItem('userAvatar')
-    if (stored) {
-      setAvatar(stored)
-      if (user) {
-        setUser({ ...user, avatar: stored })
+    let cancelled = false
+
+    async function loadProfile() {
+      if (!user?.id) return
+      setProfileError('')
+      setProfileLoading(true)
+      try {
+        const res = await fetch(`${API_BASE}/api/user`, {
+          headers: { 'X-USER-ID': String(user.id) }
+        })
+        const body = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(body.message || 'Failed to load profile')
+        if (cancelled) return
+
+        const fullName = (body?.name || '').trim()
+        const nameParts = fullName ? fullName.split(/\s+/) : []
+
+        setFormData({
+          firstName: nameParts[0] || '',
+          lastName: nameParts.slice(1).join(' ') || '',
+          email: body?.email || '',
+          role: body?.role || 'Member',
+          timezone: body?.timezone || 'UTC'
+        })
+        setAvatar(body?.avatar || '')
+
+        setUser({
+          ...(user || {}),
+          id: body?.id || user.id,
+          name: body?.name,
+          email: body?.email,
+          avatar: body?.avatar,
+          role: body?.role,
+          timezone: body?.timezone
+        })
+      } catch (err) {
+        if (!cancelled) setProfileError(err.message || 'Failed to load profile')
+      } finally {
+        if (!cancelled) setProfileLoading(false)
       }
     }
-  }, [user?.avatar])
+
+    loadProfile()
+    return () => { cancelled = true }
+  }, [setUser, user?.id])
 
   const handleChange = (e) => {
     const { name, value } = e.target
@@ -268,39 +303,97 @@ function ProfileSection() {
     fileInputRef.current?.click()
   }
 
+  async function saveProfile({ nextAvatar } = {}) {
+    if (!user?.id) throw new Error('Please login again.')
+
+    let name = `${formData.firstName} ${formData.lastName}`.trim()
+    let email = (formData.email || '').trim()
+    let role = (formData.role || '').trim() || 'Member'
+    let timezone = (formData.timezone || '').trim() || 'UTC'
+    let avatarToSave = nextAvatar !== undefined ? nextAvatar : avatar
+
+    if (!name || !email) {
+      const res = await fetch(`${API_BASE}/api/user`, {
+        headers: { 'X-USER-ID': String(user.id) }
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body.message || 'Failed to load profile')
+      if (!name) name = (body?.name || '').trim()
+      if (!email) email = (body?.email || '').trim()
+      if (role === 'Member' && body?.role) role = body.role
+      if (timezone === 'UTC' && body?.timezone) timezone = body.timezone
+      if (avatarToSave === undefined) avatarToSave = body?.avatar || ''
+    }
+
+    if (!name) throw new Error('Name is required')
+    if (!email) throw new Error('Email is required')
+
+    const res = await fetch(`${API_BASE}/api/user`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-USER-ID': String(user.id)
+      },
+      body: JSON.stringify({
+        name,
+        email,
+        avatar: avatarToSave ?? '',
+        role,
+        timezone
+      })
+    })
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(body.message || 'Failed to save profile')
+
+    const savedName = ((body?.name ?? name) || '').trim()
+    const savedParts = savedName ? savedName.split(/\s+/) : []
+
+    setFormData({
+      firstName: savedParts[0] || '',
+      lastName: savedParts.slice(1).join(' ') || '',
+      email: body?.email ?? email,
+      role: body?.role ?? role,
+      timezone: body?.timezone ?? timezone
+    })
+    setAvatar(body?.avatar ?? avatarToSave ?? '')
+    setUser({ ...(user || {}), ...body })
+
+    return body
+  }
+
   const handleAvatarUpload = async (e) => {
-    const file = e.target.files?.[0]
+    const input = e.target
+    const file = input.files?.[0]
     if (!file) return
 
     const allowedTypes = ['image/jpeg', 'image/png', 'image/gif']
     if (!allowedTypes.includes(file.type)) {
       alert('Please upload JPG, PNG, or GIF image only.')
-      e.target.value = ''
+      input.value = ''
       return
     }
 
     const maxSize = 2 * 1024 * 1024
     if (file.size > maxSize) {
       alert('Image size must be less than 2MB.')
-      e.target.value = ''
+      input.value = ''
       return
     }
 
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = typeof reader.result === 'string' ? reader.result : ''
-      if (!result) return
-      setAvatar(result)
-      localStorage.setItem('userAvatar', result)
-      if (user) {
-        setUser({ ...user, avatar: result })
-      }
+    setProfileError('')
+    setAvatarUploading(true)
+    try {
+      const uploaded = await uploadFile(file, { folder: 'avatars' })
+      const nextAvatar = uploaded?.url ? String(uploaded.url) : ''
+      if (!nextAvatar) throw new Error('Avatar upload failed')
+      setAvatar(nextAvatar)
+      await saveProfile({ nextAvatar })
       alert('Avatar uploaded successfully!')
     } catch (err) {
       alert(err.message || 'Avatar upload failed')
     } finally {
       setAvatarUploading(false)
-      e.target.value = ''
+      input.value = ''
     }
   }
 
@@ -310,33 +403,30 @@ function ProfileSection() {
   }
 
   const handleRemoveAvatar = async () => {
+    setProfileError('')
     setAvatar('')
     setShowAvatarViewer(false)
-    localStorage.removeItem('userAvatar')
-    if (user) {
-      setUser({ ...user, avatar: '' })
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    try {
+      await saveProfile({ nextAvatar: '' })
+      alert('Avatar removed successfully!')
+    } catch (err) {
+      alert(err.message || 'Failed to remove avatar')
     }
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
-    alert('Avatar removed successfully!')
   }
 
-  const handleSave = () => {
-    localStorage.setItem('profileSettings', JSON.stringify(formData))
-
-    if (user) {
-      const updatedUser = {
-        ...user,
-        name: `${formData.firstName} ${formData.lastName}`.trim(),
-        email: formData.email,
-        role: formData.role
-      }
-      setUser(updatedUser)
+  const handleSave = async () => {
+    setProfileError('')
+    setProfileSaving(true)
+    try {
+      await saveProfile()
+      alert('Profile changes saved successfully!')
+    } catch (err) {
+      setProfileError(err.message || 'Failed to save profile')
+      alert(err.message || 'Failed to save profile')
+    } finally {
+      setProfileSaving(false)
     }
-
-    console.log('Profile saved:', formData)
-    alert('Profile changes saved successfully!')
   }
 
   return (
@@ -344,6 +434,8 @@ function ProfileSection() {
       <div className="card-header">
         <h2>Profile Settings</h2>
         <p className="text-muted">Manage your personal information</p>
+        {profileError && <div className="text-danger small mt-2">{profileError}</div>}
+        {profileLoading && <div className="text-muted small mt-2">Loading profile...</div>}
       </div>
 
       <div className="avatar-section d-flex align-items-center mb-4 pb-4">
@@ -354,10 +446,10 @@ function ProfileSection() {
         >
           {avatar ? <img src={avatar} alt="avatar preview" /> : getAvatarInitials(`${formData.firstName} ${formData.lastName}`, formData.email)}
         </div>
-        <button className="btn btn-outline-secondary btn-sm ms-3" onClick={handleAvatarClick} disabled={avatarUploading}>
+        <button className="btn btn-outline-secondary btn-sm ms-3" onClick={handleAvatarClick} disabled={avatarUploading || profileLoading || profileSaving}>
           {avatarUploading ? 'Uploading...' : 'Change Avatar'}
         </button>
-        <button className="btn btn-outline-danger btn-sm ms-2" onClick={handleRemoveAvatar} disabled={!avatar}>
+        <button className="btn btn-outline-danger btn-sm ms-2" onClick={handleRemoveAvatar} disabled={!avatar || avatarUploading || profileLoading || profileSaving}>
           Remove Avatar
         </button>
         <input
@@ -398,8 +490,9 @@ function ProfileSection() {
             className="form-control" 
             name="firstName"
             value={formData.firstName}
-            onChange={handleChange}
-            placeholder="First name" 
+          onChange={handleChange}
+          disabled={profileLoading || profileSaving}
+          placeholder="First name" 
           />
         </div>
         <div className="form-group mb-3">
@@ -409,29 +502,35 @@ function ProfileSection() {
             className="form-control" 
             name="lastName"
             value={formData.lastName}
-            onChange={handleChange}
-            placeholder="Last name" 
+          onChange={handleChange}
+          disabled={profileLoading || profileSaving}
+          placeholder="Last name" 
           />
         </div>
       </div>
 
       <div className="form-group mb-3">
         <label className="form-label">Email</label>
-        <input 
-          type="email" 
-          className="form-control" 
-          name="email"
-          value={formData.email}
-          onChange={handleChange}
-          onKeyDown={preventLeadingSpace}
-          placeholder="email@example.com" 
-        />
+        <div className="locked-field">
+          <input
+            type="email"
+            className="form-control"
+            name="email"
+            value={formData.email}
+            disabled
+            readOnly
+            placeholder="email@example.com"
+            aria-label="Email (locked)"
+          />
+          <FiLock className="lock-icon" aria-hidden="true" />
+        </div>
+        <small className="text-muted">Email can&apos;t be changed</small>
       </div>
 
       <div className="form-row">
         <div className="form-group mb-3">
           <label className="form-label">Role</label>
-          <select className="form-control" name="role" value={formData.role} onChange={handleChange}>
+          <select className="form-control" name="role" value={formData.role} onChange={handleChange} disabled={profileLoading || profileSaving}>
             {roleOptions.map((role) => (
               <option key={role} value={role}>{role}</option>
             ))}
@@ -439,7 +538,7 @@ function ProfileSection() {
         </div>
         <div className="form-group mb-3">
           <label className="form-label">Timezone</label>
-          <select className="form-control" name="timezone" value={formData.timezone} onChange={handleChange}>
+          <select className="form-control" name="timezone" value={formData.timezone} onChange={handleChange} disabled={profileLoading || profileSaving}>
             <option>UTC</option>
             <option>GMT</option>
             <option>EST</option>
@@ -448,8 +547,8 @@ function ProfileSection() {
         </div>
       </div>
 
-      <button className="btn btn-dark mt-2" onClick={handleSave}>
-        Save Changes
+      <button className="btn btn-dark mt-2" onClick={handleSave} disabled={profileSaving || profileLoading || avatarUploading}>
+        {profileSaving ? 'Saving...' : 'Save Changes'}
       </button>
     </div>
   )

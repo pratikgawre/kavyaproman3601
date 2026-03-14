@@ -4,6 +4,8 @@ import './Dashboard.css'
 import { FiArrowLeft, FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLogOut, FiMenu, FiRepeat, FiEdit, FiTrash2, FiUpload, FiAlignLeft, FiAlignCenter, FiAlignRight, FiAlignJustify, FiX, FiSearch, FiBell, FiPlus } from 'react-icons/fi'
 import { useAuth } from '../context/AuthContext'
 import useIssueNotifications from '../hooks/useIssueNotifications'
+import { uploadFiles } from '../utils/upload'
+import { getInitials } from '../utils/initials'
 
 function stripHtml(value) {
   return (value || '').toString().replace(/<[^>]*>/g, ' ')

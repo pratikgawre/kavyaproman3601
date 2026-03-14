@@ -35,6 +35,7 @@ import {
 import "./Reports.css";
 import "./Dashboard.css";
 import { useAuth } from '../context/AuthContext'
+import useIssueNotifications from '../hooks/useIssueNotifications'
 import { getInitials } from '../utils/initials'
 
 const Reports = () => {

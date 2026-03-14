@@ -1,11 +1,12 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import './Dashboard.css'
-import { FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLogOut, FiMenu, FiSearch, FiBell, FiPlus, FiShare2, FiDownload, FiTrash2, FiFilter, FiBookmark, FiClock, FiRepeat, FiArrowRight, FiUpload, FiAlignLeft, FiAlignCenter, FiAlignRight, FiAlignJustify } from 'react-icons/fi'
+import { FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLogOut, FiMenu, FiSearch, FiBell, FiPlus, FiShare2, FiDownload, FiTrash2, FiFilter, FiTag, FiBookmark, FiClock, FiRepeat, FiArrowRight, FiUpload, FiAlignLeft, FiAlignCenter, FiAlignRight, FiAlignJustify } from 'react-icons/fi'
 import { NavLink } from 'react-router-dom'
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { FiX } from 'react-icons/fi'
 import { BOARD_COLUMNS } from '../data/boardColumns'
 import { useAuth } from '../context/AuthContext'
+import useIssueNotifications from '../hooks/useIssueNotifications'
 import { uploadFiles } from '../utils/upload'
 import { getInitials } from '../utils/initials'
 

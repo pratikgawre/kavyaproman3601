@@ -2,6 +2,9 @@ package com.team1.backend.service;
 
 import com.cloudinary.Cloudinary;
 import com.team1.backend.dto.UploadResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -15,13 +18,31 @@ import java.util.Map;
 @Service
 public class CloudinaryService {
 
-    private final Cloudinary cloudinary;
+    private static final Logger log = LoggerFactory.getLogger(CloudinaryService.class);
 
-    public CloudinaryService(Cloudinary cloudinary) {
+    private final Cloudinary cloudinary;
+    private final boolean enabled;
+
+    public CloudinaryService(
+            Cloudinary cloudinary,
+            @Value("${cloudinary.url:}") String cloudinaryUrl,
+            @Value("${cloudinary.cloud-name:}") String cloudName,
+            @Value("${cloudinary.api-key:}") String apiKey,
+            @Value("${cloudinary.api-secret:}") String apiSecret
+    ) {
         this.cloudinary = cloudinary;
+        this.enabled = StringUtils.hasText(cloudinaryUrl)
+                || (StringUtils.hasText(cloudName) && StringUtils.hasText(apiKey) && StringUtils.hasText(apiSecret));
+
+        if (!this.enabled) {
+            log.warn("Uploads are disabled because Cloudinary is not configured. Set 'cloudinary.url' or 'cloudinary.cloud-name/api-key/api-secret'.");
+        }
     }
 
     public UploadResponse upload(MultipartFile file, String folder) {
+        if (!enabled) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Uploads are disabled: Cloudinary is not configured");
+        }
         if (file == null || file.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "File is required");
         }
@@ -39,6 +60,8 @@ public class CloudinaryService {
         try {
             result = cloudinary.uploader().upload(file.getBytes(), options);
         } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Upload failed");
+        } catch (Exception e) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Upload failed");
         }
 

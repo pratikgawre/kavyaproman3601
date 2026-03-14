@@ -1,50 +1,50 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 
 const AuthContext = createContext(null)
 const USER_STORAGE_KEY = 'kpm360.authUser'
 
 const AUTH_USER_STORAGE_KEY = 'kpm360.auth.user'
-const API_BASE = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:8080'
 
-function readStoredUser() {
+function readStoredSession() {
   try {
     if (typeof window === 'undefined') return null
-    const raw = window.localStorage.getItem(AUTH_USER_STORAGE_KEY)
+    const raw = window.localStorage.getItem(USER_STORAGE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw)
     if (!parsed || typeof parsed !== 'object') return null
-    if (parsed.id === null || parsed.id === undefined || parsed.id === '') return null
-    return parsed
+    const id = parsed.id
+    if (id === null || id === undefined || id === '') return null
+    const session = { id: String(id) }
+    try { window.localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(session)) } catch {}
+    return session
   } catch {
+    try { window.localStorage.removeItem(USER_STORAGE_KEY) } catch {}
     return null
   }
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUserState] = useState(() => {
-    if (typeof window === 'undefined') return null
-    try {
-      const stored = window.localStorage.getItem(USER_STORAGE_KEY)
-      if (!stored) return null
-      return JSON.parse(stored)
-    } catch {
-      window.localStorage.removeItem(USER_STORAGE_KEY)
-      return null
-    }
-  })
+  const [user, setUserState] = useState(() => readStoredSession())
   const [pendingUserId, setPendingUserId] = useState('')
   const [pendingFlow, setPendingFlow] = useState('')
 
-  const setUser = (nextUser) => {
+  const setUser = useCallback((nextUser) => {
     const safeUser = nextUser || null
     setUserState(safeUser)
     if (typeof window === 'undefined') return
-    if (safeUser) {
-      window.localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(safeUser))
+    if (safeUser?.id) {
+      // Persist only the user id; profile fields come from the database.
+      window.localStorage.setItem(USER_STORAGE_KEY, JSON.stringify({ id: String(safeUser.id) }))
     } else {
       window.localStorage.removeItem(USER_STORAGE_KEY)
     }
-  }
+  }, [])
+
+  const clearUser = useCallback(() => {
+    setUser(null)
+    if (typeof window === 'undefined') return
+    window.localStorage.removeItem(AUTH_USER_STORAGE_KEY)
+  }, [setUser])
 
   const value = useMemo(
     () => ({
