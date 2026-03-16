@@ -17,16 +17,17 @@ const FALLBACK_MEMBERS = [
   { id: 3, name: 'Emily Rodriguez', email: 'emily.rodriguez@kavyapro.com', role: 'Tester', projects: 2, activeIssues: 4, image: 'https://randomuser.me/api/portraits/women/65.jpg' }
 ];
 
-function calculateStats(data) {
+function calculateStats(data, totalIssuesCount = 0) {
   const adminCount = data.filter((m) => m.role === 'Admin').length;
-  const totalIssues = data.reduce((sum, m) => sum + (m.activeIssues || 0), 0);
+  const totalIssues = totalIssuesCount > 0 ? totalIssuesCount : data.reduce((sum, m) => sum + (m.activeIssues || 0), 0);
   const avgWorkload = data.length > 0 ? Math.round(totalIssues / data.length) : 0;
 
   return {
     totalMembers: data.length,
     activeProjects: 3,
     avgWorkload,
-    admins: adminCount
+    admins: adminCount,
+    totalIssues: totalIssues
   };
 }
 
@@ -45,6 +46,7 @@ export default function Teams() {
   }, [])
 
   const [members, setMembers] = useState(FALLBACK_MEMBERS);
+  const [issues, setIssues] = useState([]);
   const [stats, setStats] = useState(calculateStats(FALLBACK_MEMBERS));
   const [usingFallbackData, setUsingFallbackData] = useState(true);
 
@@ -71,17 +73,23 @@ export default function Teams() {
     role: 'Developer'
   });
 
+  const [emailVerificationStatus, setEmailVerificationStatus] = useState(null); // null, 'verifying', 'verified', 'not-found', 'error'
+  const [verifiedEmailUser, setVerifiedEmailUser] = useState(null);
+
   const API_BASE_URL = (import.meta?.env?.VITE_API_BASE || 'http://localhost:8080');
   const MEMBERS_API_URL = `${API_BASE_URL}/api/members`;
+  const ISSUES_API_URL = `${API_BASE_URL}/api/issues`;
   // Fetch team members and stats on component mount
   useEffect(() => {
     fetchTeamMembers();
+    fetchIssues();
   }, []);
 
   // sync sidebar state from global controller
   useEffect(() => {
-    setStats(calculateStats(members));
-  }, [members]);
+    console.log('Members:', members.length, 'Issues:', issues.length);
+    setStats(calculateStats(members, issues.length));
+  }, [members, issues]);
 
   useEffect(() => {
     const handleOutsideClick = (e) => {
@@ -125,6 +133,40 @@ export default function Teams() {
     } finally {
       clearTimeout(timeoutId);
     }
+  };
+
+  const fetchIssues = async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    try {
+      const response = await fetch(ISSUES_API_URL, { signal: controller.signal });
+      if (!response.ok) {
+        console.error('Issues API response not ok:', response.status);
+        throw new Error('Failed to fetch issues');
+      }
+      const data = await response.json();
+      console.log('Fetched issues data:', data, 'Length:', Array.isArray(data) ? data.length : data?.data?.length);
+      const issuesArray = Array.isArray(data) ? data : (data?.data || data?.issues || []);
+      setIssues(issuesArray);
+    } catch (err) {
+      console.error('Error fetching issues:', err);
+      setIssues([]);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
+
+  const updateMembersWithActiveIssues = (membersData, issuesData) => {
+    return membersData.map(member => {
+      const memberIssues = issuesData.filter(issue => 
+        issue.creatorEmail && 
+        issue.creatorEmail.toLowerCase() === member.email.toLowerCase()
+      );
+      return {
+        ...member,
+        activeIssues: memberIssues.length
+      };
+    });
   };
 
   const handleEdit = (member) => {
@@ -179,7 +221,56 @@ export default function Teams() {
       navigate('/projects');
       return;
     }
+    if (statName === 'Avg. Workload') {
+      navigate('/all-my-issues');
+      return;
+    }
     alert(`Viewing ${statName} details`);
+  };
+
+  const verifyEmailAddress = async () => {
+    if (!inviteFormData.email) {
+      alert('Please enter an email address');
+      return;
+    }
+
+    setEmailVerificationStatus('verifying');
+
+    try {
+      const email = inviteFormData.email.trim().toLowerCase();
+      
+      // Check if user exists in the database by email
+      const response = await fetch(`${API_BASE_URL}/api/users/verify-email?email=${encodeURIComponent(email)}`);
+      
+      console.log('Email verification response:', response.status, response.ok);
+      
+      if (response.ok) {
+        const userData = await response.json();
+        console.log('User found:', userData);
+        setVerifiedEmailUser(userData);
+        setEmailVerificationStatus('verified');
+        // Auto-fill name if not already entered
+        if (!inviteFormData.name && userData.name) {
+          setInviteFormData({ ...inviteFormData, name: userData.name });
+        }
+        alert(`Email verified! User: ${userData.name || userData.email}`);
+      } else if (response.status === 404) {
+        setEmailVerificationStatus('not-found');
+        setVerifiedEmailUser(null);
+        alert('Email not found in database. Please check the email address.');
+      } else {
+        const errorText = await response.text();
+        console.error('Verification error response:', errorText);
+        setEmailVerificationStatus('error');
+        setVerifiedEmailUser(null);
+        alert('Error verifying email. Server response: ' + response.status);
+      }
+    } catch (err) {
+      setEmailVerificationStatus('error');
+      setVerifiedEmailUser(null);
+      console.error('Verification error:', err);
+      alert('Failed to verify email: ' + err.message);
+    }
   };
 
   const handleInviteSubmit = async (e) => {
@@ -187,6 +278,11 @@ export default function Teams() {
     
     if (!inviteFormData.name || !inviteFormData.email || !inviteFormData.role) {
       alert('Please fill all fields');
+      return;
+    }
+
+    if (emailVerificationStatus !== 'verified') {
+      alert('Please verify the email address first by clicking the Verify button');
       return;
     }
 
@@ -204,10 +300,20 @@ export default function Teams() {
       }
 
       const newMember = await response.json();
+      
+      // Send invitation email
+      try {
+        await sendInvitationEmail(inviteFormData.email, inviteFormData.name, inviteFormData.role);
+      } catch (emailErr) {
+        console.warn('Email sending failed, but member was added:', emailErr);
+      }
+      
       setMembers([...members, newMember]);
       setShowInviteModal(false);
       setInviteFormData({ name: '', email: '', role: 'Developer' });
-      alert('Member invited successfully');
+      setEmailVerificationStatus(null);
+      setVerifiedEmailUser(null);
+      alert('Member invited successfully and email sent');
     } catch (err) {
       if (usingFallbackData) {
         const localMember = {
@@ -220,11 +326,39 @@ export default function Teams() {
         setMembers([...members, localMember]);
         setShowInviteModal(false);
         setInviteFormData({ name: '', email: '', role: 'Developer' });
+        setEmailVerificationStatus(null);
+        setVerifiedEmailUser(null);
         return;
       }
       alert('Error inviting member: ' + err.message);
       console.error('Error:', err);
     }
+  };
+
+  const sendInvitationEmail = async (email, name, role) => {
+    const SEND_EMAIL_URL = `${API_BASE_URL}/api/email/send-invitation`;
+    
+    const emailPayload = {
+      recipientEmail: email,
+      recipientName: name,
+      role: role,
+      invitedBy: displayName,
+      organizationName: selectedOrg?.name || 'KavyaProMan'
+    };
+
+    const response = await fetch(SEND_EMAIL_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(emailPayload)
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to send invitation email');
+    }
+
+    return await response.json();
   };
 
   const handleDeleteMember = async (memberId) => {
@@ -279,6 +413,13 @@ export default function Teams() {
   function isMobileScreen() {
     return typeof window !== 'undefined' && window.innerWidth <= 768
   }
+
+  const getActiveIssuesForMember = (memberEmail) => {
+    return issues.filter(issue => 
+      issue.creatorEmail && 
+      issue.creatorEmail.toLowerCase() === memberEmail.toLowerCase()
+    ).length;
+  };
 
   return (
     <div className="dashboard-root d-flex">
@@ -492,7 +633,7 @@ export default function Teams() {
             >
               <h4>Avg. Workload</h4>
               <h2>{stats.avgWorkload}</h2>
-              <span>issues per member</span>
+              <span>{stats.totalIssues} total issues / {stats.totalMembers} members</span>
             </div>
 
             <div 
@@ -689,7 +830,7 @@ export default function Teams() {
                         <p>Projects</p>
                       </div>
                       <div className="member-stat">
-                        <strong>{member.activeIssues || 0}</strong>
+                        <strong>{getActiveIssuesForMember(member.email)}</strong>
                         <p>Active Issues</p>
                       </div>
                     </>
@@ -771,16 +912,67 @@ export default function Teams() {
               </div>
 
               <div className="form-group">
-                <label htmlFor="email">Email *</label>
-                <input
-                  id="email"
-                  type="email"
-                  placeholder="Enter member email"
-                  value={inviteFormData.email}
-                  onChange={(e) => setInviteFormData({...inviteFormData, email: sanitizeEmail(e.target.value)})}
-                  onKeyDown={preventLeadingSpace}
-                  required
-                />
+                <label htmlFor="email">Email * 
+                  {emailVerificationStatus === 'verified' && (
+                    <span className="verification-status verified" style={{marginLeft: '8px', fontSize: '0.85em'}}>
+                      <FiCheck size={14} style={{display: 'inline', marginRight: '4px'}} /> Verified
+                    </span>
+                  )}
+                  {emailVerificationStatus === 'not-found' && (
+                    <span className="verification-status not-found" style={{marginLeft: '8px', fontSize: '0.85em', color: '#dc2626'}}>
+                      ✗ Not Found
+                    </span>
+                  )}
+                  {emailVerificationStatus === 'error' && (
+                    <span className="verification-status error" style={{marginLeft: '8px', fontSize: '0.85em', color: '#dc2626'}}>
+                      ✗ Error
+                    </span>
+                  )}
+                </label>
+                <div style={{display: 'flex', gap: '8px', marginBottom: '8px'}}>
+                  <input
+                    id="email"
+                    type="email"
+                    placeholder="Enter member email"
+                    value={inviteFormData.email}
+                    onChange={(e) => {
+                      setInviteFormData({...inviteFormData, email: sanitizeEmail(e.target.value)});
+                      setEmailVerificationStatus(null);
+                      setVerifiedEmailUser(null);
+                    }}
+                    onKeyDown={preventLeadingSpace}
+                    required
+                    style={{flex: 1}}
+                  />
+                  <button
+                    type="button"
+                    className={`verify-btn verify-btn-${emailVerificationStatus || 'default'}`}
+                    onClick={verifyEmailAddress}
+                    disabled={!inviteFormData.email || emailVerificationStatus === 'verifying'}
+                    title="Verify email address in database"
+                  >
+                    {emailVerificationStatus === 'verifying' ? (
+                      <>
+                        <FiRepeat size={16} style={{display: 'inline', marginRight: '4px', animation: 'spin 1s linear infinite'}} />
+                        Verifying...
+                      </>
+                    ) : emailVerificationStatus === 'verified' ? (
+                      <>
+                        <FiCheck size={16} style={{display: 'inline', marginRight: '4px'}} />
+                        Verified
+                      </>
+                    ) : (
+                      <>
+                        Verify
+                      </>
+                    )}
+                  </button>
+                </div>
+                {verifiedEmailUser && emailVerificationStatus === 'verified' && (
+                  <div style={{fontSize: '0.85em', color: '#059669', marginTop: '4px', padding: '8px', backgroundColor: 'rgba(5, 150, 105, 0.1)', borderRadius: '4px'}}>
+                    Found: {verifiedEmailUser.name || verifiedEmailUser.email}
+                  </div>
+                )}
               </div>
 
               <div className="form-group">
