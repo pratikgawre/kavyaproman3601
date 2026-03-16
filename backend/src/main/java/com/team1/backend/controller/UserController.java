@@ -35,4 +35,17 @@ public class UserController {
         UserDto dto = userService.updateUser(userId, req);
         return ResponseEntity.ok(dto);
     }
+
+    /**
+     * Verify if an email exists in the database
+     * Returns the user data if found, 404 if not found
+     */
+    @GetMapping("/users/verify-email")
+    public ResponseEntity<UserDto> verifyEmail(@RequestParam String email) {
+        UserDto userDto = userService.getUserByEmail(email);
+        if (userDto != null) {
+            return ResponseEntity.ok(userDto);
+        }
+        return ResponseEntity.notFound().build();
+    }
 }

@@ -26,6 +26,18 @@ public class UserService {
         return toDto(u);
     }
 
+    public UserDto getUserByEmail(String email) {
+        if (email == null || email.trim().isEmpty()) {
+            return null;
+        }
+        User u = userRepository.findByEmailIgnoreCase(email.trim().toLowerCase())
+                .orElse(null);
+        if (u == null) {
+            return null;
+        }
+        return toDto(u);
+    }
+
     public UserDto updateUser(String id, UpdateUserRequest req) {
         User u = userRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));

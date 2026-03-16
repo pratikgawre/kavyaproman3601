@@ -590,7 +590,7 @@ export default function AllMyIssues(){
           <h2 style={{margin:0}}>All My Issues</h2>
         </div>
 
-        <div style={{marginTop:18,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(320px,1fr))',gap:16}}>
+        <div style={{marginTop:18,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(500px,1fr))',gap:16}}>
           {issues.length === 0 && <div className="filter-card">No issues found. Create one from Dashboard.</div>}
           {issues.map((it, idx)=> (
             <div key={idx} className="filter-card">

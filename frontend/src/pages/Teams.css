@@ -1078,3 +1078,132 @@ html[data-theme='dark'] .viewer-card .role-icon {
   }
 }
 
+/* Verify Button Styles */
+.verify-btn {
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #1a202c;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 14px;
+  transition: all 0.3s;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.verify-btn:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.verify-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.verify-btn-default {
+  background: #f9fafb;
+  border-color: #d1d5db;
+  color: #374151;
+}
+
+.verify-btn-verified {
+  background: #ecfdf5;
+  border-color: #86efac;
+  color: #059669;
+}
+
+.verify-btn-not-found {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
+.verify-btn-error {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
+.verify-btn-verifying {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1e40af;
+}
+
+/* Verification status styles */
+.verification-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.85em;
+  font-weight: 500;
+}
+
+.verification-status.verified {
+  background: rgba(5, 150, 105, 0.1);
+  color: #059669;
+}
+
+.verification-status.not-found {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+
+.verification-status.error {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+
+/* Dark mode support for verify button */
+html[data-theme='dark'] .verify-btn {
+  background: #1f2937;
+  color: #f3f4f6;
+  border-color: #4b5563;
+}
+
+html[data-theme='dark'] .verify-btn:hover:not(:disabled) {
+  background: #374151;
+  border-color: #6b7280;
+}
+
+html[data-theme='dark'] .verify-btn-verified {
+  background: rgba(5, 150, 105, 0.2);
+  border-color: #10b981;
+  color: #6ee7b7;
+}
+
+html[data-theme='dark'] .verify-btn-not-found {
+  background: rgba(220, 38, 38, 0.2);
+  border-color: #f87171;
+  color: #f87171;
+}
+
+html[data-theme='dark'] .verify-btn-error {
+  background: rgba(220, 38, 38, 0.2);
+  border-color: #f87171;
+  color: #f87171;
+}
+
+html[data-theme='dark'] .verify-btn-verifying {
+  background: rgba(30, 64, 175, 0.2);
+  border-color: #60a5fa;
+  color: #93c5fd;
+}
+
+/* Spin animation for loading state */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
