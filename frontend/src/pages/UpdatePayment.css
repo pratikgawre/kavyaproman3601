@@ -21,6 +21,24 @@
   margin-bottom: 20px;
 }
 
+.update-back-btn {
+  border: 1px solid rgba(15, 23, 42, 0.15);
+  background: transparent;
+  color: #1f2a44;
+  border-radius: 10px;
+  padding: 6px 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.update-back-btn:hover {
+  background: #f8fafc;
+  color: #1f2a44;
+}
+
 .update-pay-btn {
   background: linear-gradient(135deg, #f97316 0%, #0ea5e9 55%, #6366f1 100%);
   color: #fff;

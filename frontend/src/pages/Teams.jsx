@@ -439,6 +439,27 @@ export default function Teams() {
     return typeof window !== 'undefined' && window.innerWidth <= 768
   }
 
+  function runIssueSearch() {
+    const query = (topSearchText || '').trim()
+    if (!query) {
+      navigate('/all-my-issues')
+      return
+    }
+    navigate(`/all-my-issues?q=${encodeURIComponent(query)}`)
+  }
+
+  function handleTopSearchIconClick(event) {
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (isMobileScreen() && !mobileSearchOpen) {
+      setMobileSearchOpen(true)
+      return
+    }
+
+    runIssueSearch()
+  }
+
   const getActiveIssuesForMember = (memberEmail) => {
     return issues.filter(issue => 
       issue.creatorEmail && 
@@ -916,42 +937,50 @@ export default function Teams() {
                   </div>
 
                   <div className="member-right">
-                    {editingId !== member.id && (
+                    {editingId === member.id ? (
+                      <div className="edit-actions">
+                        <button
+                          type="button"
+                          className="save-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSaveEdit(member.id);
+                          }}
+                        >
+                          <FiCheck size={14} className="me-1" /> Save
+                        </button>
+                        <button
+                          type="button"
+                          className="cancel-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCancelEdit();
+                          }}
+                        >
+                          <FiX size={14} className="me-1" /> Cancel
+                        </button>
+                      </div>
+                    ) : (
                       <>
                         <div className="member-stat">
                           <strong>{member.projects || 0}</strong>
                           <p>Projects</p>
                         </div>
                         <div className="member-stat">
-                          <strong>{member.activeIssues || 0}</strong>
+                          <strong>{getActiveIssuesForMember(member.email)}</strong>
                           <p>Active Issues</p>
                         </div>
+                        <button
+                          type="button"
+                          className="edit-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEdit(member);
+                          }}
+                        >
+                          Edit
+                        </button>
                       </>
-                    )}
-                  </div>
-                </div>
-
-                <div className="member-right">
-                  {editingId !== member.id && (
-                    <>
-                      <div className="member-stat">
-                        <strong>{member.projects || 0}</strong>
-                        <p>Projects</p>
-                      </div>
-                      <div className="member-stat">
-                        <strong>{getActiveIssuesForMember(member.email)}</strong>
-                        <p>Active Issues</p>
-                      </div>
-                    ) : (
-                      <button 
-                        className="edit-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleEdit(member);
-                        }}
-                      >
-                        Edit
-                      </button>
                     )}
                   </div>
                 </div>
