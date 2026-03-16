@@ -17,28 +17,39 @@ public class IssueController {
     public IssueController(IssueService service){ this.service = service; }
 
     @GetMapping
-    public List<Issue> list(){ return service.listAll(); }
+    public List<Issue> list(@RequestHeader("X-USER-ID") String userId){
+        return service.listMine(userId);
+    }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Issue> get(@PathVariable String id){
-        return service.findById(id).map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
+    public ResponseEntity<Issue> get(
+            @RequestHeader("X-USER-ID") String userId,
+            @PathVariable String id){
+        return service.findMineById(userId, id).map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping
-    public ResponseEntity<Issue> create(@RequestBody Issue issue){
-        Issue saved = service.create(issue);
+    public ResponseEntity<Issue> create(
+            @RequestHeader("X-USER-ID") String userId,
+            @RequestBody Issue issue){
+        Issue saved = service.create(userId, issue);
         return ResponseEntity.created(URI.create("/api/issues/"+saved.getId())).body(saved);
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<Issue> update(@PathVariable String id, @RequestBody Issue issue){
-        Issue saved = service.update(id, issue);
+    public ResponseEntity<Issue> update(
+            @RequestHeader("X-USER-ID") String userId,
+            @PathVariable String id,
+            @RequestBody Issue issue){
+        Issue saved = service.update(userId, id, issue);
         return ResponseEntity.ok(saved);
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable String id){
-        service.delete(id);
+    public ResponseEntity<Void> delete(
+            @RequestHeader("X-USER-ID") String userId,
+            @PathVariable String id){
+        service.delete(userId, id);
         return ResponseEntity.noContent().build();
     }
 }

@@ -3,8 +3,12 @@ package com.team1.backend.service;
 import java.security.SecureRandom;
 import java.util.Optional;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.core.env.Environment;
+import org.springframework.beans.factory.annotation.Value;
 
 import com.team1.backend.dto.AuthResponse;
 import com.team1.backend.dto.LoginRequest;
@@ -15,14 +19,24 @@ import com.team1.backend.repository.UserRepository;
 @Service
 public class AuthService {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
+
     private final UserRepository userRepository;
     private final BCryptPasswordEncoder passwordEncoder;
-    private final SendGridEmailService emailService;
+    private final EmailDeliveryService emailService;
+    private final Environment environment;
+    private final boolean otpDevLogEnabled;
 
-    public AuthService(UserRepository userRepository, BCryptPasswordEncoder passwordEncoder, SendGridEmailService emailService) {
+    public AuthService(UserRepository userRepository,
+                       BCryptPasswordEncoder passwordEncoder,
+                       EmailDeliveryService emailService,
+                       Environment environment,
+                       @Value("${auth.otp.dev-log.enabled:true}") boolean otpDevLogEnabled) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
+        this.environment = environment;
+        this.otpDevLogEnabled = otpDevLogEnabled;
     }
 
     public AuthResponse register(RegisterRequest req) {
@@ -57,7 +71,7 @@ public class AuthService {
         String body = "<p>Hi " + user.getName() + ",</p>"
                 + "<p>Your verification code is <b>" + otp + "</b>. Use this to complete your registration.</p>"
                 + "<p>If you did not request this, ignore this email.</p>";
-        boolean sent = emailService.sendHtmlEmail(user.getEmail(), subject, body);
+        boolean sent = sendOtpEmail(user, subject, body, otp, "register");
         if (!sent) {
             return new AuthResponse(false, "Failed to send verification email");
         }
@@ -86,7 +100,7 @@ public class AuthService {
         String body = "<p>Hi " + user.getName() + ",</p>"
                 + "<p>Your verification code is <b>" + otp + "</b>. Use this to complete your login.</p>"
                 + "<p>If you did not request this, ignore this email.</p>";
-        boolean sent = emailService.sendHtmlEmail(user.getEmail(), subject, body);
+        boolean sent = sendOtpEmail(user, subject, body, otp, "login");
         if (!sent) {
             return new AuthResponse(false, "Failed to send verification email");
         }
@@ -121,7 +135,7 @@ public class AuthService {
         String body = "<p>Hi " + user.getName() + ",</p>"
                 + "<p>Your verification code is <b>" + otp + "</b>. Use this to complete your action.</p>"
                 + "<p>If you did not request this, ignore this email.</p>";
-        boolean sent = emailService.sendHtmlEmail(user.getEmail(), subject, body);
+        boolean sent = sendOtpEmail(user, subject, body, otp, "resend");
         if (!sent) {
             return new AuthResponse(false, "Failed to send verification email");
         }
@@ -144,7 +158,7 @@ public class AuthService {
         String body = "<p>Hi " + user.getName() + ",</p>"
                 + "<p>Your password reset code is <b>" + otp + "</b>. Use this to reset your password.</p>"
                 + "<p>If you did not request this, ignore this email.</p>";
-        boolean sent = emailService.sendHtmlEmail(user.getEmail(), subject, body);
+        boolean sent = sendOtpEmail(user, subject, body, otp, "forgot-password");
         if (!sent) return new AuthResponse(false, "Failed to send reset email");
         return successWithUser("Reset code sent", user);
     }
@@ -166,5 +180,25 @@ public class AuthService {
 
     private AuthResponse successWithUser(String message, User user) {
         return new AuthResponse(true, message, user.getId(), user.getEmail(), user.getName(), user.getRole(), user.getAvatar());
+    }
+
+    private boolean sendOtpEmail(User user, String subject, String html, String otp, String reason) {
+        boolean sent = emailService.sendHtmlEmail(user.getEmail(), subject, html, null);
+        if (sent) return true;
+
+        if (otpDevLogEnabled && !isProdProfile()) {
+            log.warn("OTP delivery failed ({}). DEV fallback enabled; use this OTP to continue. userId={}, email={}, otp={}",
+                    reason, user.getId(), user.getEmail(), otp);
+            return true;
+        }
+
+        return false;
+    }
+
+    private boolean isProdProfile() {
+        for (String profile : environment.getActiveProfiles()) {
+            if ("prod".equalsIgnoreCase(profile)) return true;
+        }
+        return false;
     }
 }
