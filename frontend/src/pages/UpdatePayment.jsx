@@ -1,7 +1,7 @@
 import './UpdatePayment.css'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FiCreditCard, FiSmartphone, FiPlus, FiArrowRight, FiTrash2, FiClock, FiDollarSign, FiFileText } from 'react-icons/fi'
+import { FiCreditCard, FiSmartphone, FiPlus, FiArrowRight, FiArrowLeft, FiTrash2, FiClock, FiDollarSign, FiFileText } from 'react-icons/fi'
 import API_BASE from '../config/api'
 import { useAuth } from '../context/AuthContext'
 
@@ -201,6 +201,9 @@ export default function UpdatePayment() {
       <div className="update-payment-shell">
         <div className="update-payment-header">
           <div>
+            <button className="btn update-back-btn" type="button" onClick={() => navigate('/subscription')}>
+              <FiArrowLeft className="me-2" /> Back to Subscription
+            </button>
             <h2>Update Payment Method</h2>
             <p className="text-muted">Manage your saved payment details and pay for another plan anytime.</p>
           </div>
