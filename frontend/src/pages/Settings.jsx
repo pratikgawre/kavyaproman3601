@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useMemo, useState, useEffect, useRef } from 'react'
 import {
   FiGrid,
   FiFolder,
@@ -9,24 +9,33 @@ import {
   FiSettings,
   FiLogOut,
   FiMenu,
-  FiUser,
   FiRepeat,
   FiArrowRight,
+  FiLock,
   FiX
 } from 'react-icons/fi'
 import './Settings.css'
 import './Dashboard.css'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { uploadFile } from '../utils/upload'
+import API_BASE from '../config/api'
 
 const stripLeadingSpace = (value) => value.replace(/^\s+/, '')
 const sanitizeEmail = (value) => stripLeadingSpace(value).replace(/[^A-Za-z0-9@.]/g, '')
 const preventLeadingSpace = (e) => {
   if (e.key === ' ' && (e.currentTarget.selectionStart ?? 0) === 0) e.preventDefault()
 }
+const getAvatarInitials = (name, email) => {
+  const source = (name || '').trim() || (email || '').trim()
+  if (!source) return 'G'
+  const parts = source.split(/[\s._-]+/).filter(Boolean)
+  if (parts.length === 0) return source.charAt(0).toUpperCase()
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase()
+  return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase()
+}
 
 export default function Settings() {
-  const API_BASE = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:8080'
   // basic UI state
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -56,6 +65,7 @@ export default function Settings() {
 
   const { user, clearUser } = useAuth()
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
+  const avatarInitials = getAvatarInitials(user?.name, user?.email)
 
   function toggleSidebarForScreen() {
     setCollapsed((prev) => {
@@ -123,7 +133,9 @@ export default function Settings() {
 
           <div className="sidebar-footer mt-3 d-flex flex-column align-items-start">
             <div className="profile d-flex align-items-center w-100">
-              <div className="avatar-icon"><FiUser size={20} /></div>
+              <div className="avatar-icon">
+                {user?.avatar ? <img src={user.avatar} alt="avatar" /> : avatarInitials}
+              </div>
               <div className="ms-2 user-info">
                 <div className="user-name">{displayName}</div>
                 <div className="user-role">{user?.role || 'Member'}</div>
@@ -212,35 +224,75 @@ function ProfileSection() {
   const { user, setUser } = useAuth()
   const registrationRoles = ['Admin', 'Project Manager', 'Developer', 'Tester', 'Business Analyst']
   const [formData, setFormData] = useState(() => {
-    const savedProfile = JSON.parse(localStorage.getItem('profileSettings') || 'null')
-    if (savedProfile) return savedProfile
-
     const fullName = (user?.name || '').trim()
     const nameParts = fullName ? fullName.split(/\s+/) : []
 
     return {
-      firstName: nameParts[0] || 'Sarah',
-      lastName: nameParts.slice(1).join(' ') || 'Johnson',
-      email: user?.email || 'sarah@kavyaproman.com',
+      firstName: nameParts[0] || '',
+      lastName: nameParts.slice(1).join(' ') || '',
+      email: user?.email || '',
       role: user?.role || 'Member',
-      timezone: 'UTC'
+      timezone: user?.timezone || 'UTC'
     }
   })
   const roleOptions = formData.role && !registrationRoles.includes(formData.role)
     ? [formData.role, ...registrationRoles]
     : registrationRoles
-  const [avatar, setAvatar] = useState('')
+  const [avatar, setAvatar] = useState(user?.avatar || '')
   const [showAvatarViewer, setShowAvatarViewer] = useState(false)
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const [profileLoading, setProfileLoading] = useState(false)
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [profileError, setProfileError] = useState('')
   const fileInputRef = useRef(null)
 
   useEffect(() => {
-    const stored = localStorage.getItem('userAvatar')
-    if (stored) {
-      setAvatar(stored)
-    }
-  }, [])
+    let cancelled = false
 
-  
+    async function loadProfile() {
+      if (!user?.id) return
+      setProfileError('')
+      setProfileLoading(true)
+      try {
+        const res = await fetch(`${API_BASE}/api/user`, {
+          headers: { 'X-USER-ID': String(user.id) }
+        })
+        const body = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(body.message || 'Failed to load profile')
+        if (cancelled) return
+
+        const fullName = (body?.name || '').trim()
+        const nameParts = fullName ? fullName.split(/\s+/) : []
+
+        setFormData({
+          firstName: nameParts[0] || '',
+          lastName: nameParts.slice(1).join(' ') || '',
+          email: body?.email || '',
+          role: body?.role || 'Member',
+          timezone: body?.timezone || 'UTC'
+        })
+        setAvatar(body?.avatar || '')
+
+        setUser({
+          ...(user || {}),
+          id: body?.id || user.id,
+          name: body?.name,
+          email: body?.email,
+          avatar: body?.avatar,
+          role: body?.role,
+          timezone: body?.timezone
+        })
+      } catch (err) {
+        if (!cancelled) setProfileError(err.message || 'Failed to load profile')
+      } finally {
+        if (!cancelled) setProfileLoading(false)
+      }
+    }
+
+    loadProfile()
+    return () => { cancelled = true }
+  }, [setUser, user?.id])
+
   const handleChange = (e) => {
     const { name, value } = e.target
     const nextValue = name === 'email' ? sanitizeEmail(value) : value
@@ -251,34 +303,98 @@ function ProfileSection() {
     fileInputRef.current?.click()
   }
 
-  const handleAvatarUpload = (e) => {
-    const file = e.target.files?.[0]
+  async function saveProfile({ nextAvatar } = {}) {
+    if (!user?.id) throw new Error('Please login again.')
+
+    let name = `${formData.firstName} ${formData.lastName}`.trim()
+    let email = (formData.email || '').trim()
+    let role = (formData.role || '').trim() || 'Member'
+    let timezone = (formData.timezone || '').trim() || 'UTC'
+    let avatarToSave = nextAvatar !== undefined ? nextAvatar : avatar
+
+    if (!name || !email) {
+      const res = await fetch(`${API_BASE}/api/user`, {
+        headers: { 'X-USER-ID': String(user.id) }
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body.message || 'Failed to load profile')
+      if (!name) name = (body?.name || '').trim()
+      if (!email) email = (body?.email || '').trim()
+      if (role === 'Member' && body?.role) role = body.role
+      if (timezone === 'UTC' && body?.timezone) timezone = body.timezone
+      if (avatarToSave === undefined) avatarToSave = body?.avatar || ''
+    }
+
+    if (!name) throw new Error('Name is required')
+    if (!email) throw new Error('Email is required')
+
+    const res = await fetch(`${API_BASE}/api/user`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-USER-ID': String(user.id)
+      },
+      body: JSON.stringify({
+        name,
+        email,
+        avatar: avatarToSave ?? '',
+        role,
+        timezone
+      })
+    })
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(body.message || 'Failed to save profile')
+
+    const savedName = ((body?.name ?? name) || '').trim()
+    const savedParts = savedName ? savedName.split(/\s+/) : []
+
+    setFormData({
+      firstName: savedParts[0] || '',
+      lastName: savedParts.slice(1).join(' ') || '',
+      email: body?.email ?? email,
+      role: body?.role ?? role,
+      timezone: body?.timezone ?? timezone
+    })
+    setAvatar(body?.avatar ?? avatarToSave ?? '')
+    setUser({ ...(user || {}), ...body })
+
+    return body
+  }
+
+  const handleAvatarUpload = async (e) => {
+    const input = e.target
+    const file = input.files?.[0]
     if (!file) return
 
     const allowedTypes = ['image/jpeg', 'image/png', 'image/gif']
     if (!allowedTypes.includes(file.type)) {
       alert('Please upload JPG, PNG, or GIF image only.')
-      e.target.value = ''
+      input.value = ''
       return
     }
 
     const maxSize = 2 * 1024 * 1024
     if (file.size > maxSize) {
       alert('Image size must be less than 2MB.')
-      e.target.value = ''
+      input.value = ''
       return
     }
 
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = typeof reader.result === 'string' ? reader.result : ''
-      if (!result) return
-      setAvatar(result)
-      localStorage.setItem('userAvatar', result)
+    setProfileError('')
+    setAvatarUploading(true)
+    try {
+      const uploaded = await uploadFile(file, { folder: 'avatars' })
+      const nextAvatar = uploaded?.url ? String(uploaded.url) : ''
+      if (!nextAvatar) throw new Error('Avatar upload failed')
+      setAvatar(nextAvatar)
+      await saveProfile({ nextAvatar })
       alert('Avatar uploaded successfully!')
+    } catch (err) {
+      alert(err.message || 'Avatar upload failed')
+    } finally {
+      setAvatarUploading(false)
+      input.value = ''
     }
-    reader.readAsDataURL(file)
-    e.target.value = ''
   }
 
   const handleAvatarPreview = () => {
@@ -286,31 +402,31 @@ function ProfileSection() {
     setShowAvatarViewer(true)
   }
 
-  const handleRemoveAvatar = () => {
+  const handleRemoveAvatar = async () => {
+    setProfileError('')
     setAvatar('')
     setShowAvatarViewer(false)
-    localStorage.removeItem('userAvatar')
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    try {
+      await saveProfile({ nextAvatar: '' })
+      alert('Avatar removed successfully!')
+    } catch (err) {
+      alert(err.message || 'Failed to remove avatar')
     }
-    alert('Avatar removed successfully!')
   }
 
-  const handleSave = () => {
-    localStorage.setItem('profileSettings', JSON.stringify(formData))
-
-    if (user) {
-      const updatedUser = {
-        ...user,
-        name: `${formData.firstName} ${formData.lastName}`.trim(),
-        email: formData.email,
-        role: formData.role
-      }
-      setUser(updatedUser)
+  const handleSave = async () => {
+    setProfileError('')
+    setProfileSaving(true)
+    try {
+      await saveProfile()
+      alert('Profile changes saved successfully!')
+    } catch (err) {
+      setProfileError(err.message || 'Failed to save profile')
+      alert(err.message || 'Failed to save profile')
+    } finally {
+      setProfileSaving(false)
     }
-
-    console.log('Profile saved:', formData)
-    alert('Profile changes saved successfully!')
   }
 
   return (
@@ -318,6 +434,8 @@ function ProfileSection() {
       <div className="card-header">
         <h2>Profile Settings</h2>
         <p className="text-muted">Manage your personal information</p>
+        {profileError && <div className="text-danger small mt-2">{profileError}</div>}
+        {profileLoading && <div className="text-muted small mt-2">Loading profile...</div>}
       </div>
 
       <div className="avatar-section d-flex align-items-center mb-4 pb-4">
@@ -326,12 +444,12 @@ function ProfileSection() {
           onClick={handleAvatarPreview}
           title={avatar ? 'Click to view avatar' : ''}
         >
-          {avatar ? <img src={avatar} alt="avatar preview" /> : 'SJ'}
+          {avatar ? <img src={avatar} alt="avatar preview" /> : getAvatarInitials(`${formData.firstName} ${formData.lastName}`, formData.email)}
         </div>
-        <button className="btn btn-outline-secondary btn-sm ms-3" onClick={handleAvatarClick}>
-          Change Avatar
+        <button className="btn btn-outline-secondary btn-sm ms-3" onClick={handleAvatarClick} disabled={avatarUploading || profileLoading || profileSaving}>
+          {avatarUploading ? 'Uploading...' : 'Change Avatar'}
         </button>
-        <button className="btn btn-outline-danger btn-sm ms-2" onClick={handleRemoveAvatar} disabled={!avatar}>
+        <button className="btn btn-outline-danger btn-sm ms-2" onClick={handleRemoveAvatar} disabled={!avatar || avatarUploading || profileLoading || profileSaving}>
           Remove Avatar
         </button>
         <input
@@ -372,8 +490,9 @@ function ProfileSection() {
             className="form-control" 
             name="firstName"
             value={formData.firstName}
-            onChange={handleChange}
-            placeholder="First name" 
+          onChange={handleChange}
+          disabled={profileLoading || profileSaving}
+          placeholder="First name" 
           />
         </div>
         <div className="form-group mb-3">
@@ -383,29 +502,35 @@ function ProfileSection() {
             className="form-control" 
             name="lastName"
             value={formData.lastName}
-            onChange={handleChange}
-            placeholder="Last name" 
+          onChange={handleChange}
+          disabled={profileLoading || profileSaving}
+          placeholder="Last name" 
           />
         </div>
       </div>
 
       <div className="form-group mb-3">
         <label className="form-label">Email</label>
-        <input 
-          type="email" 
-          className="form-control" 
-          name="email"
-          value={formData.email}
-          onChange={handleChange}
-          onKeyDown={preventLeadingSpace}
-          placeholder="email@example.com" 
-        />
+        <div className="locked-field">
+          <input
+            type="email"
+            className="form-control"
+            name="email"
+            value={formData.email}
+            disabled
+            readOnly
+            placeholder="email@example.com"
+            aria-label="Email (locked)"
+          />
+          <FiLock className="lock-icon" aria-hidden="true" />
+        </div>
+        <small className="text-muted">Email can&apos;t be changed</small>
       </div>
 
       <div className="form-row">
         <div className="form-group mb-3">
           <label className="form-label">Role</label>
-          <select className="form-control" name="role" value={formData.role} onChange={handleChange}>
+          <select className="form-control" name="role" value={formData.role} onChange={handleChange} disabled={profileLoading || profileSaving}>
             {roleOptions.map((role) => (
               <option key={role} value={role}>{role}</option>
             ))}
@@ -413,7 +538,7 @@ function ProfileSection() {
         </div>
         <div className="form-group mb-3">
           <label className="form-label">Timezone</label>
-          <select className="form-control" name="timezone" value={formData.timezone} onChange={handleChange}>
+          <select className="form-control" name="timezone" value={formData.timezone} onChange={handleChange} disabled={profileLoading || profileSaving}>
             <option>UTC</option>
             <option>GMT</option>
             <option>EST</option>
@@ -422,8 +547,8 @@ function ProfileSection() {
         </div>
       </div>
 
-      <button className="btn btn-dark mt-2" onClick={handleSave}>
-        Save Changes
+      <button className="btn btn-dark mt-2" onClick={handleSave} disabled={profileSaving || profileLoading || avatarUploading}>
+        {profileSaving ? 'Saving...' : 'Save Changes'}
       </button>
     </div>
   )
@@ -597,6 +722,7 @@ function SecuritySection({ apiBase }) {
   })
 
   const [passwordError, setPasswordError] = useState('')
+  const [confirmPasswordError, setConfirmPasswordError] = useState('')
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false)
 
   // OTP / verification flow states
@@ -609,10 +735,27 @@ function SecuritySection({ apiBase }) {
 
   const userEmail = user?.email || ''
 
+  const passwordRules = useMemo(
+    () => [
+      { id: 'length', label: 'Password is at least 8 characters', valid: passwords.newPassword.length >= 8 },
+      { id: 'upper', label: 'Contains an uppercase letter (A-Z)', valid: /[A-Z]/.test(passwords.newPassword) },
+      { id: 'lower', label: 'Contains a lowercase letter (a-z)', valid: /[a-z]/.test(passwords.newPassword) },
+      { id: 'digit', label: 'Contains a digit (0-9)', valid: /\d/.test(passwords.newPassword) },
+      { id: 'special', label: 'Contains a special character (e.g. !@#$%)', valid: /[^A-Za-z0-9]/.test(passwords.newPassword) }
+    ],
+    [passwords.newPassword]
+  )
+
   const handlePasswordChange = (e) => {
     const { name, value } = e.target
-    setPasswords(prev => ({ ...prev, [name]: value }))
+    const next = { ...passwords, [name]: value }
+    setPasswords(next)
     setPasswordError('')
+    if (next.newPassword && next.confirmPassword && next.newPassword !== next.confirmPassword) {
+      setConfirmPasswordError('Passwords do not match')
+    } else {
+      setConfirmPasswordError('')
+    }
   }
 
   function handleOtpChange(i, v){
@@ -653,7 +796,10 @@ function SecuritySection({ apiBase }) {
     setPasswordError('')
     if(!verified) return setPasswordError('Please verify your email before changing password')
     if (!passwords.newPassword || !passwords.confirmPassword) return setPasswordError('All fields are required')
-    if (passwords.newPassword !== passwords.confirmPassword) return setPasswordError('New password and confirm password do not match')
+    if (passwords.newPassword !== passwords.confirmPassword) {
+      setConfirmPasswordError('Passwords do not match')
+      return setPasswordError('New password and confirm password do not match')
+    }
     if (passwords.newPassword.length < 8) return setPasswordError('New password must be at least 8 characters')
     // additional strength checks (optional)
     const missing = []
@@ -669,6 +815,7 @@ function SecuritySection({ apiBase }) {
       if(!res.ok) throw new Error(body.message || 'Password change failed')
       alert('Password updated successfully')
       setPasswords({ newPassword:'', confirmPassword:'' })
+      setConfirmPasswordError('')
       setOtp(['','','','','','']); setVerified(false); setCodeSentMsg('')
     }catch(err){ setPasswordError(err.message) }
   }
@@ -742,6 +889,15 @@ function SecuritySection({ apiBase }) {
           </div>
         </div>
 
+        <div className="pw-rules settings-pw-rules">
+          {passwordRules.map((rule) => (
+            <div key={rule.id} className={`pw-rule ${rule.valid ? 'valid' : ''}`}>
+              <span className="rule-mark">{rule.valid ? '✓' : '✕'}</span>
+              <span>{rule.label}</span>
+            </div>
+          ))}
+        </div>
+
         <div className="form-group mb-3">
           <label className="form-label">Confirm New Password</label>
           <div className="password-wrapper">
@@ -770,6 +926,12 @@ function SecuritySection({ apiBase }) {
             </button>
           </div>
         </div>
+
+        {confirmPasswordError && (
+          <div className="alert alert-danger mt-2" role="alert">
+            {confirmPasswordError}
+          </div>
+        )}
 
         {passwordError && (
           <div className="alert alert-danger mt-3 mb-3" role="alert">

@@ -30,6 +30,16 @@ EMAIL_USER=kavyalearn.info@gmail.com
 EMAIL_PASS=<your_app_password>
 ```
 
+### Cloudinary (Media Storage)
+Use either `CLOUDINARY_URL` or the individual fields below.
+```
+CLOUDINARY_URL=cloudinary://<api_key>:<api_secret>@<cloud_name>
+CLOUDINARY_CLOUD_NAME=<cloud_name>
+CLOUDINARY_API_KEY=<api_key>
+CLOUDINARY_API_SECRET=<api_secret>
+CLOUDINARY_SECURE=true
+```
+
 ### Connection Pool
 ```
 SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=10

@@ -50,6 +50,7 @@ export default function VerifyOtp() {
         const userToStore = { id: body.userId, email: body.email }
         if (body.name) userToStore.name = body.name
         if (body.role) userToStore.role = body.role
+        if (body.avatar) userToStore.avatar = body.avatar
         setUser(userToStore)
         navigate('/organization')
       } else {

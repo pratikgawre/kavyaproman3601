@@ -19,7 +19,6 @@ import {
   FiClock,
   FiActivity,
   FiX,
-  FiUser,
 } from "react-icons/fi";
 import {
   BarChart,
@@ -36,6 +35,8 @@ import {
 import "./Reports.css";
 import "./Dashboard.css";
 import { useAuth } from '../context/AuthContext'
+import useIssueNotifications from '../hooks/useIssueNotifications'
+import { getInitials } from '../utils/initials'
 
 const Reports = () => {
   const navigate = useNavigate();
@@ -48,13 +49,13 @@ const Reports = () => {
 
   const { user, clearUser } = useAuth()
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
+  const avatarInitials = getInitials(user?.name || displayName, user?.email)
   const [selectedOrg, setSelectedOrg] = useState(() => {
     try {
       return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null
     } catch (e) { return null }
   })
-  const [avatar, setAvatar] = useState('')
-  useEffect(() => { const stored = localStorage.getItem('userAvatar'); if (stored) setAvatar(stored) }, [])
+  const avatar = user?.avatar || ''
 
   // listen for organization changes from OrganizationPage or other parts of app
   useEffect(() => {
@@ -135,14 +136,18 @@ const Reports = () => {
   const COLORS = ["#f4b400", "#0969da", "#2da44e"];
   // Notifications state for topbar
   const [showNotifications, setShowNotifications] = useState(false);
-  const [notifications, setNotifications] = useState([
-    { id: 1, title: 'New report generated: Sprint 5', time: '5m ago', read: false },
-    { id: 2, title: 'Project plan updated', time: '25m ago', read: false },
-    { id: 3, title: 'Export complete', time: '1h ago', read: true }
-  ]);
+  const {
+    notifications,
+    unreadCount,
+    loading: notificationsLoading,
+    error: notificationsError,
+    markAsRead: markNotificationAsRead,
+    markAllAsRead,
+    dismissNotification,
+    clearAllNotifications
+  } = useIssueNotifications({ limit: 6 });
   const notificationRef = useRef(null);
-
-  const unreadCount = notifications.filter(n => !n.read).length;
+  const topSearchInputRef = useRef(null);
 
   useEffect(() => {
     const handleOutsideClick = (event) => {
@@ -155,15 +160,11 @@ const Reports = () => {
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
 
-  const markAllAsRead = () => {
-    setNotifications(prev => prev.map(item => ({ ...item, read: true })));
-  };
-
-  const markNotificationAsRead = (id) => {
-    setNotifications(prev =>
-      prev.map(item => (item.id === id ? { ...item, read: true } : item))
-    );
-  };
+  useEffect(() => {
+    if (!mobileSearchOpen) return;
+    const timeoutId = setTimeout(() => topSearchInputRef.current?.focus(), 0);
+    return () => clearTimeout(timeoutId);
+  }, [mobileSearchOpen]);
 
   const toggleSidebarForScreen = () => {
     setCollapsed(prev => {
@@ -176,6 +177,27 @@ const Reports = () => {
   };
 
   const isMobileScreen = () => typeof window !== "undefined" && window.innerWidth <= 768;
+
+  const runIssueSearch = () => {
+    const query = (topSearchText || "").trim();
+    if (!query) {
+      navigate("/all-my-issues");
+      return;
+    }
+    navigate(`/all-my-issues?q=${encodeURIComponent(query)}`);
+  };
+
+  const handleTopSearchIconClick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (isMobileScreen() && !mobileSearchOpen) {
+      setMobileSearchOpen(true);
+      return;
+    }
+
+    runIssueSearch();
+  };
 
   return (
     <div className="dashboard-root d-flex">
@@ -227,7 +249,7 @@ const Reports = () => {
 
           <div className="sidebar-footer mt-3 d-flex flex-column align-items-start">
             <div className="profile d-flex align-items-center w-100">
-              <div className="avatar-icon">{avatar ? <img src={avatar} alt="avatar" /> : <FiUser size={20} />}</div>
+              <div className="avatar-icon">{avatar ? <img src={avatar} alt="avatar" /> : avatarInitials}</div>
               <div className="ms-2 user-info">
                 <div className="user-name">{displayName}</div>
                 <div className="user-role">{user?.role || 'Member'}</div>
@@ -255,15 +277,30 @@ const Reports = () => {
           <div
             className={`input-group top-search-medium ${mobileSearchOpen ? "mobile-open" : ""}`}
             onClick={() => {
-              if (isMobileScreen() && !mobileSearchOpen) setMobileSearchOpen(true);
+              if (isMobileScreen() && !mobileSearchOpen) {
+                setMobileSearchOpen(true);
+                return;
+              }
+              topSearchInputRef.current?.focus();
             }}
           >
-            <span className="input-group-text"><FiSearch /></span>
+            <button
+              type="button"
+              className="input-group-text"
+              aria-label="Search"
+              onClick={handleTopSearchIconClick}
+            >
+              <FiSearch />
+            </button>
             <input
+              ref={topSearchInputRef}
               className="form-control"
               placeholder="Search issues, projects..."
               value={topSearchText}
               onChange={(e) => setTopSearchText(e.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") runIssueSearch();
+              }}
               onFocus={() => {
                 if (isMobileScreen()) setMobileSearchOpen(true);
               }}
@@ -298,21 +335,65 @@ const Reports = () => {
               <div className="notification-dropdown">
                 <div className="notification-header">
                   <span>Notifications</span>
-                  <button className="mark-all-btn" onClick={markAllAsRead} type="button">
-                    Mark all as read
-                  </button>
+                  {(unreadCount > 0 || notifications.length > 0) && (
+                    <div className="notification-actions">
+                      {unreadCount > 0 && (
+                        <button className="mark-all-btn" onClick={markAllAsRead} type="button">
+                          Mark all read
+                        </button>
+                      )}
+                      {notifications.length > 0 && (
+                        <button className="clear-all-btn" onClick={clearAllNotifications} type="button">
+                          Clear all
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="notification-list">
-                  {notifications.map(item => (
-                    <button
+                  {notificationsLoading && (
+                    <div className="muted p-3">Loading notifications...</div>
+                  )}
+                  {!notificationsLoading && notifications.length === 0 && (
+                    <div className="muted p-3">{notificationsError || "No notifications yet"}</div>
+                  )}
+                  {!notificationsLoading && notifications.length > 0 && notifications.map(item => (
+                    <div
                       key={item.id}
                       className={`notification-item-row ${item.read ? "" : "unread"}`.trim()}
-                      onClick={() => markNotificationAsRead(item.id)}
-                      type="button"
+                      data-variant={item.variant}
+                      onClick={() => {
+                        markNotificationAsRead(item.id)
+                        setShowNotifications(false)
+                        if (item.href) navigate(item.href)
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          markNotificationAsRead(item.id)
+                          setShowNotifications(false)
+                          if (item.href) navigate(item.href)
+                        }
+                      }}
                     >
-                      <div className="notification-title">{item.title}</div>
-                      <div className="notification-time">{item.time}</div>
-                    </button>
+                      <div className="notification-item-body">
+                        <div className="notification-title">{item.title}</div>
+                        <div className="notification-time">{item.time}</div>
+                      </div>
+                      <button
+                        type="button"
+                        className="notification-dismiss-btn"
+                        aria-label="Dismiss notification"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          dismissNotification(item.id)
+                        }}
+                      >
+                        <FiX size={14} />
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>

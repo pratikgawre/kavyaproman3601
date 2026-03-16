@@ -5,12 +5,16 @@ import com.sendgrid.Request;
 import com.sendgrid.Response;
 import com.sendgrid.SendGrid;
 import com.sendgrid.helpers.mail.Mail;
+import com.sendgrid.helpers.mail.objects.Attachments;
 import com.sendgrid.helpers.mail.objects.Content;
 import com.sendgrid.helpers.mail.objects.Email;
+import com.sendgrid.helpers.mail.objects.Personalization;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+
+import java.util.Base64;
 
 @Service
 public class SendGridEmailService {
@@ -36,7 +40,15 @@ public class SendGridEmailService {
         return sendHtmlEmail(toEmail, subject, htmlBody, null);
     }
 
+    public boolean isEnabled() {
+        return enabled;
+    }
+
     public boolean sendHtmlEmail(String toEmail, String subject, String htmlBody, String replyToEmail) {
+        return sendHtmlEmail(toEmail, subject, htmlBody, replyToEmail, null);
+    }
+
+    public boolean sendHtmlEmail(String toEmail, String subject, String htmlBody, String replyToEmail, EmailAttachment attachment) {
         if (!enabled) {
             log.warn("Email send skipped because SendGrid is disabled. to={}, subject={}", toEmail, subject);
             return false;
@@ -45,9 +57,24 @@ public class SendGridEmailService {
             Email from = new Email(fromEmail);
             Email to = new Email(toEmail);
             Content content = new Content("text/html", htmlBody);
-            Mail mail = new Mail(from, subject, to, content);
+            Mail mail = new Mail();
+            mail.setFrom(from);
+            mail.setSubject(subject);
+            mail.addContent(content);
+
+            Personalization personalization = new Personalization();
+            personalization.addTo(to);
+            mail.addPersonalization(personalization);
             if (replyToEmail != null && !replyToEmail.isBlank()) {
                 mail.setReplyTo(new Email(replyToEmail));
+            }
+            if (attachment != null && attachment.bytes() != null && attachment.bytes().length > 0) {
+                Attachments att = new Attachments();
+                att.setContent(Base64.getEncoder().encodeToString(attachment.bytes()));
+                att.setType(attachment.contentType());
+                att.setFilename(attachment.fileName());
+                att.setDisposition("attachment");
+                mail.addAttachments(att);
             }
 
             Request request = new Request();

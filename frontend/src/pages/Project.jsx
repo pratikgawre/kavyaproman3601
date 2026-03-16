@@ -14,7 +14,6 @@ import {
   FiSearch,
   FiBell,
   FiPlus,
-  FiUser,
   FiRepeat,
   FiArrowRight,
   FiArchive,
@@ -27,6 +26,16 @@ import {
   FiInfo
 } from 'react-icons/fi'
 import { useAuth } from '../context/AuthContext'
+import useIssueNotifications from '../hooks/useIssueNotifications'
+
+const getAvatarInitials = (name, email) => {
+  const source = (name || '').trim() || (email || '').trim()
+  if (!source) return 'G'
+  const parts = source.split(/[\s._-]+/).filter(Boolean)
+  if (parts.length === 0) return source.charAt(0).toUpperCase()
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase()
+  return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase()
+}
 
 const PROJECTS = [
   {
@@ -78,6 +87,7 @@ export default function Project() {
   const navigate = useNavigate()
   const { user, clearUser } = useAuth()
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
+  const avatarInitials = getAvatarInitials(user?.name, user?.email)
   const [selectedOrg, setSelectedOrg] = useState(() => {
     try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null }
   })
@@ -97,19 +107,24 @@ export default function Project() {
   const [showArchivedProjects, setShowArchivedProjects] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
-  const [searchText, setSearchText] = useState('')
-  const [notifications, setNotifications] = useState([
-    { id: 1, title: 'Project roadmap updated for KavyaProMan 360', time: '3m ago', read: false },
-    { id: 2, title: 'Website Redesign: 2 new issues added', time: '22m ago', read: false },
-    { id: 3, title: 'Mobile App sprint planning scheduled', time: '1h ago', read: true }
-  ])
+  const [topSearchText, setTopSearchText] = useState('')
+  const {
+    notifications,
+    unreadCount,
+    loading: notificationsLoading,
+    error: notificationsError,
+    markAsRead: markNotificationRead,
+    markAllAsRead: markAllNotificationsRead,
+    addNotification,
+    dismissNotification,
+    clearAllNotifications
+  } = useIssueNotifications({ limit: 6 })
   const notificationRef = useRef(null)
+  const topSearchInputRef = useRef(null)
   const activeProjects = projects.filter((project) => !project.isArchived)
   const archivedProjects = projects.filter((project) => project.isArchived)
   const visibleProjects = showArchivedProjects ? archivedProjects : activeProjects
   const isSaveDisabled = !projectName.trim() || !projectKey.trim()
-  const unreadCount = notifications.filter((item) => !item.read).length
-
   useEffect(() => {
     if (!openProjectMenuId) {
       return undefined
@@ -136,9 +151,20 @@ export default function Project() {
     return () => document.removeEventListener('mousedown', handleOutsideClick)
   }, [])
 
+  useEffect(() => {
+    if (!mobileSearchOpen) return
+    const timeoutId = setTimeout(() => topSearchInputRef.current?.focus(), 0)
+    return () => clearTimeout(timeoutId)
+  }, [mobileSearchOpen])
+
+
   function handleLogout() {
     clearUser()
     navigate('/login', { replace: true })
+  }
+
+  function toggleNotifications() {
+    setShowNotifications((value) => !value)
   }
 
   function resetCreateForm() {
@@ -166,6 +192,18 @@ export default function Project() {
     return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`
   }
 
+  function getUniqueProjectKey(currentProjects, keyBase, excludedId = null) {
+    const list = Array.isArray(currentProjects) ? currentProjects : []
+    let uniqueKey = (keyBase || '').toString().trim().toUpperCase()
+    if (!uniqueKey) uniqueKey = 'PRJ'
+    let suffix = 1
+    while (list.some((project) => project.id === uniqueKey && project.id !== excludedId)) {
+      uniqueKey = `${keyBase}${suffix}`
+      suffix += 1
+    }
+    return uniqueKey
+  }
+
   function handleSaveProject() {
     const normalizedName = projectName.trim()
     const normalizedKeyBase = projectKey.trim().toUpperCase()
@@ -175,44 +213,45 @@ export default function Project() {
       return
     }
 
-    setProjects((current) => {
-      let uniqueKey = normalizedKeyBase
-      let suffix = 1
+    const uniqueKey = getUniqueProjectKey(projects, normalizedKeyBase, editingProjectId)
 
-      while (current.some((project) => project.id === uniqueKey && project.id !== editingProjectId)) {
-        uniqueKey = `${normalizedKeyBase}${suffix}`
-        suffix += 1
-      }
+    if (editingProjectId) {
+      setProjects((current) => current.map((project) => (
+        project.id === editingProjectId
+          ? {
+              ...project,
+              id: uniqueKey,
+              icon: selectedProjectIcon,
+              name: normalizedName,
+              description: normalizedDescription || 'No description provided',
+              projectType: selectedProjectType
+            }
+          : project
+      )))
+      setShowCreateModal(false)
+      resetCreateForm()
+      return
+    }
 
-      if (editingProjectId) {
-        return current.map((project) => (
-          project.id === editingProjectId
-            ? {
-                ...project,
-                id: uniqueKey,
-                icon: selectedProjectIcon,
-                name: normalizedName,
-                description: normalizedDescription || 'No description provided',
-                projectType: selectedProjectType
-              }
-            : project
-        ))
-      }
+    const nextProject = {
+      id: uniqueKey,
+      icon: selectedProjectIcon,
+      name: normalizedName,
+      description: normalizedDescription || 'No description provided',
+      completedIssues: 0,
+      totalIssues: 0,
+      teamLead: displayName,
+      createdOn: formatCreatedOn(new Date()),
+      isArchived: false,
+      projectType: selectedProjectType
+    }
 
-      const nextProject = {
-        id: uniqueKey,
-        icon: selectedProjectIcon,
-        name: normalizedName,
-        description: normalizedDescription || 'No description provided',
-        completedIssues: 0,
-        totalIssues: 0,
-        teamLead: displayName,
-        createdOn: formatCreatedOn(new Date()),
-        isArchived: false,
-        projectType: selectedProjectType
-      }
+    setProjects((current) => [nextProject, ...(Array.isArray(current) ? current : [])])
 
-      return [nextProject, ...current]
+    addNotification({
+      id: `project-created-${uniqueKey}-${Date.now()}`,
+      type: 'project_created',
+      title: `Project created: ${normalizedName} (${uniqueKey})`
     })
 
     setShowCreateModal(false)
@@ -236,17 +275,6 @@ export default function Project() {
     setOpenProjectMenuId(null)
   }
 
-  function toggleNotifications() {
-    setShowNotifications((value) => !value)
-  }
-
-  function markNotificationRead(id) {
-    setNotifications((current) => current.map((item) => (item.id === id ? { ...item, read: true } : item)))
-  }
-
-  function markAllNotificationsRead() {
-    setNotifications((current) => current.map((item) => ({ ...item, read: true })))
-  }
 
   function toggleSidebarForScreen() {
     setCollapsed((prev) => {
@@ -260,6 +288,27 @@ export default function Project() {
 
   function isMobileScreen() {
     return typeof window !== 'undefined' && window.innerWidth <= 768
+  }
+
+  function runIssueSearch() {
+    const query = (topSearchText || '').trim()
+    if (!query) {
+      navigate('/all-my-issues')
+      return
+    }
+    navigate(`/all-my-issues?q=${encodeURIComponent(query)}`)
+  }
+
+  function handleTopSearchIconClick(event) {
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (isMobileScreen() && !mobileSearchOpen) {
+      setMobileSearchOpen(true)
+      return
+    }
+
+    runIssueSearch()
   }
 
   function renderCreateTabContent() {
@@ -555,7 +604,9 @@ export default function Project() {
 
           <div className="sidebar-footer mt-3 d-flex flex-column align-items-start">
             <div className="profile d-flex align-items-center w-100">
-              <div className="avatar-icon"><FiUser size={20} /></div>
+              <div className="avatar-icon">
+                {user?.avatar ? <img src={user.avatar} alt="avatar" /> : avatarInitials}
+              </div>
               <div className="ms-2 user-info">
                 <div className="user-name">{displayName}</div>
                 <div className="user-role">{user?.role || 'Member'}</div>
@@ -595,16 +646,31 @@ export default function Project() {
             <div
               className={`input-group top-search-medium ${mobileSearchOpen ? 'mobile-open' : ''}`}
               onClick={() => {
-                if (isMobileScreen() && !mobileSearchOpen) setMobileSearchOpen(true)
+                if (isMobileScreen() && !mobileSearchOpen) {
+                  setMobileSearchOpen(true)
+                  return
+                }
+                topSearchInputRef.current?.focus()
               }}
             >
-              <span className="input-group-text"><FiSearch /></span>
+              <button
+                type="button"
+                className="input-group-text"
+                aria-label="Search"
+                onClick={handleTopSearchIconClick}
+              >
+                <FiSearch />
+              </button>
               <input
+                ref={topSearchInputRef}
                 className="form-control"
                 placeholder="Search issues, projects..."
                 aria-label="Search issues and projects"
-                value={searchText}
-                onChange={(event) => setSearchText(event.target.value)}
+                value={topSearchText}
+                onChange={(event) => setTopSearchText(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') runIssueSearch()
+                }}
                 onFocus={() => { if (isMobileScreen()) setMobileSearchOpen(true) }}
               />
               {mobileSearchOpen && (
@@ -632,23 +698,65 @@ export default function Project() {
                 <div className="notification-dropdown">
                   <div className="notification-header">
                     <span>Notifications</span>
-                    {unreadCount > 0 && (
-                      <button className="mark-all-btn" onClick={markAllNotificationsRead} type="button">
-                        Mark all read
-                      </button>
+                    {(unreadCount > 0 || notifications.length > 0) && (
+                      <div className="notification-actions">
+                        {unreadCount > 0 && (
+                          <button className="mark-all-btn" onClick={markAllNotificationsRead} type="button">
+                            Mark all read
+                          </button>
+                        )}
+                        {notifications.length > 0 && (
+                          <button className="clear-all-btn" onClick={clearAllNotifications} type="button">
+                            Clear all
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                   <div className="notification-list">
-                    {notifications.map((item) => (
-                      <button
+                    {notificationsLoading && (
+                      <div className="muted p-3">Loading notifications...</div>
+                    )}
+                    {!notificationsLoading && notifications.length === 0 && (
+                      <div className="muted p-3">{notificationsError || 'No notifications yet'}</div>
+                    )}
+                    {!notificationsLoading && notifications.length > 0 && notifications.map((item) => (
+                      <div
                         key={item.id}
                         className={`notification-item-row ${item.read ? 'read' : 'unread'}`}
-                        onClick={() => markNotificationRead(item.id)}
-                        type="button"
+                        data-variant={item.variant}
+                        onClick={() => {
+                          markNotificationRead(item.id)
+                          setShowNotifications(false)
+                          if (item.href) navigate(item.href)
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            markNotificationRead(item.id)
+                            setShowNotifications(false)
+                            if (item.href) navigate(item.href)
+                          }
+                        }}
                       >
-                        <div className="notification-title">{item.title}</div>
-                        <div className="notification-time">{item.time}</div>
-                      </button>
+                        <div className="notification-item-body">
+                          <div className="notification-title">{item.title}</div>
+                          <div className="notification-time">{item.time}</div>
+                        </div>
+                        <button
+                          type="button"
+                          className="notification-dismiss-btn"
+                          aria-label="Dismiss notification"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            dismissNotification(item.id)
+                          }}
+                        >
+                          <FiX size={14} />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 </div>

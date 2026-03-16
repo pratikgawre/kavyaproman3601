@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import './ContactSales.css'
-import { FiX, FiUser, FiMail, FiPhone, FiEdit3, FiServer } from 'react-icons/fi'
+import { FiX, FiUser, FiMail, FiPhone, FiEdit3, FiServer, FiPaperclip } from 'react-icons/fi'
 import { useNavigate } from 'react-router-dom'
 
 const stripLeadingSpace = (value) => value.replace(/^\s+/, '')
@@ -24,6 +24,10 @@ export default function ContactSales(){
   const [verified, setVerified] = useState(false)
   const [sending, setSending] = useState(false)
   const [apiError, setApiError] = useState(null)
+  const [nameError, setNameError] = useState('')
+  const [emailError, setEmailError] = useState('')
+  const [attachment, setAttachment] = useState(null)
+  const [fileError, setFileError] = useState('')
 
   // If the user clicks the verification link in the email it will open
   // /contact-sales?email=...&code=... -> auto-verify here and show a verified badge
@@ -61,11 +65,70 @@ export default function ContactSales(){
 
   function validateAll() {
     if (!name || name.trim().length < 2) return 'Please enter your name';
+    if (!/^[A-Za-z]+(?:\s+[A-Za-z]+)*$/.test(name.trim())) return 'Name can only contain letters and spaces';
     if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return 'Please enter a valid email';
     if (!/^[0-9]{10}$/.test(phone)) return 'Please enter a valid 10-digit phone number';
     if (!message || message.trim().length < 10) return 'Please enter a message (min 10 chars)';
+    if (fileError) return fileError;
     if (!verified) return 'Please verify your email before submitting';
     return null;
+  }
+
+  const sanitizeName = (value) => stripLeadingSpace(value).replace(/[^A-Za-z\s]/g, '')
+
+  const handleNameChange = (e) => {
+    const raw = e.target.value
+    const sanitized = sanitizeName(raw)
+    setName(sanitized)
+    if (raw !== sanitized) {
+      setNameError('Name can only contain letters and spaces')
+      return
+    }
+    setNameError('')
+  }
+
+  const handleEmailChange = (e) => {
+    const raw = e.target.value
+    const sanitized = sanitizeEmail(raw)
+    setEmail(sanitized)
+    setVerificationSent(false)
+    setVerified(false)
+    setVerificationCode('')
+    if (raw !== sanitized) {
+      setEmailError('Email cannot contain special characters (only letters, numbers, @ and .)')
+      return
+    }
+    setEmailError('')
+  }
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) {
+      setAttachment(null)
+      setFileError('')
+      return
+    }
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'image/jpeg',
+      'image/png',
+      'image/gif'
+    ]
+    const maxBytes = 5 * 1024 * 1024
+    if (!allowedTypes.includes(file.type)) {
+      setAttachment(null)
+      setFileError('Only PDF, Word, or image files are allowed')
+      return
+    }
+    if (file.size > maxBytes) {
+      setAttachment(null)
+      setFileError('File size must be 5MB or less')
+      return
+    }
+    setFileError('')
+    setAttachment(file)
   }
 
   async function handleSubmit(e){
@@ -76,8 +139,15 @@ export default function ContactSales(){
 
     setSending(true)
     try {
-      const body = { name, email, countryCode: country, phone, message, verificationCode };
-      const res = await fetch(API_BASE + '/submit', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(body) })
+      const formData = new FormData()
+      formData.append('name', name.trim())
+      formData.append('email', email.trim())
+      formData.append('countryCode', country)
+      formData.append('phone', phone)
+      formData.append('message', message.trim())
+      formData.append('verificationCode', verificationCode)
+      if (attachment) formData.append('file', attachment)
+      const res = await fetch(API_BASE + '/submit', { method: 'POST', body: formData })
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed to submit');
       alert('Thanks — your request was submitted. Our sales team will contact you.');
@@ -99,14 +169,13 @@ export default function ContactSales(){
         <form className="contact-form" onSubmit={handleSubmit}>
           <label className="field">
             <FiUser className="field-icon" />
-            <input placeholder="Full Name" value={name} onChange={(e)=>setName(e.target.value)} required />
+            <input placeholder="Full Name" value={name} onChange={handleNameChange} required />
           </label>
+          {nameError && <div className="contact-error">{nameError}</div>}
 
           <label className="field">
             <FiMail className="field-icon" />
-            <input placeholder="Email Address" type="email" value={email} onChange={(e)=>{
-              setEmail(sanitizeEmail(e.target.value)); setVerificationSent(false); setVerified(false); setVerificationCode('');
-            }} onKeyDown={preventLeadingSpace} required />
+            <input placeholder="Email Address" type="email" value={email} onChange={handleEmailChange} onKeyDown={preventLeadingSpace} required />
             {verified && (
               <span style={{marginLeft:8,background:'#ecfdf5',color:'#065f46',padding:'6px 8px',borderRadius:6,fontSize:12,fontWeight:600}}>Verified</span>
             )}
@@ -122,6 +191,7 @@ export default function ContactSales(){
               } catch (err) { setApiError(err.message) }
             }}>Verify Email</button>
           </label>
+          {emailError && <div className="contact-error">{emailError}</div>}
 
           {verificationSent && !verified && (
             <label className="field">
@@ -174,8 +244,21 @@ export default function ContactSales(){
 
           <label className="field">
             <FiEdit3 className="field-icon" />
-            <textarea placeholder="Your Message" value={message} onChange={(e)=>setMessage(e.target.value)} rows={5} />
+            <textarea placeholder="Your Message" value={message} onChange={(e)=>setMessage(e.target.value)} rows={4} />
           </label>
+
+          <label className="field">
+            <FiPaperclip className="field-icon" />
+            <input
+              type="file"
+              accept=".pdf,.doc,.docx,image/png,image/jpeg,image/gif"
+              onChange={handleFileChange}
+            />
+          </label>
+          {attachment && !fileError && (
+            <div className="contact-file">Attached: {attachment.name}</div>
+          )}
+          {fileError && <div className="contact-error">{fileError}</div>}
 
           <button className="submit-btn" type="submit">Submit</button>
           <div className="help-text">We'll get back to you shortly.</div>

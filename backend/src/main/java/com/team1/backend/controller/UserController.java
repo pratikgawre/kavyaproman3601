@@ -22,7 +22,7 @@ public class UserController {
      * expect a header X-USER-ID containing the user id.  A real
      * application would use JWT or session-based authentication instead.
      */
-    @GetMapping("/user")
+    @GetMapping({"/user", "/user/me"})
     public ResponseEntity<UserDto> getUser(@RequestHeader("X-USER-ID") String userId) {
         UserDto dto = userService.getUserById(userId);
         return ResponseEntity.ok(dto);

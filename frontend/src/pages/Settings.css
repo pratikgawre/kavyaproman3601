@@ -192,6 +192,30 @@
   transition: all 0.2s ease;
 }
 
+.settings-page .form-control:disabled {
+  background: var(--settings-bg-soft);
+  cursor: not-allowed;
+  opacity: 1;
+  color: #6b7280;
+}
+
+.settings-page .locked-field {
+  position: relative;
+}
+
+.settings-page .locked-field .form-control {
+  padding-right: 40px;
+}
+
+.settings-page .locked-field .lock-icon {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9ca3af;
+  pointer-events: none;
+}
+
 .settings-page .form-control:focus {
   border-color: var(--settings-brand);
   box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.08);
@@ -431,6 +455,56 @@
   color: #111827;
 }
 
+.settings-page .pw-rules {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-page .pw-rule {
+  font-size: 13px;
+  color: #ef4444;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff5f5;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.settings-page .pw-rule::before {
+  content: none;
+}
+
+.settings-page .pw-rule.valid {
+  color: #16a34a;
+  background: #f0fdf4;
+}
+
+.settings-page .rule-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid #d1d5db;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.settings-page .password-wrapper,
+.settings-page .pw-rules {
+  width: 88%;
+  max-width: 520px;
+}
+
+.settings-page .pw-rules {
+  margin-left: 0;
+}
+
 .settings-page .qr-code-section {
   padding: 20px;
   background: #f9fafb;
@@ -494,6 +568,63 @@
   .settings-page .verify-row {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .settings-page .password-wrapper,
+  .settings-page .pw-rules {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+@media (max-width: 992px) {
+  .settings-page .card-header h2 {
+    font-size: 18px;
+  }
+
+  .settings-page .card-header p {
+    font-size: 13px;
+  }
+
+  .settings-page .avatar-section {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .settings-page .avatar-section .avatar-preview {
+    width: 56px;
+    height: 56px;
+    min-width: 56px;
+    font-size: 20px;
+  }
+
+  .settings-page .avatar-section .btn {
+    width: 100%;
+  }
+
+  .settings-page .avatar-section small {
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 576px) {
+  .settings-page .settings-card {
+    padding: 16px;
+  }
+
+  .settings-page .dash-header h1 {
+    font-size: 20px;
+  }
+
+  .settings-page .tab-pill {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+
+  .settings-page .form-control {
+    padding: 9px 10px;
+    font-size: 13px;
   }
 }
 

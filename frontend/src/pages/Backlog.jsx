@@ -21,9 +21,11 @@ import {
   FiBookOpen,
   FiAlertCircle,
   FiCheckSquare,
-  FiZap
+  FiZap,
+  FiX
 } from 'react-icons/fi'
 import { useAuth } from '../context/AuthContext'
+import useIssueNotifications from '../hooks/useIssueNotifications'
 
 const ACTIVE_SPRINT_ISSUES = [
   {
@@ -130,19 +132,26 @@ export default function Backlog() {
   }, [])
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+  const [topSearchText, setTopSearchText] = useState('')
   const [showNotifications, setShowNotifications] = useState(false)
-  const [notifications, setNotifications] = useState([
-    { id: 1, title: 'Sprint backlog updated with 2 new tasks', time: '2m ago', read: false },
-    { id: 2, title: 'KPM-5 moved to In Review', time: '15m ago', read: false },
-    { id: 3, title: 'Daily standup starts in 30 minutes', time: '1h ago', read: true }
-  ])
+  const {
+    notifications,
+    unreadCount,
+    loading: notificationsLoading,
+    error: notificationsError,
+    markAsRead: markNotificationRead,
+    markAllAsRead: markAllNotificationsRead,
+    dismissNotification,
+    clearAllNotifications
+  } = useIssueNotifications({ limit: 6 })
   const notificationRef = useRef(null)
+  const topSearchInputRef = useRef(null)
   const projectFromState = location.state?.project
   const activeProject = projectFromState || {
     id: projectId || 'KPM',
     name: 'KavyaProMan 360'
   }
-  const unreadCount = notifications.filter((item) => !item.read).length
 
   useEffect(() => {
     function handleOutsideClick(event) {
@@ -155,6 +164,12 @@ export default function Backlog() {
     return () => document.removeEventListener('mousedown', handleOutsideClick)
   }, [])
 
+  useEffect(() => {
+    if (!mobileSearchOpen) return
+    const timeoutId = setTimeout(() => topSearchInputRef.current?.focus(), 0)
+    return () => clearTimeout(timeoutId)
+  }, [mobileSearchOpen])
+
   function handleLogout() {
     clearUser()
     navigate('/login', { replace: true })
@@ -164,13 +179,6 @@ export default function Backlog() {
     setShowNotifications((value) => !value)
   }
 
-  function markNotificationRead(id) {
-    setNotifications((current) => current.map((item) => (item.id === id ? { ...item, read: true } : item)))
-  }
-
-  function markAllNotificationsRead() {
-    setNotifications((current) => current.map((item) => ({ ...item, read: true })))
-  }
 
   function toggleSidebarForScreen() {
     setCollapsed((prev) => {
@@ -180,6 +188,31 @@ export default function Backlog() {
       }
       return next
     })
+  }
+
+  function isMobileScreen() {
+    return typeof window !== 'undefined' && window.innerWidth <= 768
+  }
+
+  function runIssueSearch() {
+    const query = (topSearchText || '').trim()
+    if (!query) {
+      navigate('/all-my-issues')
+      return
+    }
+    navigate(`/all-my-issues?q=${encodeURIComponent(query)}`)
+  }
+
+  function handleTopSearchIconClick(event) {
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (isMobileScreen() && !mobileSearchOpen) {
+      setMobileSearchOpen(true)
+      return
+    }
+
+    runIssueSearch()
   }
 
   return (
@@ -266,10 +299,52 @@ export default function Backlog() {
 
       <main className={`content backlog-content flex-grow-1 p-4 ${collapsed ? 'with-topbar' : ''}`}>
         <header className="backlog-top-strip">
-          <div className="top-search-row">
-            <div className="input-group top-search-medium">
-              <span className="input-group-text"><FiSearch /></span>
-              <input className="form-control" placeholder="Search issues, projects..." aria-label="Search issues and projects" />
+          <div className={`top-search-row ${mobileSearchOpen ? 'mobile-search-open' : ''}`}>
+            <div
+              className={`input-group top-search-medium ${mobileSearchOpen ? 'mobile-open' : ''}`}
+              onClick={() => {
+                if (isMobileScreen() && !mobileSearchOpen) {
+                  setMobileSearchOpen(true)
+                  return
+                }
+                topSearchInputRef.current?.focus()
+              }}
+            >
+              <button
+                type="button"
+                className="input-group-text"
+                aria-label="Search"
+                onClick={handleTopSearchIconClick}
+              >
+                <FiSearch />
+              </button>
+              <input
+                ref={topSearchInputRef}
+                className="form-control"
+                placeholder="Search issues, projects..."
+                aria-label="Search issues and projects"
+                value={topSearchText}
+                onChange={(event) => setTopSearchText(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') runIssueSearch()
+                }}
+                onFocus={() => {
+                  if (isMobileScreen()) setMobileSearchOpen(true)
+                }}
+              />
+              {mobileSearchOpen && (
+                <button
+                  type="button"
+                  className="dashboard-search-close"
+                  aria-label="Close search"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setMobileSearchOpen(false)
+                  }}
+                >
+                  <FiX size={16} />
+                </button>
+              )}
             </div>
 
             <div className="notification-wrapper me-2" ref={notificationRef}>
@@ -282,23 +357,65 @@ export default function Backlog() {
                 <div className="notification-dropdown">
                   <div className="notification-header">
                     <span>Notifications</span>
-                    {unreadCount > 0 && (
-                      <button className="mark-all-btn" type="button" onClick={markAllNotificationsRead}>
-                        Mark all read
-                      </button>
+                    {(unreadCount > 0 || notifications.length > 0) && (
+                      <div className="notification-actions">
+                        {unreadCount > 0 && (
+                          <button className="mark-all-btn" type="button" onClick={markAllNotificationsRead}>
+                            Mark all read
+                          </button>
+                        )}
+                        {notifications.length > 0 && (
+                          <button className="clear-all-btn" type="button" onClick={clearAllNotifications}>
+                            Clear all
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                   <div className="notification-list">
-                    {notifications.map((item) => (
-                      <button
+                    {notificationsLoading && (
+                      <div className="muted p-3">Loading notifications...</div>
+                    )}
+                    {!notificationsLoading && notifications.length === 0 && (
+                      <div className="muted p-3">{notificationsError || 'No notifications yet'}</div>
+                    )}
+                    {!notificationsLoading && notifications.length > 0 && notifications.map((item) => (
+                      <div
                         key={item.id}
                         className={`notification-item-row ${item.read ? 'read' : 'unread'}`}
-                        onClick={() => markNotificationRead(item.id)}
-                        type="button"
+                        data-variant={item.variant}
+                        onClick={() => {
+                          markNotificationRead(item.id)
+                          setShowNotifications(false)
+                          if (item.href) navigate(item.href)
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            markNotificationRead(item.id)
+                            setShowNotifications(false)
+                            if (item.href) navigate(item.href)
+                          }
+                        }}
                       >
-                        <div className="notification-title">{item.title}</div>
-                        <div className="notification-time">{item.time}</div>
-                      </button>
+                        <div className="notification-item-body">
+                          <div className="notification-title">{item.title}</div>
+                          <div className="notification-time">{item.time}</div>
+                        </div>
+                        <button
+                          type="button"
+                          className="notification-dismiss-btn"
+                          aria-label="Dismiss notification"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            dismissNotification(item.id)
+                          }}
+                        >
+                          <FiX size={14} />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 </div>
