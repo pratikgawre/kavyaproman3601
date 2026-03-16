@@ -43,7 +43,8 @@ export default function AllMyIssues(){
     markAsRead,
     markAllAsRead,
     dismissNotification,
-    clearAllNotifications
+    clearAllNotifications,
+    refreshNotifications
   } = useIssueNotifications({ limit: 6 })
   const notificationRef = useRef(null)
   const topSearchInputRef = useRef(null)
@@ -186,7 +187,11 @@ export default function AllMyIssues(){
   useEffect(()=>{
     async function load(){
       try{
-        const res = await fetch(`${API_BASE}/api/issues`)
+        if (!user?.id) {
+          setIssues([])
+          return
+        }
+        const res = await fetch(`${API_BASE}/api/issues`, { headers: { 'X-USER-ID': String(user.id) } })
         if(!res.ok) throw new Error('failed to fetch')
         const data = await res.json()
         // attachmentsJson may be a JSON string; parse into attachments array
@@ -273,7 +278,7 @@ export default function AllMyIssues(){
       }
     }
     load()
-  },[location.search])
+  },[API_BASE, location.search, user?.id])
 
   function openEdit(idx){
     const item = issues[idx]
@@ -306,8 +311,6 @@ export default function AllMyIssues(){
     try{
       const id = editFields.id
       const payload = {
-        creatorName: editFields.creatorName || '',
-        creatorEmail: editFields.creatorEmail || '',
         project: editFields.project,
         issueType: editFields.issueType,
         epicName: editFields.epicName,
@@ -316,20 +319,25 @@ export default function AllMyIssues(){
         attachmentsJson: JSON.stringify(editFields.attachments || []),
         difficulty: editFields.difficulty || null
       }
-      fetch(`${API_BASE}/api/issues/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) })
+      fetch(`${API_BASE}/api/issues/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type':'application/json', 'X-USER-ID': String(user?.id || '') },
+        body: JSON.stringify(payload)
+      })
         .then(res => {
           if(!res.ok) throw new Error('update failed')
           return res.json()
         })
         .then(()=>{
           // refresh list
-          return fetch(`${API_BASE}/api/issues`)
+          return fetch(`${API_BASE}/api/issues`, { headers: { 'X-USER-ID': String(user?.id || '') } })
         })
         .then(r=>r.json())
         .then(data=>{
           const parsed = data.map(d => ({ ...d, attachments: d.attachmentsJson ? JSON.parse(d.attachmentsJson) : (d.attachments || []) }))
           setIssues(parsed.slice().reverse())
           closeEdit()
+          refreshNotifications?.()
         })
         .catch(err=>{ console.error(err); alert('Failed to update issue') })
     }catch(e){ console.error(e) }
@@ -340,15 +348,16 @@ export default function AllMyIssues(){
     try{
       const item = issues[idx]
       if(!item) return
-      fetch(`${API_BASE}/api/issues/${item.id}`, { method: 'DELETE' })
+      fetch(`${API_BASE}/api/issues/${item.id}`, { method: 'DELETE', headers: { 'X-USER-ID': String(user?.id || '') } })
         .then(res => {
           if(!res.ok) throw new Error('delete failed')
-          return fetch(`${API_BASE}/api/issues`)
+          return fetch(`${API_BASE}/api/issues`, { headers: { 'X-USER-ID': String(user?.id || '') } })
         })
         .then(r=>r.json())
         .then(data=>{
           const parsed = data.map(d => ({ ...d, attachments: d.attachmentsJson ? JSON.parse(d.attachmentsJson) : (d.attachments || []) }))
           setIssues(parsed.slice().reverse())
+          refreshNotifications?.()
         })
         .catch(err=>{ console.error(err); alert('Failed to delete issue') })
     }catch(e){ console.error(e) }
@@ -590,7 +599,7 @@ export default function AllMyIssues(){
           <h2 style={{margin:0}}>All My Issues</h2>
         </div>
 
-        <div style={{marginTop:18,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(320px,1fr))',gap:16}}>
+        <div className="all-my-issues-grid">
           {issues.length === 0 && <div className="filter-card">No issues found. Create one from Dashboard.</div>}
           {issues.map((it, idx)=> (
             <div key={idx} className="filter-card">

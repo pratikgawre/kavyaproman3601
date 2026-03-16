@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { FaGithub, FaGoogle } from 'react-icons/fa'
 import './Auth.css'
 import { useAuth } from '../context/AuthContext'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080'
+const MIN_PASSWORD_LENGTH = 8
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -22,6 +24,11 @@ export default function Login() {
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
+
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
+      return
+    }
     try {
       const res = await fetch(`${API_BASE}/api/auth/login`, {
         method: 'POST',
@@ -75,6 +82,7 @@ export default function Login() {
         <label>Email Address</label>
         <input
           type="email"
+          placeholder="Enter your email"
           value={email}
           onChange={e => setEmail(sanitizeEmail(e.target.value))}
           onKeyDown={preventLeadingSpace}
@@ -85,8 +93,10 @@ export default function Login() {
         <div className="password-wrapper">
           <input
             type={showPassword ? 'text' : 'password'}
+            placeholder="Enter your password"
             value={password}
             onChange={e => setPassword(stripLeadingSpace(e.target.value))}
+            onKeyDown={preventLeadingSpace}
             autoComplete="current-password"
             required
           />
@@ -114,10 +124,16 @@ export default function Login() {
           <a className="muted" href="/forgot-password">Forgot password?</a>
         </div>
         <button className="auth-btn" type="submit">Sign In</button>
-        <div className="divider text-black">Or continue with</div>
+        <div className="auth-divider text-black">Or continue with</div>
         <div className="auth-socials">
-          <button className="social mt-2">Google</button>
-          <button className="social mt-2">GitHub</button>
+          <button className="social mt-2" type="button">
+            <FaGoogle aria-hidden="true" focusable="false" />
+            <span>Google</span>
+          </button>
+          <button className="social mt-2" type="button">
+            <FaGithub aria-hidden="true" focusable="false" />
+            <span>GitHub</span>
+          </button>
         </div>
         <div className="auth-foot">Don't have an account? <a href="/register">Sign up</a></div>
       </form>

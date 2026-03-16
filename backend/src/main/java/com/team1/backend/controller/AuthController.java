@@ -1,6 +1,7 @@
 package com.team1.backend.controller;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -34,7 +35,10 @@ public class AuthController {
     public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest req) {
         AuthResponse res = authService.login(req);
         if (!res.isSuccess()) {
-            return ResponseEntity.status(401).body(res);
+            if ("Invalid credentials".equals(res.getMessage())) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(res);
+            }
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(res);
         }
         return ResponseEntity.ok(res);
     }
