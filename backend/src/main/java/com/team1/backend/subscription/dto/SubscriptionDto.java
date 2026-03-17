@@ -20,4 +20,6 @@ public class SubscriptionDto {
     private String name;
     private String email;
     private Instant purchasedAt;
+    private Instant expiresAt;
+    private boolean expired;
 }

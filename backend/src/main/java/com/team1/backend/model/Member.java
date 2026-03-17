@@ -3,9 +3,13 @@ package com.team1.backend.model;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.LocalDateTime;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+@CompoundIndexes({
+        @CompoundIndex(name = "email_manager_unique", def = "{'email': 1, 'managerEmail': 1}", unique = true)
+})
 @Document(collection = "members")
 public class Member {
 
@@ -14,7 +18,6 @@ public class Member {
 
     private String name;
 
-    @Indexed(unique = true)
     private String email;
 
     private String role;   // Admin, Developer, Tester
@@ -25,6 +28,9 @@ public class Member {
     private Integer activeIssues = 0;
 
     private String image;
+
+    // Project manager who invited/owns this member
+    private String managerEmail;
 
     private LocalDateTime createdAt;
 
@@ -95,6 +101,14 @@ public class Member {
 
     public void setImage(String image) {
         this.image = image;
+    }
+
+    public String getManagerEmail() {
+        return managerEmail;
+    }
+
+    public void setManagerEmail(String managerEmail) {
+        this.managerEmail = managerEmail;
     }
 
     public LocalDateTime getCreatedAt() {

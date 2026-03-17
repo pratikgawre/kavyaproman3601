@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, useLocation, useNavigate, useParams } from 'react-router-dom'
 import './Dashboard.css'
 import './Board.css'
-import { BOARD_COLUMNS } from '../data/boardColumns'
 import {
   FiGrid,
   FiFolder,
@@ -35,12 +34,51 @@ function getInitials(name) {
     .join('')
 }
 
+const STATUS_COLUMNS = [
+  { key: 'todo', title: 'To Do', tone: 'todo' },
+  { key: 'progress', title: 'In Progress', tone: 'progress' },
+  { key: 'review', title: 'In Review', tone: 'review' },
+  { key: 'done', title: 'Done', tone: 'done' }
+]
+
+const normalizeStatus = (status) => {
+  const normalized = (status || '').toLowerCase().trim()
+  if (normalized === 'todo' || normalized === 'to-do') return 'todo'
+  if (normalized === 'progress' || normalized === 'in-progress' || normalized === 'in progress') return 'progress'
+  if (normalized === 'review' || normalized === 'in-review' || normalized === 'in review') return 'review'
+  if (normalized === 'done' || normalized === 'completed') return 'done'
+  return 'todo'
+}
+
+const normalizePriority = (priority, difficulty) => {
+  const normalized = (priority || '').toLowerCase().trim()
+  if (['critical', 'high', 'medium', 'low'].includes(normalized)) return normalized
+  const diff = (difficulty || '').toLowerCase().trim()
+  if (diff === 'high') return 'high'
+  if (diff === 'low') return 'low'
+  return 'medium'
+}
+
+const pointsFromDifficulty = (difficulty) => {
+  const diff = (difficulty || '').toLowerCase().trim()
+  if (diff === 'high') return 8
+  if (diff === 'low') return 2
+  return 5
+}
+
+const normalizeProjectKey = (value) => (value || '').trim().toUpperCase()
+const normalizeRole = (role) => (role || '').trim().toLowerCase()
+
 export default function Board() {
   const navigate = useNavigate()
   const location = useLocation()
   const { projectId } = useParams()
   const { user, clearUser } = useAuth()
-  const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
+  const [profileUser, setProfileUser] = useState(null)
+  const currentUser = profileUser || user || {}
+  const displayName = currentUser?.name || (currentUser?.email ? currentUser.email.split('@')[0] : 'Guest')
+  const userEmail = (currentUser?.email || '').trim().toLowerCase()
+  const isProjectManager = ['admin', 'project manager'].includes(normalizeRole(currentUser?.role))
   const [selectedOrg, setSelectedOrg] = useState(() => { try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null } })
   useEffect(() => {
     function onOrgChanged(e){ const org = e?.detail || null; setSelectedOrg(org); try { if (org) localStorage.setItem('org', JSON.stringify(org)) } catch(err){} }
@@ -63,6 +101,9 @@ export default function Board() {
   const [showNotifications, setShowNotifications] = useState(false)
   const [showAssigneeDropdown, setShowAssigneeDropdown] = useState(false)
   const [showTypeDropdown, setShowTypeDropdown] = useState(false)
+  const [issues, setIssues] = useState([])
+  const [issuesLoading, setIssuesLoading] = useState(true)
+  const [issuesError, setIssuesError] = useState('')
   const {
     notifications,
     unreadCount,
@@ -77,10 +118,14 @@ export default function Board() {
   const topSearchInputRef = useRef(null)
   const assigneeDropdownRef = useRef(null)
   const typeDropdownRef = useRef(null)
+  const API_BASE = (import.meta?.env?.VITE_API_BASE || 'http://localhost:8080')
   const projectFromState = location.state?.project
-  const activeProject = projectFromState || {
-    id: projectId || 'KPM',
-    name: 'KavyaProMan 360'
+  const projectKeyRaw = (projectFromState?.projectKey || projectFromState?.id || projectId || '').trim()
+  const activeProjectKey = normalizeProjectKey(projectKeyRaw)
+  const [projectDetails, setProjectDetails] = useState(null)
+  const activeProject = projectFromState || projectDetails || {
+    id: activeProjectKey || projectKeyRaw,
+    name: projectKeyRaw || activeProjectKey || 'Project'
   }
   const activeFilterCount =
     selectedFilters.status.length +
@@ -92,21 +137,137 @@ export default function Board() {
     const raw = new URLSearchParams(location.search).get('issue') || ''
     return raw.trim().toLowerCase()
   }, [location.search])
+
+  useEffect(() => {
+    if (!user?.id) return
+    let isMounted = true
+    fetch(`${API_BASE}/api/user`, {
+      headers: { 'X-USER-ID': String(user.id) }
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!isMounted || !data) return
+        setProfileUser(data)
+      })
+      .catch(() => {})
+      .finally(() => {})
+
+    return () => { isMounted = false }
+  }, [API_BASE, user?.id])
+
+  useEffect(() => {
+    if (!activeProjectKey || projectFromState) return
+    const controller = new AbortController()
+    fetch(`${API_BASE}/api/projects`, { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errorText = await res.text()
+          throw new Error(errorText || 'Failed to load project')
+        }
+        return res.json()
+      })
+      .then((data) => {
+        const list = Array.isArray(data) ? data : []
+        const match = list.find((project) => {
+          const key = normalizeProjectKey(project.projectKey || project.id || '')
+          return key === activeProjectKey
+        })
+        setProjectDetails(match || null)
+      })
+      .catch(() => {
+        setProjectDetails(null)
+      })
+      .finally(() => {})
+
+    return () => controller.abort()
+  }, [API_BASE, activeProjectKey, projectFromState])
+  useEffect(() => {
+    if (!activeProjectKey) {
+      setIssues([])
+      setIssuesLoading(false)
+      return
+    }
+    const controller = new AbortController()
+    setIssuesLoading(true)
+    setIssuesError('')
+    fetch(`${API_BASE}/api/issues?project=${encodeURIComponent(activeProjectKey)}`, { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errorText = await res.text()
+          throw new Error(errorText || 'Failed to load issues')
+        }
+        return res.json()
+      })
+      .then((data) => {
+        setIssues(Array.isArray(data) ? data : [])
+      })
+      .catch((err) => {
+        if (err.name === 'AbortError') return
+        setIssues([])
+        setIssuesError(err.message || 'Failed to load issues')
+      })
+      .finally(() => {
+        setIssuesLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [API_BASE, activeProjectKey])
+
+  const visibleIssues = useMemo(() => {
+    if (isProjectManager || !userEmail) return issues
+    return (issues || []).filter((issue) => {
+      const assigneeEmail = (issue?.assigneeEmail || issue?.assignee || issue?.creatorEmail || '').toLowerCase()
+      return assigneeEmail && assigneeEmail === userEmail
+    })
+  }, [issues, isProjectManager, userEmail])
+
+  const mappedIssues = useMemo(() => (
+    (visibleIssues || []).map((issue) => {
+      const issueTypeRaw = (issue.issueType || issue.type || 'task').toString()
+      const issueType = issueTypeRaw.toLowerCase().trim() || 'task'
+      const labels = Array.isArray(issue.labels) ? issue.labels : []
+      const displayKey = issue.issueKey || issue.key || issue.id
+      const title = issue.summary || issue.title || 'Untitled issue'
+      const assignee = issue.assigneeName || issue.assignee || issue.creatorName || 'Unassigned'
+      const points = Number.isFinite(issue.points) ? issue.points : pointsFromDifficulty(issue.difficulty)
+      return {
+        ...issue,
+        dbId: issue.id,
+        displayKey,
+        title,
+        type: issueType,
+        typeLabel: issueType.toUpperCase(),
+        labels,
+        assignee,
+        points,
+        priority: normalizePriority(issue.priority, issue.difficulty),
+        status: normalizeStatus(issue.status)
+      }
+    })
+  ), [issues])
+
+  const boardColumns = useMemo(() => (
+    STATUS_COLUMNS.map((column) => ({
+      ...column,
+      issues: mappedIssues.filter((issue) => issue.status === column.key)
+    }))
+  ), [mappedIssues])
+
   const allAssignees = useMemo(() => (
-    [...new Set(BOARD_COLUMNS.flatMap((column) => column.issues.map((issue) => issue.assignee)))]
-  ), [])
+    [...new Set(mappedIssues.map((issue) => issue.assignee).filter(Boolean))]
+  ), [mappedIssues])
   const allTypes = useMemo(() => (
-    [...new Set(BOARD_COLUMNS.flatMap((column) => column.issues.map((issue) => issue.type)))]
-  ), [])
+    [...new Set(mappedIssues.map((issue) => issue.type).filter(Boolean))]
+  ), [mappedIssues])
 
   const allLabels = useMemo(() => (
-    [...new Set(BOARD_COLUMNS.flatMap((column) => column.issues.flatMap((issue) => issue.labels)))]
-  ), [])
+    [...new Set(mappedIssues.flatMap((issue) => issue.labels || []))]
+  ), [mappedIssues])
 
   const filteredColumns = useMemo(() => {
     const hasStatusFilter = selectedFilters.status.length > 0
 
-    return BOARD_COLUMNS
+    return boardColumns
       .filter((column) => !hasStatusFilter || selectedFilters.status.includes(column.key))
       .map((column) => ({
         ...column,
@@ -117,12 +278,12 @@ export default function Board() {
           const labelMatch = !selectedFilters.label.length || issue.labels.some((label) => selectedFilters.label.includes(label))
           const issueMatch =
             !issueQuery ||
-            (issue.id || '').toLowerCase().includes(issueQuery) ||
+            (issue.displayKey || '').toLowerCase().includes(issueQuery) ||
             (issue.title || '').toLowerCase().includes(issueQuery)
           return typeMatch && priorityMatch && assigneeMatch && labelMatch && issueMatch
         })
       }))
-  }, [selectedFilters, issueQuery])
+  }, [boardColumns, selectedFilters, issueQuery])
 
   useEffect(() => {
     const status = new URLSearchParams(location.search).get('status')
@@ -270,11 +431,11 @@ export default function Board() {
           <div className="sidebar-footer mt-3 d-flex flex-column align-items-start">
             <div className="profile d-flex align-items-center w-100">
               <div className="avatar-icon"><FiUser size={20} /></div>
-              <div className="ms-2 user-info">
-                <div className="user-name">{displayName}</div>
-                <div className="user-role">{user?.role || 'Member'}</div>
+                <div className="ms-2 user-info">
+                  <div className="user-name">{displayName}</div>
+                  <div className="user-role">{currentUser?.role || 'Member'}</div>
+                </div>
               </div>
-            </div>
             <button className="btn logout-badge mt-3" onClick={handleLogout} title="Logout">
               <FiLogOut size={16} className="me-2" />
               <span>Logout</span>
@@ -428,7 +589,10 @@ export default function Board() {
               )}
             </div>
 
-            <button className="btn create-issue-medium" onClick={() => navigate('/create-issue')}>
+            <button
+              className="btn create-issue-medium"
+              onClick={() => navigate('/create-issue', { state: { projectKey: activeProjectKey, project: activeProject } })}
+            >
               <FiPlus className="me-1" /> Create Issue
             </button>
           </div>
@@ -436,18 +600,35 @@ export default function Board() {
 
         <section className="board-shell">
           <div className="board-breadcrumb">
-            <span>Projects</span>
-            <span>/</span>
-            <span>{activeProject.name}</span>
+            <button
+              type="button"
+              className="board-breadcrumb-link"
+              onClick={() => navigate('/projects')}
+            >
+              Projects
+            </button>
+            <span className="board-breadcrumb-sep">/</span>
+            <button
+              type="button"
+              className="board-breadcrumb-link current"
+              onClick={() => navigate('/projects')}
+            >
+              {activeProject.name || activeProjectKey || 'Project'}
+            </button>
           </div>
 
           <div className="board-title-row">
             <div>
-              <h1>Sprint 2 - Board Implementation</h1>
+            <h1>{activeProject.name || activeProjectKey || 'Project Board'}</h1>
             </div>
             <div className="board-title-actions">
             
-              <button className="btn board-outline-btn" onClick={() => navigate(`/projects/${activeProject.id}/backlog`, { state: { project: activeProject } })}>View Backlog</button>
+              <button
+                className="btn board-outline-btn"
+                onClick={() => navigate(`/projects/${activeProjectKey}/backlog`, { state: { project: activeProject } })}
+              >
+                View Backlog
+              </button>
               <button className="btn board-outline-btn" onClick={() => setShowFilters(true)}>
                 <FiFilter size={15} /> More Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
               </button>
@@ -612,45 +793,55 @@ export default function Board() {
           )}
 
           <div className="board-columns-scroll">
-            <div className="board-columns-track">
-              {filteredColumns.map((column) => (
-                <section key={column.key} className={`board-column board-column-${column.tone}`}>
-                  <header className="board-column-head">
-                    <div className="board-column-title-wrap">
-                      <h2>{column.title}</h2>
-                      <span className="board-column-count">{column.issues.length}</span>
+            {issuesLoading ? (
+              <div className="board-empty-state">Loading issues...</div>
+            ) : issuesError ? (
+              <div className="board-empty-state">{issuesError}</div>
+            ) : (
+              <div className="board-columns-track">
+                {filteredColumns.map((column) => (
+                  <section key={column.key} className={`board-column board-column-${column.tone}`}>
+                    <header className="board-column-head">
+                      <div className="board-column-title-wrap">
+                        <h2>{column.title}</h2>
+                        <span className="board-column-count">{column.issues.length}</span>
+                      </div>
+                      <button
+                        className="board-column-add"
+                        aria-label={`Add issue to ${column.title}`}
+                        onClick={() => navigate('/create-issue', { state: { projectKey: activeProjectKey, project: activeProject } })}
+                      >
+                        <FiPlus size={18} />
+                      </button>
+                    </header>
+
+                    <div className="board-column-body">
+                      {column.issues.map((issue) => (
+                        <article key={issue.dbId || issue.displayKey} className={`board-issue-card board-priority-${issue.priority}`}>
+                          <div className="board-issue-key-row">
+                            <span className={`board-issue-type board-issue-${issue.type}`}>{issue.typeLabel}</span>
+                            <span className="board-issue-key">{issue.displayKey}</span>
+                          </div>
+
+                          <h3>{issue.title}</h3>
+
+                          <div className="board-issue-labels">
+                            {issue.labels.map((label) => (
+                              <span key={label} className="board-issue-label">{label}</span>
+                            ))}
+                          </div>
+
+                          <div className="board-issue-footer">
+                            <span className="board-issue-avatar" title={issue.assignee}>{getInitials(issue.assignee)}</span>
+                            <span className="board-issue-points">{issue.points} pts</span>
+                          </div>
+                        </article>
+                      ))}
                     </div>
-                    <button className="board-column-add" aria-label={`Add issue to ${column.title}`}>
-                      <FiPlus size={18} />
-                    </button>
-                  </header>
-
-                  <div className="board-column-body">
-                    {column.issues.map((issue) => (
-                      <article key={issue.id} className={`board-issue-card board-priority-${issue.priority}`}>
-                        <div className="board-issue-key-row">
-                          <span className={`board-issue-type board-issue-${issue.type}`}>{issue.typeLabel}</span>
-                          <span className="board-issue-key">{issue.id}</span>
-                        </div>
-
-                        <h3>{issue.title}</h3>
-
-                        <div className="board-issue-labels">
-                          {issue.labels.map((label) => (
-                            <span key={label} className="board-issue-label">{label}</span>
-                          ))}
-                        </div>
-
-                        <div className="board-issue-footer">
-                          <span className="board-issue-avatar" title={issue.assignee}>{getInitials(issue.assignee)}</span>
-                          <span className="board-issue-points">{issue.points} pts</span>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                </section>
-              ))}
-            </div>
+                  </section>
+                ))}
+              </div>
+            )}
           </div>
         </section>
       </main>

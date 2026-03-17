@@ -210,7 +210,7 @@ export default function Settings() {
 
         <div className="settings-content">
           {activeTab === 'profile' && <ProfileSection />}
-          {activeTab === 'notifications' && <NotificationsSection />}
+          {activeTab === 'notifications' && <NotificationsSection userId={user?.id} />}
           {activeTab === 'appearance' && <AppearanceSection />}
           {activeTab === 'security' && <SecuritySection apiBase={API_BASE} />}
         </div>
@@ -555,38 +555,73 @@ function ProfileSection() {
 }
 
 // ============ Notifications Section ============
-function NotificationsSection() {
-  const [notifications, setNotifications] = useState({
-    emailNotifications: true,
-    issueAssignments: true,
-    mentions: true,
-    comments: false,
-    statusChanges: true,
-    weeklySummary: true
-  })
+const DEFAULT_NOTIFICATION_SETTINGS = {
+  emailNotifications: true,
+  issueAssignments: true,
+  mentions: true,
+  comments: false,
+  statusChanges: true,
+  weeklySummary: true
+}
+
+const NOTIFICATION_OPTIONS = [
+  { key: 'emailNotifications', label: 'Email Notifications', description: 'General updates and announcements.' },
+  { key: 'issueAssignments', label: 'Issue Assignments', description: 'When an issue is assigned to you.' },
+  { key: 'mentions', label: 'Mentions', description: 'When someone @mentions you.' },
+  { key: 'comments', label: 'Comments', description: 'New comments on issues you follow.' },
+  { key: 'statusChanges', label: 'Status Changes', description: 'When issue status changes.' },
+  { key: 'weeklySummary', label: 'Weekly Summary', description: 'A weekly digest of activity.' }
+]
+
+const loadNotificationSettings = (storageKey) => {
+  if (typeof window === 'undefined') return DEFAULT_NOTIFICATION_SETTINGS
+  try {
+    const raw = localStorage.getItem(storageKey)
+    if (!raw) return DEFAULT_NOTIFICATION_SETTINGS
+    const parsed = JSON.parse(raw)
+    return { ...DEFAULT_NOTIFICATION_SETTINGS, ...parsed }
+  } catch (err) {
+    return DEFAULT_NOTIFICATION_SETTINGS
+  }
+}
+
+function NotificationsSection({ userId }) {
+  const storageKey = useMemo(
+    () => (userId ? `notificationSettings:${userId}` : 'notificationSettings'),
+    [userId]
+  )
+  const [notifications, setNotifications] = useState(() => loadNotificationSettings(storageKey))
+  const [savedSnapshot, setSavedSnapshot] = useState(() => loadNotificationSettings(storageKey))
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    const loaded = loadNotificationSettings(storageKey)
+    setNotifications(loaded)
+    setSavedSnapshot(loaded)
+  }, [storageKey])
+
+  const isDirty = useMemo(
+    () => JSON.stringify(notifications) !== JSON.stringify(savedSnapshot),
+    [notifications, savedSnapshot]
+  )
 
   const handleToggle = (key) => {
     setNotifications(prev => ({ ...prev, [key]: !prev[key] }))
   }
 
-  const toggleOption = (key) => {
-    return (
-      <div className="notification-item" key={key}>
-        <div className="d-flex align-items-center justify-content-between">
-          <label className="notif-label">
-            {key === 'emailNotifications' && 'Email Notifications'}
-            {key === 'issueAssignments' && 'Issue Assignments'}
-            {key === 'mentions' && 'Mentions'}
-            {key === 'comments' && 'Comments'}
-            {key === 'statusChanges' && 'Status Changes'}
-            {key === 'weeklySummary' && 'Weekly Summary'}
-          </label>
-          <div className={`toggle-switch ${notifications[key] ? 'active' : ''}`} onClick={() => handleToggle(key)}>
-            <div className="toggle-slider"></div>
-          </div>
-        </div>
-      </div>
-    )
+  const handleSave = () => {
+    if (!isDirty) return
+    setSaving(true)
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(notifications))
+      setSavedSnapshot(notifications)
+      alert('Notification preferences saved successfully!')
+    } catch (err) {
+      console.error('Failed to save notification preferences:', err)
+      alert('Failed to save notification preferences.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -597,16 +632,31 @@ function NotificationsSection() {
       </div>
 
       <div className="notifications-list">
-        {toggleOption('emailNotifications')}
-        {toggleOption('issueAssignments')}
-        {toggleOption('mentions')}
-        {toggleOption('comments')}
-        {toggleOption('statusChanges')}
-        {toggleOption('weeklySummary')}
+        {NOTIFICATION_OPTIONS.map((option) => (
+          <div className="notification-item" key={option.key}>
+            <div className="d-flex align-items-center justify-content-between">
+              <div>
+                <label className="notif-label">{option.label}</label>
+                {option.description && (
+                  <div className="text-muted notif-helper">{option.description}</div>
+                )}
+              </div>
+              <button
+                type="button"
+                className={`toggle-switch ${notifications[option.key] ? 'active' : ''}`}
+                onClick={() => handleToggle(option.key)}
+                role="switch"
+                aria-checked={notifications[option.key]}
+              >
+                <span className="toggle-slider"></span>
+              </button>
+            </div>
+          </div>
+        ))}
       </div>
 
-      <button className="btn btn-dark mt-4">
-        Save Preferences
+      <button className="btn btn-dark mt-4" type="button" onClick={handleSave} disabled={saving || !isDirty}>
+        {saving ? 'Saving...' : 'Save Preferences'}
       </button>
     </div>
   )
@@ -826,7 +876,7 @@ function SecuritySection({ apiBase }) {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
   return (
-    <div>
+    <div className="security-section">
       {/* Change Password Card (email verification flow) */}
       <div className="settings-card mb-4">
         <div className="card-header">

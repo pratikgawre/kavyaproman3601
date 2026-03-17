@@ -17,7 +17,9 @@ public class IssueController {
     public IssueController(IssueService service){ this.service = service; }
 
     @GetMapping
-    public List<Issue> list(){ return service.listAll(); }
+    public List<Issue> list(@RequestParam(required = false) String project){
+        return service.listAll(project);
+    }
 
     @GetMapping("/{id}")
     public ResponseEntity<Issue> get(@PathVariable String id){
