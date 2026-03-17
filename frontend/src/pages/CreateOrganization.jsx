@@ -88,11 +88,7 @@ function CreateOrganization() {
           <div className="org-buttons">
             <button
               className="org-cancel"
-             onClick={() => {
-                if (!orgName || !slug) {
-                  setShowError(true);
-                  return;
-                }
+              onClick={() => {
                 navigate("/organization");
               }}
             >
