@@ -30,6 +30,11 @@
   scrollbar-width: thin;
   scrollbar-color: rgba(17,24,39,0.55) transparent;
 }
+
+/* Consistent top spacing across pages (matches Project/Board/Backlog) */
+.dashboard-root > main.content{
+  padding-top:12px !important;
+}
 .content::-webkit-scrollbar{width:12px}
 .content::-webkit-scrollbar-track{background:transparent}
 .content::-webkit-scrollbar-thumb{background:rgba(17,24,39,0.55);border-radius:999px}
@@ -57,6 +62,291 @@
   background:radial-gradient(circle, rgba(14,165,233,0.25) 0%, rgba(14,165,233,0) 68%);
   pointer-events:none;
   z-index:0;
+}
+
+/* Project Manager palette when viewing the dashboard */
+html[data-theme='light'][data-user-role='project-manager'] body,
+html[data-theme='light'][data-user-role='project-manager'] #root {
+  background: #f9f2ff;
+  transition: background .4s ease;
+}
+
+html[data-theme='light'][data-user-role='project-manager'] .dashboard-root,
+html[data-theme='light'][data-user-role='project-manager'] .content {
+  background: linear-gradient(135deg, #f8f2ff 0%, #edd9ff 58%, #fef1ff 100%);
+  color: #1b0d2c;
+}
+
+html[data-theme='light'][data-user-role='project-manager'] .content::before {
+  background: radial-gradient(circle, rgba(147,51,234,0.35) 0%, rgba(147,51,234,0) 70%);
+}
+
+html[data-theme='light'][data-user-role='project-manager'] .content::after {
+  background: radial-gradient(circle, rgba(236,72,153,0.18) 0%, rgba(236,72,153,0) 75%);
+}
+
+html[data-theme='light'][data-user-role='project-manager'] .top-search-medium {
+  background: rgba(255,255,255,0.92);
+  border-color: rgba(139,92,246,0.4);
+  box-shadow: 0 12px 30px rgba(79,70,229,0.18);
+}
+
+html[data-theme='light'][data-user-role='project-manager'] .top-search-medium .form-control {
+  color: #2c1a45;
+}
+
+html[data-theme='light'][data-user-role='project-manager'] .saved-card,
+html[data-theme='light'][data-user-role='project-manager'] .stat-card,
+html[data-theme='light'][data-user-role='project-manager'] .task-card,
+html[data-theme='light'][data-user-role='project-manager'] .overdue-card,
+html[data-theme='light'][data-user-role='project-manager'] .recent-card,
+html[data-theme='light'][data-user-role='project-manager'] .large-info-card .info-card,
+html[data-theme='light'][data-user-role='project-manager'] .active-projects-card,
+html[data-theme='light'][data-user-role='project-manager'] .project-card {
+  background: linear-gradient(145deg, rgba(255,255,255,0.95), rgba(241,226,255,0.91));
+  border: 1px solid rgba(139,92,246,0.32);
+  box-shadow: 0 20px 40px rgba(124,58,237,0.15);
+  color: #1b0d2c;
+}
+
+html[data-theme='light'][data-user-role='project-manager'] .save-icon,
+html[data-theme='light'][data-user-role='project-manager'] .filter-actions-row,
+html[data-theme='light'][data-user-role='project-manager'] .icons-row .icon-btn {
+  color: #fff;
+}
+
+html[data-theme='light'][data-user-role='project-manager'] .save-icon {
+  background: #000;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme='light'][data-user-role='project-manager'] .total-issues-card:hover {
+  box-shadow: 0 18px 38px rgba(156,39,176,0.25);
+}
+
+html[data-theme='light'][data-user-role='project-manager'] .progress-fill,
+html[data-theme='light'][data-user-role='project-manager'] .project-progress-row .progress-track .progress-fill {
+  background: linear-gradient(90deg, #a855f7, #d946ef);
+}
+
+html[data-theme='light'][data-user-role='project-manager'] .create-issue-medium {
+  background: linear-gradient(90deg, #7c3aed, #a855f7);
+  color: #ffffff;
+}
+
+html[data-theme='light'][data-user-role='project-manager'] .create-issue-medium:hover {
+  background: linear-gradient(90deg, #6d28d9, #c084fc);
+}
+
+html[data-theme='light'][data-user-role='project-manager'] .create-issue-medium svg {
+  color: #0f0f0f;
+  stroke: #0f0f0f;
+  fill: #0f0f0f;
+}
+
+/* Tester palette */
+html[data-theme='light'][data-user-role='tester'] body,
+html[data-theme='light'][data-user-role='tester'] #root {
+  background: #eef9ea;
+}
+
+html[data-theme='light'][data-user-role='tester'] .dashboard-root,
+html[data-theme='light'][data-user-role='tester'] .content {
+  background: linear-gradient(135deg, #f3fcf0 0%, #e2f5d6 50%, #d8f0c1 100%);
+  color: #0f1f10;
+}
+
+html[data-theme='light'][data-user-role='tester'] .content::before {
+  background: radial-gradient(circle, rgba(16,185,129,0.25) 0%, rgba(16,185,129,0) 72%);
+}
+
+html[data-theme='light'][data-user-role='tester'] .content::after {
+  background: radial-gradient(circle, rgba(74,222,128,0.22) 0%, rgba(74,222,128,0) 70%);
+}
+
+html[data-theme='light'][data-user-role='tester'] .sidebar {
+  background: linear-gradient(180deg, rgba(239,250,241,0.9), rgba(215,243,228,0.95) 55%, rgba(209,240,216,0.8));
+  border-color: rgba(34,197,94,0.3);
+  box-shadow: 0 25px 60px rgba(34,197,94,0.2);
+}
+
+html[data-theme='light'][data-user-role='tester'] .sidebar .nav .nav-item {
+  color: #0f1f10;
+}
+
+html[data-theme='light'][data-user-role='tester'] .sidebar .nav .nav-item:hover,
+html[data-theme='light'][data-user-role='tester'] .sidebar .nav .nav-item.active {
+  background: rgba(52,211,153,0.2);
+  color: #047857;
+}
+
+html[data-theme='light'][data-user-role='tester'] .sidebar .brand-logo,
+html[data-theme='light'][data-user-role='tester'] .floating-toggle,
+html[data-theme='light'][data-user-role='tester'] .mobile-toggle,
+html[data-theme='light'][data-user-role='tester'] .topbar .brand-logo {
+  background: linear-gradient(135deg, #059669, #34d399);
+  color: #ffffff;
+  box-shadow: 0 10px 26px rgba(16,185,129,0.45);
+}
+
+html[data-theme='light'][data-user-role='tester'] .toggle-btn {
+  background: linear-gradient(135deg, #059669, #10b981);
+  color: #fff;
+  border: none;
+  box-shadow: 0 10px 26px rgba(16,185,129,0.42);
+}
+
+html[data-theme='light'][data-user-role='tester'] .toggle-btn svg,
+html[data-theme='light'][data-user-role='tester'] .floating-toggle svg,
+html[data-theme='light'][data-user-role='tester'] .mobile-toggle svg {
+  stroke: #fff;
+}
+
+html[data-theme='light'][data-user-role='tester'] .top-search-medium {
+  background: rgba(255,255,255,0.9);
+  border-color: rgba(34,197,94,0.3);
+  box-shadow: inset 0 0 0 1px rgba(34,197,94,0.15);
+}
+
+html[data-theme='light'][data-user-role='tester'] .top-search-medium .form-control {
+  color: #0f1f10;
+}
+
+html[data-theme='light'][data-user-role='tester'] .create-issue-medium {
+  background: linear-gradient(90deg, #059669, #10b981);
+  color: #fff;
+  box-shadow: 0 12px 30px rgba(16,185,129,0.3);
+}
+
+html[data-theme='light'][data-user-role='tester'] .create-issue-medium svg {
+  color: #fff;
+  stroke: #fff;
+  fill: #fff;
+}
+
+/* Business Analyst palette */
+html[data-theme='light'][data-user-role='business-analyst'] body,
+html[data-theme='light'][data-user-role='business-analyst'] #root {
+  background: #fff7ed;
+}
+
+html[data-theme='light'][data-user-role='business-analyst'] .dashboard-root,
+html[data-theme='light'][data-user-role='business-analyst'] .content {
+  background: linear-gradient(135deg, #fff8ec 0%, #ffe9c9 55%, #ffe1b5 100%);
+  color: #1c130a;
+}
+
+html[data-theme='light'][data-user-role='business-analyst'] .content::before {
+  background: radial-gradient(circle, rgba(249,115,22,0.22) 0%, rgba(249,115,22,0) 75%);
+}
+
+html[data-theme='light'][data-user-role='business-analyst'] .content::after {
+  background: radial-gradient(circle, rgba(251,191,36,0.25) 0%, rgba(251,191,36,0) 70%);
+}
+
+html[data-theme='light'][data-user-role='business-analyst'] .sidebar {
+  background: linear-gradient(180deg, rgba(255,249,237,0.95), rgba(255,236,214,0.95) 55%, rgba(255,223,186,0.85));
+  border-color: rgba(249,115,22,0.18);
+  box-shadow: 0 25px 50px rgba(249,115,22,0.18);
+}
+
+html[data-theme='light'][data-user-role='business-analyst'] .sidebar .nav .nav-item {
+  color: #4b2b04;
+}
+
+html[data-theme='light'][data-user-role='business-analyst'] .sidebar .nav .nav-item:hover,
+html[data-theme='light'][data-user-role='business-analyst'] .sidebar .nav .nav-item.active {
+  background: rgba(251,146,60,0.2);
+  color: #c2410c;
+}
+
+html[data-theme='light'][data-user-role='business-analyst'] .sidebar .brand-logo,
+html[data-theme='light'][data-user-role='business-analyst'] .floating-toggle,
+html[data-theme='light'][data-user-role='business-analyst'] .mobile-toggle,
+html[data-theme='light'][data-user-role='business-analyst'] .topbar .brand-logo {
+  background: linear-gradient(135deg, #f97316, #fb923c);
+  color: #fff;
+  box-shadow: 0 12px 30px rgba(251,146,60,0.45);
+}
+
+html[data-theme='light'][data-user-role='business-analyst'] .toggle-btn {
+  background: linear-gradient(135deg, #f97316, #fb923c);
+  color: #fff;
+  border: none;
+  box-shadow: 0 12px 28px rgba(251,146,60,0.35);
+}
+
+html[data-theme='light'][data-user-role='business-analyst'] .toggle-btn svg,
+html[data-theme='light'][data-user-role='business-analyst'] .floating-toggle svg,
+html[data-theme='light'][data-user-role='business-analyst'] .mobile-toggle svg {
+  stroke: #fff;
+}
+
+html[data-theme='light'][data-user-role='business-analyst'] .top-search-medium {
+  background: rgba(255,255,255,0.92);
+  border-color: rgba(249,115,22,0.25);
+  box-shadow: inset 0 0 0 1px rgba(249,115,22,0.2);
+}
+
+html[data-theme='light'][data-user-role='business-analyst'] .top-search-medium .form-control {
+  color: #4b2b04;
+}
+
+html[data-theme='light'][data-user-role='business-analyst'] .create-issue-medium {
+  background: linear-gradient(90deg, #f97316, #fb923c);
+  color: #fff;
+  box-shadow: 0 14px 32px rgba(251,146,60,0.3);
+}
+
+html[data-theme='light'][data-user-role='business-analyst'] .create-issue-medium svg {
+  color: #fff;
+  stroke: #fff;
+  fill: #fff;
+}
+
+html[data-theme='light'][data-user-role='project-manager'] .saved-card .filter-desc,
+html[data-theme='light'][data-user-role='project-manager'] .saved-card h5 {
+  color: #2c1a45;
+}
+
+html[data-theme='light'][data-user-role='project-manager'] .sidebar {
+  background: linear-gradient(180deg, #fdf2ff 0%, #edd9ff 45%, #fef1ff 100%);
+  border-color: rgba(139, 92, 246, 0.24);
+  color: #1b0d2c;
+  box-shadow: 0 20px 45px rgba(124, 58, 237, 0.15);
+}
+
+html[data-theme='light'][data-user-role='project-manager'] .sidebar .nav .nav-item {
+  color: #1b0d2c;
+  background: transparent;
+}
+
+html[data-theme='light'][data-user-role='project-manager'] .sidebar .nav .nav-item:hover,
+html[data-theme='light'][data-user-role='project-manager'] .sidebar .nav .nav-item.active {
+  background: rgba(164, 117, 252, 0.14);
+  color: #4c1d95;
+}
+
+html[data-theme='light'][data-user-role='project-manager'] .sidebar .brand-logo,
+html[data-theme='light'][data-user-role='project-manager'] .floating-toggle,
+html[data-theme='light'][data-user-role='project-manager'] .mobile-toggle,
+html[data-theme='light'][data-user-role='project-manager'] .topbar .brand-logo {
+  background: linear-gradient(135deg, #a855f7, #d946ef);
+  box-shadow: 0 12px 30px rgba(168, 85, 247, 0.35);
+  color: #fff;
+}
+
+html[data-theme='light'][data-user-role='project-manager'] .toggle-btn {
+  background: linear-gradient(135deg, #a855f7, #d946ef);
+  color: #fff;
+  border: none;
+  box-shadow: 0 12px 30px rgba(168, 85, 247, 0.3);
+}
+
+html[data-theme='light'][data-user-role='project-manager'] .toggle-btn svg,
+html[data-theme='light'][data-user-role='project-manager'] .floating-toggle svg,
+html[data-theme='light'][data-user-role='project-manager'] .mobile-toggle svg {
+  stroke: #fff;
 }
 .content > *{position:relative;z-index:1}
 /* inner layout: keep nav scrollable, footer sticky at bottom of sidebar */
@@ -125,7 +415,7 @@
 .topbar{position:fixed;left:0;right:0;top:0;height:64px;background:#fff;border-bottom:1px solid #eef2f6;z-index:3000;display:flex;align-items:center;padding:0 18px}
 .topbar .brand-logo{width:44px;height:44px;border-radius:10px;background:#0d6efd;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
 .topbar .brand-name{font-weight:700;margin-left:8px}
-.content.with-topbar{padding-top:120px}
+.content.with-topbar{padding-top:120px !important}
 
 /* ensure topbar overlays the sidebar when present and the sidebar is hidden */
 .sidebar + .topbar{z-index:3001}
@@ -443,6 +733,8 @@ html[data-theme='dark'] .notification-dismiss-btn:hover{background:#111827 !impo
 .filter-card{background:rgba(255,255,255,0.86);border-radius:12px;border:1px solid rgba(59,130,246,0.20);padding:18px;box-shadow:0 12px 26px rgba(37,99,235,0.10);position:relative;backdrop-filter:blur(6px)}
 .filter-card-content{display:flex;flex-direction:column;gap:16px}
 .filter-card h6{margin:0 0 6px 0;font-size:18px}
+.all-my-issues-grid{margin-top:18px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+@media(max-width:1100px){.all-my-issues-grid{grid-template-columns:1fr}}
 .filter-desc{margin:0;color:#6b7280}
 .filter-actions-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .apply-btn{
@@ -696,9 +988,9 @@ html[data-theme='dark'] .notification-dismiss-btn:hover{background:#111827 !impo
 }
 
 .create-issue-overlay{position:fixed;inset:0;height:100vh;background:rgba(2,6,23,0.45);backdrop-filter:blur(6px) saturate(120%);display:flex;align-items:flex-start;justify-content:center;padding:28px;z-index:2200;animation:overlayFade .22s ease forwards}
-.create-issue-container{background:linear-gradient(180deg,#ffffff,#fbfdff);width:calc(100% - 48px);border-radius:12px;padding:20px;box-shadow:0 18px 45px rgba(2,6,23,0.18);max-width:920px;transform:translateY(-10px) scale(.98);opacity:0;animation:modalPop .24s cubic-bezier(.2,.9,.3,1) .06s forwards;transition:transform .2s ease,box-shadow .2s ease,border-color .18s ease;border:1px solid rgba(13,110,253,0.06);display:flex;flex-direction:column;max-height:calc(100vh - 96px);overflow:hidden}
+.create-issue-container{background:linear-gradient(180deg,#ffffff,#fbfdff);width:calc(100% - 48px);border-radius:12px;padding:20px;box-shadow:0 18px 45px rgba(2,6,23,0.18);max-width:920px;transform:translateY(-10px) scale(.98);opacity:0;animation:modalPop .24s cubic-bezier(.2,.9,.3,1) .06s forwards;transition:transform .2s ease,box-shadow .2s ease,border-color .18s ease;border:1px solid rgba(13,110,253,0.06);display:flex;flex-direction:column;max-height:calc(100vh - 96px);overflow:hidden;position:relative}
 .create-issue-container:hover{transform:translateY(-12px) scale(1);box-shadow:0 22px 60px rgba(2,6,23,0.22)}
-.create-issue-header{border-bottom:1px solid rgba(226,232,240,0.7);padding-bottom:12px;margin-bottom:12px}
+.create-issue-header{border-bottom:1px solid rgba(226,232,240,0.7);padding-bottom:12px;margin-bottom:12px;padding-right:56px}
 .create-issue-header h4{margin:0;font-size:18px;letter-spacing:0.2px}
 .create-issue-form{display:flex;flex-direction:column;gap:12px;flex:1 1 auto;overflow:auto;padding-right:8px}
 .create-issue-form label{font-weight:700;color:#111827}
@@ -994,6 +1286,7 @@ html[data-theme='dark'] .project-list::-webkit-scrollbar-thumb:hover{background:
 .create-issue-container .create-btn{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(90deg,#6b5bff,#0d6efd) !important;color:#fff !important;border:none;padding:10px 16px;border-radius:12px;box-shadow:0 10px 30px rgba(13,110,253,0.18)}
 .create-issue-container .cancel-btn{background:transparent !important;border:1px solid rgba(0,0,0,0.08) !important;color:#374151 !important;padding:8px 12px;border-radius:10px}
 .create-issue-container .modal-close{background:transparent;border:none;color:#6b7280}
+.create-issue-container .create-issue-close{position:absolute;top:14px;right:14px}
 
 /* Force cancel button to red with white text in create issue modal */
 .create-issue-container .cancel-btn,

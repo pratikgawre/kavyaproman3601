@@ -1,8 +1,13 @@
 package com.team1.backend.service;
 
 import com.team1.backend.model.Issue;
+import com.team1.backend.model.User;
+import com.team1.backend.dto.CreateNotificationRequest;
 import com.team1.backend.repository.IssueRepository;
+import com.team1.backend.repository.UserRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -13,8 +18,14 @@ import java.util.Optional;
 public class IssueService {
 
     private final IssueRepository repo;
+    private final UserRepository userRepository;
+    private final NotificationService notificationService;
 
-    public IssueService(IssueRepository repo){ this.repo = repo; }
+    public IssueService(IssueRepository repo, UserRepository userRepository, NotificationService notificationService){
+        this.repo = repo;
+        this.userRepository = userRepository;
+        this.notificationService = notificationService;
+    }
 
     public List<Issue> listAll(String project){
         if (project == null || project.trim().isEmpty()) {
@@ -23,7 +34,10 @@ public class IssueService {
         return repo.findByProject(normalizeProjectKey(project));
     }
 
-    public Optional<Issue> findById(String id){ return repo.findById(id); }
+    public Optional<Issue> findMineById(String userId, String id){
+        User user = requireUser(userId);
+        return repo.findByIdAndCreatorEmailIgnoreCase(id, user.getEmail());
+    }
 
     public Issue create(Issue issue){
         issue.setProject(normalizeProjectKey(issue.getProject()));

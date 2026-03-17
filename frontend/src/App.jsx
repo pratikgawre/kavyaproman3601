@@ -40,9 +40,26 @@ function AuthThemeGuard() {
   return null
 }
 
+function normalizeUserRole(role) {
+  if (!role) return 'default'
+  const sanitized = role
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+  return sanitized || 'default'
+}
+
 function App() {
   const API_BASE = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:8080'
   const { user, setUser, clearUser } = useAuth()
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    document.documentElement.setAttribute('data-user-role', normalizeUserRole(user?.role))
+  }, [user?.role])
 
   useEffect(() => {
     async function syncUserFromDb() {

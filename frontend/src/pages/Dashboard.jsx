@@ -30,6 +30,14 @@ function getDefaultDueDateRange(daysBack = 30) {
   return { from, to }
 }
 
+function stripLeadingSpace(value) {
+  return (value || '').toString().replace(/^\s+/, '')
+}
+
+function preventLeadingSpace(e) {
+  if (e.key === ' ' && (e.currentTarget.selectionStart ?? 0) === 0) e.preventDefault()
+}
+
 export default function Dashboard({ initialShowCreate = false }) {
   const API_BASE = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:8080'
   const navigate = useNavigate()
@@ -49,6 +57,7 @@ export default function Dashboard({ initialShowCreate = false }) {
   const [showNotifications, setShowNotifications] = useState(false)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const [topSearchText, setTopSearchText] = useState('')
+  const [dashboardSearchText, setDashboardSearchText] = useState('')
   const {
     notifications,
     unreadCount,
@@ -279,7 +288,7 @@ export default function Dashboard({ initialShowCreate = false }) {
     const errs = {}
     if(!project || project.trim() === '') errs.project = 'Project is required'
     if(!issueType || issueType.trim() === '') errs.issueType = 'Issue type is required'
-    if(issueType === 'Epic' && (!epicName || epicName.trim() === '')) errs.epicName = 'Epic name is required for Epics'
+    if(!epicName || epicName.trim() === '') errs.epicName = 'Epic name is required'
     if(!summary || summary.trim() === '') errs.summary = 'Summary is required'
     if(!assignDate) {
       errs.assignDate = 'Assign date is required'
@@ -296,9 +305,21 @@ export default function Dashboard({ initialShowCreate = false }) {
     return Object.keys(errs).length === 0
   }
 
+  function preventLeadingSpaceInDescription(e) {
+    if (e.key !== ' ') return
+    const el = descRef.current
+    if (!el) return
+    const text = (el.innerText || '').replace(/\u00A0/g, ' ')
+    if (!text.trim()) e.preventDefault()
+  }
+
   async function handleCreate(e){
     e?.preventDefault()
     if(!validateForm()) return
+    if (!user?.id) {
+      alert('Please login to create an issue.')
+      return
+    }
     const normalizedAttachments = attachments.map(f => ({
       name: f.name,
       size: f.size,
@@ -311,10 +332,10 @@ export default function Dashboard({ initialShowCreate = false }) {
       data: f.data
     }))
     const payload = {
-      project,
-      issueType,
-      epicName,
-      summary,
+      project: project?.trim(),
+      issueType: issueType?.trim(),
+      epicName: epicName?.trim(),
+      summary: summary?.trim(),
       description: descRef.current?.innerHTML || '',
       attachments: normalizedAttachments,
       creatorName: user?.name || '',
@@ -329,7 +350,11 @@ export default function Dashboard({ initialShowCreate = false }) {
     }
     // send to backend API
     try{
-      const res = await fetch(`${API_BASE}/api/issues`, { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify(payload) })
+      const res = await fetch(`${API_BASE}/api/issues`, {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json', 'X-USER-ID': String(user.id) },
+        body: JSON.stringify(payload)
+      })
       if(!res.ok) throw new Error('server error')
     }catch(err){
       console.warn('backend save failed, saving locally', err)
@@ -488,7 +513,12 @@ export default function Dashboard({ initialShowCreate = false }) {
   useEffect(()=>{
     async function loadCounts(){
       try{
-        const res = await fetch(`${API_BASE}/api/issues`)
+        if (!user?.id) {
+          setTotalIssues(0)
+          setDifficultyCounts({ High:0, Medium:0, Low:0 })
+          return
+        }
+        const res = await fetch(`${API_BASE}/api/issues`, { headers: { 'X-USER-ID': String(user.id) } })
         if(!res.ok) throw new Error('failed to fetch')
         const data = await res.json()
         const parsed = Array.isArray(data) ? data.map(d => ({ ...d })) : []
@@ -669,8 +699,8 @@ export default function Dashboard({ initialShowCreate = false }) {
     setShowFilters(false)
   }
 
-  function runIssueSearch() {
-    const query = (topSearchText || '').trim()
+  function runIssueSearch(queryText = topSearchText) {
+    const query = (queryText || '').trim()
     if (!query) {
       navigate('/all-my-issues')
       return
@@ -921,14 +951,14 @@ export default function Dashboard({ initialShowCreate = false }) {
           </div>
           <div className="d-flex align-items-center gap-2 mt-3">
             <div className="search-input input-group">
-              <span className="input-group-text" role="button" tabIndex={0} onClick={runIssueSearch} onKeyDown={(event) => { if (event.key === 'Enter') runIssueSearch() }}><FiSearch /></span>
+              <span className="input-group-text" role="button" tabIndex={0} onClick={() => runIssueSearch(dashboardSearchText)} onKeyDown={(event) => { if (event.key === 'Enter') runIssueSearch(dashboardSearchText) }}><FiSearch /></span>
               <input
                 className="form-control"
                 placeholder="Search issues by title, key, description..."
-                value={topSearchText}
-                onChange={(event) => setTopSearchText(event.target.value)}
+                value={dashboardSearchText}
+                onChange={(event) => setDashboardSearchText(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === 'Enter') runIssueSearch()
+                  if (event.key === 'Enter') runIssueSearch(dashboardSearchText)
                 }}
               />
             </div>
@@ -1073,11 +1103,11 @@ export default function Dashboard({ initialShowCreate = false }) {
         {showCreate && (
           <div className="create-issue-overlay" onClick={closeCreateModal}>
             <div className="create-issue-container" role="dialog" aria-modal="true" onClick={e=>e.stopPropagation()}>
+              <button type="button" className="btn modal-close create-issue-close" onClick={closeCreateModal} aria-label="Close" title="Close"><FiX size={18} /></button>
               <div className="create-issue-header d-flex align-items-center">
                 <h4>Create issue</h4>
-                <div className="ms-auto d-flex gap-2">
+                <div className="ms-auto d-flex align-items-center gap-2">
                   <button className="btn btn-sm btn-outline-secondary">Import issues</button>
-                  <button className="btn btn-link modal-close" onClick={closeCreateModal} title="Close"><FiX size={18} /></button>
                 </div>
               </div>
 
@@ -1122,14 +1152,25 @@ export default function Dashboard({ initialShowCreate = false }) {
 
                   <div>
                     <label className='mb-2'>Epic Name*</label>
-                    <input className={`form-control ${errors.epicName ? 'invalid' : ''}`} placeholder="Provide a short name to identify this epic." value={epicName} onChange={e=>{ setEpicName(e.target.value); setErrors(prev=>({...prev, epicName:undefined})) }} />
+                    <input
+                      className={`form-control ${errors.epicName ? 'invalid' : ''}`}
+                      placeholder="Provide a short name to identify this epic."
+                      value={epicName}
+                      onChange={e=>{ setEpicName(stripLeadingSpace(e.target.value)); setErrors(prev=>({...prev, epicName:undefined})) }}
+                      onKeyDown={preventLeadingSpace}
+                    />
                     {errors.epicName && <div className="error-text">{errors.epicName}</div>}
                   </div>
                 </div>
 
                 <div className="form-row">
                   <label>Summary*</label>
-                  <input className={`form-control summary-input ${errors.summary ? 'invalid' : ''}`} value={summary} onChange={e=>{ setSummary(e.target.value); setErrors(prev=>({...prev, summary:undefined})) }} />
+                  <input
+                    className={`form-control summary-input ${errors.summary ? 'invalid' : ''}`}
+                    value={summary}
+                    onChange={e=>{ setSummary(stripLeadingSpace(e.target.value)); setErrors(prev=>({...prev, summary:undefined})) }}
+                    onKeyDown={preventLeadingSpace}
+                  />
                   {errors.summary && <div className="error-text">{errors.summary}</div>}
                 </div>
 
@@ -1226,25 +1267,26 @@ export default function Dashboard({ initialShowCreate = false }) {
                 </div>
 
                 <div className="form-row">
-                  <label>Difficulty</label>
+                  <label>Difficulty*</label>
                   <div className="difficulty-group">
                     <div className="difficulty-radio high">
-                      <input id="create-diff-high" type="radio" name="create-difficulty" checked={selectedDifficulty==='High'} onChange={()=>setSelectedDifficulty('High')} />
+                      <input id="create-diff-high" type="radio" name="create-difficulty" checked={selectedDifficulty==='High'} onChange={()=>{ setSelectedDifficulty('High'); setErrors(prev=>({...prev, difficulty:undefined})) }} />
                       <label htmlFor="create-diff-high"><span className="dot"/>High</label>
                     </div>
                     <div className="difficulty-radio medium">
-                      <input id="create-diff-medium" type="radio" name="create-difficulty" checked={selectedDifficulty==='Medium'} onChange={()=>setSelectedDifficulty('Medium')} />
+                      <input id="create-diff-medium" type="radio" name="create-difficulty" checked={selectedDifficulty==='Medium'} onChange={()=>{ setSelectedDifficulty('Medium'); setErrors(prev=>({...prev, difficulty:undefined})) }} />
                       <label htmlFor="create-diff-medium"><span className="dot"/>Medium</label>
                     </div>
                     <div className="difficulty-radio low">
-                      <input id="create-diff-low" type="radio" name="create-difficulty" checked={selectedDifficulty==='Low'} onChange={()=>setSelectedDifficulty('Low')} />
+                      <input id="create-diff-low" type="radio" name="create-difficulty" checked={selectedDifficulty==='Low'} onChange={()=>{ setSelectedDifficulty('Low'); setErrors(prev=>({...prev, difficulty:undefined})) }} />
                       <label htmlFor="create-diff-low"><span className="dot"/>Low</label>
                     </div>
                   </div>
+                  {errors.difficulty && <div className="error-text">{errors.difficulty}</div>}
                 </div>
 
                 <div className="form-row">
-                  <label>Description</label>
+                  <label>Description*</label>
                   <div className="toolbar format-toolbar">
                     <button type="button" className="format-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>document.execCommand('bold')} aria-label="Bold"><strong>B</strong></button>
                     <button type="button" className="format-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>document.execCommand('italic')} aria-label="Italic"><em>I</em></button>
@@ -1264,12 +1306,14 @@ export default function Dashboard({ initialShowCreate = false }) {
                     <input type="file" ref={fileInputRef} style={{display:'none'}} accept=".pdf,image/*,.doc,.docx" multiple onChange={(e)=>{ handleAddFiles(e.target.files) }} />
                   </div>
                   <div
-                    className="form-control description-area"
+                    className={`form-control description-area ${errors.description ? 'invalid' : ''}`}
                     contentEditable={true}
                     suppressContentEditableWarning={true}
                     ref={descRef}
                     onInput={()=>{ setErrors(prev=>({...prev, description:undefined})) }}
+                    onKeyDown={preventLeadingSpaceInDescription}
                   />
+                  {errors.description && <div className="error-text">{errors.description}</div>}
 
                   {attachments.length > 0 && (
                     <div className="attachments">
