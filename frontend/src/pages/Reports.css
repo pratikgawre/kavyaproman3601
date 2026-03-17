@@ -1,0 +1,212 @@
+/* ===========================
+   MAIN CONTAINER
+=========================== */
+.reports-container {
+  padding: 30px;
+  background: #f6f8fa;
+  min-height: 100vh;
+}
+
+/* ===========================
+   HEADER
+=========================== */
+.reports-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 25px;
+}
+
+.reports-header h1 {
+  font-size: 34px;
+  font-weight: 600;
+}
+
+.reports-header p {
+  color: #6a737d;
+  margin-top: 5px;
+}
+
+.project-dropdown {
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid #ddd;
+  font-weight: 500;
+  background: #fff;
+}
+
+/* ===========================
+   SUMMARY CARDS (BIGGER)
+=========================== */
+.reports-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 25px;
+  margin-top: 30px;
+}
+
+.report-card {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 28px 30px;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
+  transition: 0.3s ease;
+}
+
+.report-card:hover {
+  transform: translateY(-4px);
+}
+
+.report-card h4 {
+  font-size: 15px;
+  color: #586069;
+  margin-bottom: 6px;
+}
+
+.report-card h2 {
+  font-size: 32px;     /* Bigger numbers */
+  font-weight: 600;
+}
+
+/* ICON BOX BIGGER */
+.card-icon {
+  font-size: 22px;     /* clean icon size */
+  flex-shrink: 0;
+}
+
+/* Icon colors only */
+.blue-icon { color: #0969da; }
+.green-icon { color: #2da44e; }
+.purple-icon { color: #8250df; }
+.orange-icon { color: #f97316; }
+
+/* ===========================
+   TABS (FIXED ACTIVE COLOR)
+=========================== */
+.report-tabs {
+  display: flex;
+  gap: 15px;
+  margin-top: 30px;
+}
+
+.report-tabs button {
+  padding: 10px 22px;
+  border-radius: 25px;
+  border: none;
+  background: #e9eef5;
+  cursor: pointer;
+  font-weight: 500;
+  transition: 0.3s;
+}
+
+/* Active tab */
+.report-tabs button.active-tab {
+  background: #0969da;
+  color: #ffffff;   /* FIXED TEXT COLOR */
+}
+
+/* Hover */
+.report-tabs button:hover {
+  background: #d6e4f8;
+}
+
+/* ===========================
+   CHART CONTAINER
+=========================== */
+.reports-chart {
+  background: #ffffff;
+  padding: 25px;
+  border-radius: 18px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
+  margin-top: 25px;
+}
+
+/* ===========================
+   DISTRIBUTION GRID
+=========================== */
+.distribution-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 25px;
+}
+
+.distribution-card {
+  background: #ffffff;
+  padding: 25px;
+  border-radius: 18px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+}
+
+.distribution-card h4 {
+  margin-bottom: 4px;
+  font-size: 18px;
+}
+
+/* Keep Reports top controls (search, bell, create) in one line on mobile */
+@media (max-width: 768px) {
+  .dashboard-root > main.content.flex-grow-1.p-4 > .top-search-row.mb-4 {
+    align-items: center !important;
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    justify-content: flex-start !important;
+    width: 100% !important;
+  }
+
+  .dashboard-root > main.content.flex-grow-1.p-4 > .top-search-row.mb-4 .notification-wrapper,
+  .dashboard-root > main.content.flex-grow-1.p-4 > .top-search-row.mb-4 .create-issue-medium {
+    flex: 0 0 auto !important;
+  }
+
+  .dashboard-root > main.content.flex-grow-1.p-4 > .top-search-row.mb-4 .top-search-medium{
+    flex:0 0 44px !important;
+    max-width:44px !important;
+    min-width:44px !important;
+    width:44px !important;
+    cursor:pointer;
+    padding:6px !important;
+  }
+
+  .dashboard-root > main.content.flex-grow-1.p-4 > .top-search-row.mb-4 .top-search-medium .input-group-text{
+    margin:0 auto;
+  }
+
+  .dashboard-root > main.content.flex-grow-1.p-4 > .top-search-row.mb-4 .top-search-medium .form-control{
+    display:none !important;
+    pointer-events:none !important;
+  }
+
+  .dashboard-root > main.content.flex-grow-1.p-4 > .top-search-row.mb-4.mobile-search-open .top-search-medium{
+    flex:1 1 auto !important;
+    max-width:none !important;
+    min-width:0 !important;
+    width:auto !important;
+    padding:6px 10px !important;
+    cursor:text;
+  }
+
+  .dashboard-root > main.content.flex-grow-1.p-4 > .top-search-row.mb-4.mobile-search-open .top-search-medium .form-control{
+    display:block !important;
+    pointer-events:auto !important;
+  }
+
+  .dashboard-root > main.content.flex-grow-1.p-4 > .top-search-row.mb-4.mobile-search-open .notification-wrapper,
+  .dashboard-root > main.content.flex-grow-1.p-4 > .top-search-row.mb-4.mobile-search-open .create-issue-medium{
+    display:none !important;
+  }
+}
+
+.reports-search-close{
+  align-items:center;
+  background:transparent;
+  border:none;
+  color:#6b7280;
+  cursor:pointer;
+  display:inline-flex;
+  justify-content:center;
+  margin-left:6px;
+  padding:0;
+}

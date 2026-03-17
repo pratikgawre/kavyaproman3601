@@ -1,0 +1,60 @@
+{
+  "services": [
+    {
+      "name": "mysql",
+      "type": "database",
+      "plugin": "mysql",
+      "variables": {
+        "MYSQL_ROOT_PASSWORD": "${RANDOM_STRING}",
+        "MYSQL_DATABASE": "kavyaprodb"
+      }
+    },
+    {
+      "name": "backend",
+      "type": "github",
+      "repo": "Jayashri-05998/New_kavya_360",
+      "rootDirectory": "backend",
+      "dockerfile": "Dockerfile",
+      "port": 8080,
+      "variables": {
+        "SPRING_DATASOURCE_URL": "jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT}/${MYSQL_DATABASE}",
+        "SPRING_DATASOURCE_USERNAME": "${MYSQL_USER}",
+        "SPRING_DATASOURCE_PASSWORD": "${MYSQL_PASSWORD}",
+        "PORT": "8080",
+        "SPRING_PROFILES_ACTIVE": "prod",
+        "SPRING_JPA_HIBERNATE_DDL_AUTO": "update",
+        "SPRING_JPA_SHOW_SQL": "false",
+        "SENDGRID_API_KEY": "${SENDGRID_API_KEY}",
+        "SENDGRID_FROM_EMAIL": "kavyalearn.info@gmail.com",
+        "EMAIL_HOST": "smtp.gmail.com",
+        "EMAIL_PORT": "587",
+        "EMAIL_USER": "${EMAIL_USER}",
+        "EMAIL_PASS": "${EMAIL_PASS}"
+      },
+      "depends_on": [
+        "mysql"
+      ]
+    },
+    {
+      "name": "frontend",
+      "type": "github",
+      "repo": "Jayashri-05998/New_kavya_360",
+      "rootDirectory": "frontend",
+      "dockerfile": "Dockerfile",
+      "port": 3000,
+      "variables": {
+        "VITE_API_BASE_URL": "https://${BACKEND_DOMAIN}/api",
+        "VITE_API_URL": "https://${BACKEND_DOMAIN}",
+        "NODE_ENV": "production"
+      },
+      "depends_on": [
+        "backend"
+      ]
+    }
+  ],
+  "backup": {
+    "enabled": true,
+    "interval": "daily",
+    "retention": "30days"
+  }
+}

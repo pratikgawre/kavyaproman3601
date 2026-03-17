@@ -1,0 +1,4 @@
+.bell-black:not(.has-unread)::after {
+  content: none !important;
+  display: none !important;
+}

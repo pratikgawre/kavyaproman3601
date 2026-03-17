@@ -1,0 +1,177 @@
+/* Global reset: remove default spacing so app fills the viewport */
+html,body,#root{
+	height:100%;
+	margin:0;
+	padding:0;
+}
+
+/* Optional box-sizing reset for predictable sizing */
+*,*::before,*::after{box-sizing:border-box}
+
+:root{
+  --bg:#f8fafc;
+  --surface:#ffffff;
+  --surface-2:#f1f5f9;
+  --text:#111827;
+  --muted:#6b7280;
+  --border:#e5e7eb;
+}
+
+html[data-theme='dark']{
+  --bg:#020617;
+  --surface:#0f172a;
+  --surface-2:#1e293b;
+  --text:#e5e7eb;
+  --muted:#cbd5e1;
+  --border:#334155;
+}
+
+body{
+  background:var(--bg);
+  color:var(--text);
+}
+
+html[data-theme='dark'] body,
+html[data-theme='dark'] #root,
+html[data-theme='dark'] .content,
+html[data-theme='dark'] .dashboard-root,
+html[data-theme='dark'] .team-container,
+html[data-theme='dark'] .reports-container,
+html[data-theme='dark'] .payment-root,
+html[data-theme='dark'] .org-list-container,
+html[data-theme='dark'] .org-page,
+html[data-theme='dark'] .auth-root{
+  background:var(--bg) !important;
+  color:var(--text) !important;
+}
+
+html[data-theme='dark'] :is(
+  .sidebar,
+  .topbar,
+  .settings-card,
+  .notification-item,
+  .qr-code-section,
+  .card,
+  .member-card,
+  .report-card,
+  .reports-chart,
+  .distribution-card,
+  .payment-card,
+  .subscription-card,
+  .invoice-row,
+  .upgrade-modal,
+  .org-list-card,
+  .org-card,
+  .auth-card,
+  .contact-card,
+  .field,
+  .upi-card,
+  .upi-card-large,
+  .filters-modal,
+  .filter-card,
+  .stat-card,
+  .task-card,
+  .overdue-card,
+  .recent-card,
+  .active-projects-card,
+  .project-card,
+  .saved-card,
+  .inner-filter-card .inner-content,
+  .create-issue-container,
+  .mobile-search-box .input-group,
+  .help-cta
+){
+  background:var(--surface) !important;
+  color:var(--text) !important;
+  border-color:var(--border) !important;
+}
+
+html[data-theme='dark'] :is(
+  h1,h2,h3,h4,h5,h6,p,span,label,li,a,th,td,.nav-text,.form-label,.org-name
+){
+  color:var(--text) !important;
+}
+
+html[data-theme='dark'] :is(
+  .text-muted,.muted,.small-muted,small,.user-role,.project-code,.sub-label,.metric-label,.invoice-date,.help-text,.org-subtitle,.org-list-subtitle,.org-list-description
+){
+  color:var(--muted) !important;
+}
+
+html[data-theme='dark'] :is(input,textarea,select,.form-control,.org-search,.project-dropdown,.date-input){
+  background:var(--surface-2) !important;
+  color:var(--text) !important;
+  border-color:var(--border) !important;
+}
+
+html[data-theme='dark'] :is(input,textarea)::placeholder{
+  color:var(--muted) !important;
+  opacity:0.9;
+}
+
+html[data-theme='dark'] option{
+  background:var(--surface-2);
+  color:var(--text);
+}
+
+html[data-theme='dark'] :is(.btn-outline-secondary,.btn-outline-danger,.btn.cta-schedule,.plan-cta.btn-outline-secondary,.plan-cta.btn-outline-primary){
+  background:transparent !important;
+  color:var(--text) !important;
+  border-color:var(--border) !important;
+}
+
+html[data-theme='dark'] :is(.btn-primary,.btn-dark,.create-issue-medium,.auth-btn,.org-list-btn,.org-continue,.submit-btn,.plan-cta.btn-primary,.btn.cta-contact,.org-list-logout){
+  color:#ffffff !important;
+}
+
+html[data-theme='dark'] :is(.nav .nav-item,.tabs button,.faq-question,.apply-btn,.view-all-btn,.payment-option){
+  color:var(--text) !important;
+  border-color:var(--border) !important;
+}
+
+html[data-theme='dark'] .nav .nav-item,
+html[data-theme='dark'] .nav .nav-item:hover,
+html[data-theme='dark'] .nav .nav-item.active{
+  background:#000000 !important;
+  color:#ffffff !important;
+  border-color:#1f2937 !important;
+}
+
+html[data-theme='dark'] .nav .nav-item .nav-text,
+html[data-theme='dark'] .nav .nav-item .nav-icon,
+html[data-theme='dark'] .nav .nav-item:hover .nav-text,
+html[data-theme='dark'] .nav .nav-item:hover .nav-icon,
+html[data-theme='dark'] .nav .nav-item.active .nav-text,
+html[data-theme='dark'] .nav .nav-item.active .nav-icon{
+  color:#ffffff !important;
+}
+
+html[data-theme='dark'] .logout-badge,
+html[data-theme='dark'] .logout-badge:hover,
+html[data-theme='dark'] .logout-badge:focus,
+html[data-theme='dark'] .logout-badge:active{
+  background:#000000 !important;
+  color:#ffffff !important;
+  border-color:#1f2937 !important;
+}
+
+html[data-theme='dark'] .logout-badge svg{
+  color:#ffffff !important;
+}
+
+html[data-theme='dark'] :is(table,thead,tbody,tr,th,td){
+  background:var(--surface) !important;
+  color:var(--text) !important;
+  border-color:var(--border) !important;
+}
+
+html[data-theme='dark'] .recharts-text,
+html[data-theme='dark'] .recharts-legend-item-text{
+  fill:var(--text) !important;
+  color:var(--text) !important;
+}
+
+html[data-theme='dark'] .recharts-cartesian-grid line{
+  stroke:#334155 !important;
+}
+
