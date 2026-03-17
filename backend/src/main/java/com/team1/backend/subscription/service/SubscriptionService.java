@@ -14,6 +14,8 @@ import com.team1.backend.subscription.repository.SubscriptionMemberRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -48,6 +50,9 @@ public class SubscriptionService {
         }
         if (member.isEmpty()) {
             member = subscriptionMemberRepository.findTopByOrderByPurchasedAtDesc();
+        }
+        if (member.isPresent() && isExpired(member.get())) {
+            return defaultSubscriptionDto();
         }
         return member.map(this::toSubscriptionDto).orElseGet(this::defaultSubscriptionDto);
     }
@@ -126,6 +131,9 @@ public class SubscriptionService {
         dto.setName(member.getName());
         dto.setEmail(member.getEmail());
         dto.setPurchasedAt(member.getPurchasedAt());
+        Instant expiresAt = calculateExpiresAt(member.getPlanName(), member.getBillingCycle(), member.getPurchasedAt());
+        dto.setExpiresAt(expiresAt);
+        dto.setExpired(expiresAt != null && expiresAt.isBefore(Instant.now()));
         return dto;
     }
 
@@ -134,10 +142,28 @@ public class SubscriptionService {
         dto.setPlanName("Free");
         dto.setBillingCycle("monthly");
         dto.setStatus("active");
+        dto.setExpired(false);
         planRepository.findByName("Free").ifPresent(plan -> {
             dto.setPlanName(plan.getName());
         });
         return dto;
+    }
+
+    private boolean isExpired(SubscriptionMember member) {
+        Instant expiresAt = calculateExpiresAt(member.getPlanName(), member.getBillingCycle(), member.getPurchasedAt());
+        return expiresAt != null && expiresAt.isBefore(Instant.now());
+    }
+
+    private Instant calculateExpiresAt(String planName, String billingCycle, Instant purchasedAt) {
+        if (planName == null || planName.isBlank()) return null;
+        String key = planName.trim().toLowerCase();
+        if (key.contains("free")) return null;
+        if (purchasedAt == null) return null;
+        ZonedDateTime base = purchasedAt.atZone(ZoneId.systemDefault());
+        if ("yearly".equalsIgnoreCase(billingCycle)) {
+            return base.plusYears(1).toInstant();
+        }
+        return base.plusMonths(1).toInstant();
     }
 
 }

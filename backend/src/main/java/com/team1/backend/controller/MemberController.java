@@ -3,6 +3,7 @@ package com.team1.backend.controller;
 import com.team1.backend.model.Member;
 import com.team1.backend.service.MemberService;
 import org.springframework.http.HttpStatus;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -38,9 +39,17 @@ public class MemberController {
 
     // Create new member
     @PostMapping
-    public ResponseEntity<Member> createMember(@RequestBody Member member) {
-        Member createdMember = memberService.addMember(member);
-        return ResponseEntity.status(HttpStatus.CREATED).body(createdMember);
+    public ResponseEntity<?> createMember(@RequestBody Member member) {
+        try {
+            Member createdMember = memberService.addMember(member);
+            return ResponseEntity.status(HttpStatus.CREATED).body(createdMember);
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getMessage());
+        } catch (DataIntegrityViolationException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body("Member already exists in this team.");
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage() == null ? "Failed to invite member" : e.getMessage());
+        }
     }
 
     // Update member

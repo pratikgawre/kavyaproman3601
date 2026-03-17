@@ -17,6 +17,10 @@ function formatDateForInput(date) {
   return `${year}-${month}-${day}`
 }
 
+function normalizeRole(role) {
+  return (role || '').trim().toLowerCase()
+}
+
 function getDefaultDueDateRange(daysBack = 30) {
   const today = new Date()
   const to = formatDateForInput(today)
@@ -41,6 +45,8 @@ export default function Dashboard({ initialShowCreate = false }) {
   const { user, clearUser } = useAuth()
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
   const avatarInitials = getInitials(user?.name || displayName, user?.email)
+  const userEmail = (user?.email || '').trim().toLowerCase()
+  const isProjectManager = ['admin', 'project manager'].includes(normalizeRole(user?.role))
   const [selectedOrg, setSelectedOrg] = useState(() => {
     try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null }
   })
@@ -64,7 +70,16 @@ export default function Dashboard({ initialShowCreate = false }) {
   } = useIssueNotifications({ limit: 6 })
   const [attachments, setAttachments] = useState([])
   const [uploadingAttachments, setUploadingAttachments] = useState(false)
+  const [projects, setProjects] = useState([])
+  const [projectsLoading, setProjectsLoading] = useState(false)
+  const [projectsError, setProjectsError] = useState('')
   const avatar = user?.avatar || ''
+  const projectKeyFrom = (projectItem) => (projectItem?.projectKey || projectItem?.id || '').toString().trim()
+  const projectLabel = (projectItem) => {
+    const key = projectKeyFrom(projectItem)
+    const name = projectItem?.name || key || 'Project'
+    return key ? `${name} (${key})` : name
+  }
 
   // sync sidebar state from global controller
   useEffect(() => {
@@ -89,10 +104,46 @@ export default function Dashboard({ initialShowCreate = false }) {
     return () => window.removeEventListener('org:changed', onOrgChanged)
   }, [])
 
-  const [project, setProject] = useState('KavyaProMan 360')
+  useEffect(() => {
+    const controller = new AbortController()
+    setProjectsLoading(true)
+    setProjectsError('')
+    const managerEmail = (user?.email || '').trim()
+    const query = managerEmail ? `?managerEmail=${encodeURIComponent(managerEmail)}` : ''
+
+    fetch(`${API_BASE}/api/projects${query}`, { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errorText = await res.text()
+          throw new Error(errorText || 'Failed to load projects')
+        }
+        return res.json()
+      })
+      .then((data) => {
+        setProjects(Array.isArray(data) ? data : [])
+      })
+      .catch((err) => {
+        if (err.name === 'AbortError') return
+        setProjects([])
+        setProjectsError(err.message || 'Failed to load projects')
+      })
+      .finally(() => {
+        setProjectsLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [API_BASE, user?.email])
+
+  const [project, setProject] = useState('')
+  const [didApplyPreselect, setDidApplyPreselect] = useState(false)
   const [issueType, setIssueType] = useState('Story')
   const [epicName, setEpicName] = useState('')
   const [summary, setSummary] = useState('')
+  const [assignDate, setAssignDate] = useState('')
+  const [deadlineDate, setDeadlineDate] = useState('')
+  const [assigneeSearch, setAssigneeSearch] = useState('')
+  const [assignee, setAssignee] = useState(null)
+  const [assigneeDropdownOpen, setAssigneeDropdownOpen] = useState(false)
   const [errors, setErrors] = useState({})
   const [selectedDifficulty, setSelectedDifficulty] = useState('Medium')
   const createEmptyFilters = () => ({
@@ -108,6 +159,7 @@ export default function Dashboard({ initialShowCreate = false }) {
   const [selectedFilters, setSelectedFilters] = useState(createEmptyFilters)
   const [savedFilters, setSavedFilters] = useState([])
   const fileInputRef = useRef(null)
+  const assigneeRef = useRef(null)
   const notificationRef = useRef(null)
   const topSearchInputRef = useRef(null)
   const activeFilterCount =
@@ -125,6 +177,9 @@ export default function Dashboard({ initialShowCreate = false }) {
     function handleOutsideClick(e) {
       if (notificationRef.current && !notificationRef.current.contains(e.target)) {
         setShowNotifications(false)
+      }
+      if (assigneeRef.current && !assigneeRef.current.contains(e.target)) {
+        setAssigneeDropdownOpen(false)
       }
     }
 
@@ -235,8 +290,17 @@ export default function Dashboard({ initialShowCreate = false }) {
     if(!issueType || issueType.trim() === '') errs.issueType = 'Issue type is required'
     if(!epicName || epicName.trim() === '') errs.epicName = 'Epic name is required'
     if(!summary || summary.trim() === '') errs.summary = 'Summary is required'
-    if(!selectedDifficulty || !['High','Medium','Low'].includes(selectedDifficulty)) errs.difficulty = 'Difficulty is required'
-    if(!desc) errs.description = 'Description is required'
+    if(!assignDate) {
+      errs.assignDate = 'Assign date is required'
+    } else if (assignDate < todayDateValue) {
+      errs.assignDate = 'Assign date cannot be in the past'
+    }
+    if(!deadlineDate) {
+      errs.deadlineDate = 'Deadline date is required'
+    } else if (assignDate && deadlineDate <= assignDate) {
+      errs.deadlineDate = 'Deadline date must be after assign date'
+    }
+    // optional: require at least some description or attachments
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -276,6 +340,10 @@ export default function Dashboard({ initialShowCreate = false }) {
       attachments: normalizedAttachments,
       creatorName: user?.name || '',
       creatorEmail: user?.email || '',
+      assigneeName: assignee?.name || undefined,
+      assigneeEmail: assignee?.email || undefined,
+      assignDate: assignDate || undefined,
+      deadlineDate: deadlineDate || undefined,
       attachmentsJson: JSON.stringify(normalizedAttachments),
       difficulty: selectedDifficulty,
       createdAt: new Date().toISOString()
@@ -301,6 +369,10 @@ export default function Dashboard({ initialShowCreate = false }) {
     setShowCreate(false)
     setEpicName('')
     setSummary('')
+    setAssignDate('')
+    setDeadlineDate('')
+    setAssignee(null)
+    setAssigneeSearch('')
     if(descRef.current) descRef.current.innerHTML = ''
     setAttachments([])
     setErrors({})
@@ -310,16 +382,76 @@ export default function Dashboard({ initialShowCreate = false }) {
   const descRef = useRef(null)
   const [totalIssues, setTotalIssues] = useState(0)
   const [difficultyCounts, setDifficultyCounts] = useState({ High:0, Medium:0, Low:0 })
+  const preselectedProjectKey = useMemo(() => {
+    const fromState = location.state?.projectKey || location.state?.project?.projectKey || location.state?.project?.id
+    return fromState ? String(fromState).trim() : ''
+  }, [location.state])
+
+  useEffect(() => {
+    if (preselectedProjectKey && !didApplyPreselect) {
+      setProject(preselectedProjectKey)
+      setDidApplyPreselect(true)
+      return
+    }
+    if (!projects.length) return
+    const projectKeys = projects.map(projectKeyFrom).filter(Boolean)
+    if (!projectKeys.length) return
+    if (!project || !projectKeys.includes(project)) {
+      setProject(projectKeys[0])
+    }
+  }, [didApplyPreselect, preselectedProjectKey, project, projects])
+
+  useEffect(() => {
+    setAssignee(null)
+    setAssigneeSearch('')
+    setAssigneeDropdownOpen(false)
+  }, [project])
+
+  const selectedProjectData = useMemo(() => (
+    projects.find((projectItem) => projectKeyFrom(projectItem) === project)
+  ), [projects, project])
+
+  const projectTeamMembers = useMemo(() => {
+    const team = Array.isArray(selectedProjectData?.teamMembers) ? selectedProjectData.teamMembers : []
+    return team
+      .map((member) => ({
+        name: (member?.name || member?.email || 'Member').trim(),
+        email: (member?.email || '').trim().toLowerCase()
+      }))
+      .filter((member) => member.name || member.email)
+  }, [selectedProjectData])
+
+  const filteredTeamMembers = useMemo(() => {
+    const term = assigneeSearch.trim().toLowerCase()
+    if (!term) return projectTeamMembers
+    return projectTeamMembers.filter((member) => (
+      (member.name || '').toLowerCase().includes(term) ||
+      (member.email || '').toLowerCase().includes(term)
+    ))
+  }, [assigneeSearch, projectTeamMembers])
   const activeSprint = {
     name: 'Sprint 2 - Board Implementation',
     start: '2026-03-01',
     end: '2026-03-14'
   }
-  const activeProjects = [
-    { id: 'KPM', name: 'KavyaProMan 360', code: 'KPM', icon: 'KP', progressCount: '1/10', progressPct: 10 },
-    { id: 'WEB', name: 'Website Redesign', code: 'WEB', icon: 'WR', progressCount: '0/0', progressPct: 0 },
-    { id: 'MOB', name: 'Mobile App', code: 'MOB', icon: 'MB', progressCount: '0/0', progressPct: 0 }
-  ]
+  const activeProjects = useMemo(() => (
+    (projects || []).map((projectItem) => {
+      const key = projectKeyFrom(projectItem)
+      const total = Number(projectItem?.totalIssues || 0)
+      const completed = Number(projectItem?.completedIssues || 0)
+      const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0
+      const name = projectItem?.name || key || 'Project'
+      const icon = key ? key.slice(0, 2).toUpperCase() : name.slice(0, 2).toUpperCase()
+      return {
+        ...projectItem,
+        id: key || projectItem?.id,
+        code: key,
+        icon,
+        progressCount: `${completed}/${total}`,
+        progressPct
+      }
+    })
+  ), [projects])
   const taskCounts = useMemo(() => {
     const counts = { todo: 0, progress: 0, review: 0 }
     BOARD_COLUMNS.forEach((column) => {
@@ -390,9 +522,15 @@ export default function Dashboard({ initialShowCreate = false }) {
         if(!res.ok) throw new Error('failed to fetch')
         const data = await res.json()
         const parsed = Array.isArray(data) ? data.map(d => ({ ...d })) : []
-        setTotalIssues(parsed.length)
+        const scoped = isProjectManager || !userEmail
+          ? parsed
+          : parsed.filter((it) => {
+            const assigneeEmail = (it.assigneeEmail || it.assignee || it.creatorEmail || '').toString().toLowerCase()
+            return assigneeEmail && assigneeEmail === userEmail
+          })
+        setTotalIssues(scoped.length)
         const counts = { High:0, Medium:0, Low:0 }
-        parsed.forEach(it => {
+        scoped.forEach(it => {
           const diff = (it.difficulty || '').toString()
           if(diff.toLowerCase()==='high') counts.High++
           else if(diff.toLowerCase()==='medium') counts.Medium++
@@ -402,7 +540,7 @@ export default function Dashboard({ initialShowCreate = false }) {
       }catch(e){ console.error('load dashboard counts failed', e) }
     }
     loadCounts()
-  },[API_BASE, user?.id])
+  },[API_BASE, isProjectManager, userEmail])
 
   function handleLogout() {
     // clear user and force replace to login so back won't return to protected page
@@ -411,25 +549,40 @@ export default function Dashboard({ initialShowCreate = false }) {
   }
 
   function openBoardByStatus(statusKey) {
-    const projectId = 'KPM'
-    navigate(`/projects/${projectId}/board?status=${statusKey}`)
+    const projectItem = activeProjects[0]
+    if (!projectItem) return
+    const projectKey = projectItem.projectKey || projectItem.id
+    if (!projectKey) return
+    navigate(`/projects/${projectKey}/board?status=${statusKey}`, {
+      state: { project: { ...projectItem, id: projectKey, projectKey } }
+    })
   }
 
   function openProjectBoard(project) {
-    navigate(`/projects/${project.id}/board`, {
-      state: { project: { id: project.id, name: project.name, code: project.code } }
+    const projectKey = project.projectKey || project.id
+    if (!projectKey) return
+    navigate(`/projects/${projectKey}/board`, {
+      state: { project: { ...project, id: projectKey, projectKey } }
     })
   }
 
   function openActiveSprint() {
-    const fallbackProject = { id: 'KPM', name: 'KavyaProMan 360', code: 'KPM' }
-    const project = activeProjects.find((item) => item.id === fallbackProject.id) || activeProjects[0] || fallbackProject
-    navigate(`/projects/${project.id}/backlog`, { state: { project } })
+    const projectItem = activeProjects[0]
+    if (!projectItem) return
+    const projectKey = projectItem.projectKey || projectItem.id
+    if (!projectKey) return
+    navigate(`/projects/${projectKey}/backlog`, {
+      state: { project: { ...projectItem, id: projectKey, projectKey } }
+    })
   }
 
   function openIssueFromActivity(issueKey) {
     if (!issueKey) return
-    navigate(`/projects/KPM/board?issue=${encodeURIComponent(issueKey)}`)
+    const projectItem = activeProjects[0]
+    if (!projectItem) return
+    const projectKey = projectItem.projectKey || projectItem.id
+    if (!projectKey) return
+    navigate(`/projects/${projectKey}/board?issue=${encodeURIComponent(issueKey)}`)
   }
 
   function getInitials(name) {
@@ -526,6 +679,7 @@ export default function Dashboard({ initialShowCreate = false }) {
 
   function closeCreateModal() {
     setShowCreate(false)
+    setAssigneeDropdownOpen(false)
     if (location.pathname === '/create-issue') {
       navigate('/dashboard', { replace: true })
     }
@@ -883,9 +1037,24 @@ export default function Dashboard({ initialShowCreate = false }) {
                     <div className="filter-section">
                       <h6>Project</h6>
                       <div className="filter-list project-list">
-                        <label><input type="checkbox" checked={selectedFilters.project.includes('KavyaProMan 360')} onChange={() => toggleFilterSelection('project', 'KavyaProMan 360')} /> KavyaProMan 360</label>
-                        <label><input type="checkbox" checked={selectedFilters.project.includes('Website Redesign')} onChange={() => toggleFilterSelection('project', 'Website Redesign')} /> Website Redesign</label>
-                        <label><input type="checkbox" checked={selectedFilters.project.includes('Mobile App')} onChange={() => toggleFilterSelection('project', 'Mobile App')} /> Mobile App</label>
+                        {projectsLoading && <div className="muted">Loading projects...</div>}
+                        {!projectsLoading && projects.length === 0 && (
+                          <div className="muted">{projectsError || 'No projects found'}</div>
+                        )}
+                        {!projectsLoading && projects.map((projectItem) => {
+                          const key = projectKeyFrom(projectItem)
+                          if (!key) return null
+                          return (
+                            <label key={key}>
+                              <input
+                                type="checkbox"
+                                checked={selectedFilters.project.includes(key)}
+                                onChange={() => toggleFilterSelection('project', key)}
+                              />
+                              {projectLabel(projectItem)}
+                            </label>
+                          )
+                        })}
                       </div>
                     </div>
                   </div>
@@ -945,17 +1114,26 @@ export default function Dashboard({ initialShowCreate = false }) {
               <form className="create-issue-form">
                 <div className="form-row select-row">
                   <label>Project*</label>
-                  <div className="select-control">
-                    <select
-                      className={`form-control project-select ${errors.project ? 'invalid' : ''}`}
-                      value={project}
-                      onChange={e=>{ setProject(e.target.value); setErrors(prev=>({...prev, project:undefined})) }}
-                    >
-                      <option>Zapier Content (ZC)</option>
-                      <option>KavyaProMan 360</option>
-                      <option>Website Redesign</option>
-                      <option>Mobile App</option>
-                    </select>
+                    <div className="select-control">
+                      <select
+                        className={`form-control project-select ${errors.project ? 'invalid' : ''}`}
+                        value={project}
+                        onChange={e=>{ setProject(e.target.value); setErrors(prev=>({...prev, project:undefined})) }}
+                      >
+                        {projectsLoading && <option value="">Loading projects...</option>}
+                        {!projectsLoading && projects.length === 0 && (
+                          <option value="">{projectsError || 'No projects available'}</option>
+                        )}
+                        {!projectsLoading && projects.map((projectItem) => {
+                          const key = projectKeyFrom(projectItem)
+                          if (!key) return null
+                          return (
+                            <option key={key} value={key}>
+                              {projectLabel(projectItem)}
+                            </option>
+                          )
+                        })}
+                      </select>
                     {errors.project && <div className="error-text">{errors.project}</div>}
                   </div>
                 </div>
@@ -994,6 +1172,98 @@ export default function Dashboard({ initialShowCreate = false }) {
                     onKeyDown={preventLeadingSpace}
                   />
                   {errors.summary && <div className="error-text">{errors.summary}</div>}
+                </div>
+
+                <div className="form-row three-col">
+                  <div>
+                    <label>Assign Date</label>
+                    <input
+                      type="date"
+                      className={`form-control ${errors.assignDate ? 'invalid' : ''}`}
+                      value={assignDate}
+                      min={todayDateValue}
+                      onChange={(e) => {
+                        setAssignDate(e.target.value)
+                        setErrors(prev => ({ ...prev, assignDate: undefined }))
+                      }}
+                    />
+                    {errors.assignDate && <div className="error-text">{errors.assignDate}</div>}
+                  </div>
+                  <div>
+                    <label>Deadline Date</label>
+                    <input
+                      type="date"
+                      className={`form-control ${errors.deadlineDate ? 'invalid' : ''}`}
+                      value={deadlineDate}
+                      min={assignDate || todayDateValue}
+                      onChange={(e) => {
+                        setDeadlineDate(e.target.value)
+                        setErrors(prev => ({ ...prev, deadlineDate: undefined }))
+                      }}
+                    />
+                    {errors.deadlineDate && <div className="error-text">{errors.deadlineDate}</div>}
+                  </div>
+                  <div className="assignee-field" ref={assigneeRef}>
+                    <label>Assigned To</label>
+                    <div className={`assignee-search ${assigneeDropdownOpen ? 'open' : ''}`}>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Search team member..."
+                        value={assigneeSearch}
+                        onFocus={() => setAssigneeDropdownOpen(true)}
+                        onChange={(e) => {
+                          setAssigneeSearch(e.target.value)
+                          setAssignee(null)
+                          setAssigneeDropdownOpen(true)
+                        }}
+                      />
+                      {assigneeDropdownOpen && (
+                        <div className="assignee-dropdown">
+                          {filteredTeamMembers.length > 0 ? (
+                            filteredTeamMembers.map((member) => (
+                              <button
+                                type="button"
+                                key={`${member.email || member.name}`}
+                                className="assignee-option"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  setAssignee(member)
+                                  setAssigneeSearch(member.name || member.email)
+                                  setAssigneeDropdownOpen(false)
+                                }}
+                              >
+                                <span className="assignee-name">{member.name || 'Member'}</span>
+                                {member.email && <span className="assignee-email">{member.email}</span>}
+                              </button>
+                            ))
+                          ) : (
+                            <div className="assignee-empty">
+                              {project ? 'No team members for this project' : 'Select a project to see members'}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    {assignee && (
+                      <div className="assignee-selected">
+                        <div className="assignee-selected-info">
+                          <span className="assignee-name">{assignee.name || 'Member'}</span>
+                          {assignee.email && <span className="assignee-email">{assignee.email}</span>}
+                        </div>
+                        <button
+                          type="button"
+                          className="assignee-clear"
+                          onClick={() => {
+                            setAssignee(null)
+                            setAssigneeSearch('')
+                          }}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="form-row">

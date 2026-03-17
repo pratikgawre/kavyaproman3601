@@ -14,6 +14,7 @@ import {
   FiSearch,
   FiBell,
   FiPlus,
+  FiCheck,
   FiRepeat,
   FiArrowRight,
   FiArchive,
@@ -37,41 +38,52 @@ const getAvatarInitials = (name, email) => {
   return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase()
 }
 
-const PROJECTS = [
-  {
-    id: 'KPM',
-    icon: '🚀',
-    name: 'KavyaProMan 360',
-    description: 'Enhanced project management system with Jira-like features',
-    completedIssues: 1,
-    totalIssues: 10,
-    teamLead: 'Sarah Johnson',
-    createdOn: '15/1/2024',
-    isArchived: false
-  },
-  {
-    id: 'WEB',
-    icon: '🌐',
-    name: 'Website Redesign',
-    description: 'Corporate website modernization project',
-    completedIssues: 0,
-    totalIssues: 0,
-    teamLead: 'Michael Chen',
-    createdOn: '1/2/2024',
-    isArchived: false
-  },
-  {
-    id: 'MOB',
-    icon: '📱',
-    name: 'Mobile App',
-    description: 'Native mobile application development',
-    completedIssues: 0,
-    totalIssues: 0,
-    teamLead: 'Emily Rodriguez',
-    createdOn: '20/1/2024',
-    isArchived: false
+const stripLeadingSpace = (value) => value.replace(/^\s+/, '')
+const sanitizeEmail = (value) => stripLeadingSpace(value).replace(/[^A-Za-z0-9@.]/g, '')
+const preventLeadingSpace = (event) => {
+  if (event.key === ' ' && (event.currentTarget.selectionStart ?? 0) === 0) event.preventDefault()
+}
+
+const normalizeRole = (role) => (role || '').trim().toLowerCase()
+const normalizeProjectKeyValue = (value) => (value || '').toString().trim().toUpperCase()
+const getRoleLabel = (role) => {
+  const normalized = normalizeRole(role)
+  if (normalized === 'admin' || normalized === 'project manager') return 'Project Manager'
+  return role || ''
+}
+const resolveProjectRole = (role) => {
+  const normalized = normalizeRole(role)
+  if (normalized === 'admin' || normalized === 'project manager') return 'Admin'
+  if (normalized === 'tester') return 'Tester'
+  if (normalized === 'developer') return 'Developer'
+  return 'Developer'
+}
+
+const formatDateValue = (value) => {
+  if (!value) return ''
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`
+}
+
+const normalizeProject = (project, fallbackLead) => {
+  const key = (project?.projectKey || project?.key || project?.code || project?.id || '').toString().trim()
+  return {
+    ...project,
+    id: project?.id || key,
+    projectKey: key || '',
+    icon: project?.icon || '📁',
+    name: project?.name || 'Untitled Project',
+    description: project?.description || 'No description provided',
+    completedIssues: Number(project?.completedIssues ?? 0),
+    totalIssues: Number(project?.totalIssues ?? 0),
+    teamLead: project?.teamLead || fallbackLead || 'Team Lead',
+    teamMembers: Array.isArray(project?.teamMembers) ? project.teamMembers : [],
+    createdOn: project?.createdOn || formatDateValue(project?.createdAt),
+    isArchived: project?.isArchived ?? false,
+    projectType: project?.projectType || 'Scrum'
   }
-]
+}
 
 const CREATE_TABS = [
   { key: 'Details', icon: FiFolder },
@@ -83,15 +95,26 @@ const CREATE_TABS = [
 
 const AVAILABLE_ICONS = ['🚀', '💼', '📱', '🎨', '⚙️', '🏗️', '🔬', '📊', '🎯', '💡', '💥', '🔥']
 
+const PROJECT_MEMBER_ROLES = [
+  { value: 'Admin', label: 'Project Manager' },
+  { value: 'Developer', label: 'Developer' },
+  { value: 'Tester', label: 'Tester' }
+]
+
 export default function Project() {
   const navigate = useNavigate()
   const { user, clearUser } = useAuth()
-  const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
-  const avatarInitials = getAvatarInitials(user?.name, user?.email)
+  const [profileUser, setProfileUser] = useState(null)
+  const [profileLoading, setProfileLoading] = useState(false)
+  const currentUser = profileUser || user || {}
+  const displayName = currentUser?.name || (currentUser?.email ? currentUser.email.split('@')[0] : 'Guest')
+  const avatarInitials = getAvatarInitials(currentUser?.name, currentUser?.email)
   const [selectedOrg, setSelectedOrg] = useState(() => {
     try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null }
   })
-  const [projects, setProjects] = useState(PROJECTS)
+  const [projects, setProjects] = useState([])
+  const [projectsLoading, setProjectsLoading] = useState(true)
+  const [projectsError, setProjectsError] = useState('')
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -104,10 +127,20 @@ export default function Project() {
   const [isPrivateProject, setIsPrivateProject] = useState(true)
   const [editingProjectId, setEditingProjectId] = useState(null)
   const [openProjectMenuId, setOpenProjectMenuId] = useState(null)
+  const [teamMembers, setTeamMembers] = useState([])
+  const [availableMembers, setAvailableMembers] = useState([])
+  const [membersLoading, setMembersLoading] = useState(false)
+  const [membersError, setMembersError] = useState('')
+  const [memberSearch, setMemberSearch] = useState('')
+  const [showMemberSuggestions, setShowMemberSuggestions] = useState(false)
+  const [memberCandidate, setMemberCandidate] = useState({ memberId: '', name: '', email: '', role: 'Developer' })
+  const [emailVerificationStatus, setEmailVerificationStatus] = useState(null)
+  const [verifiedEmailUser, setVerifiedEmailUser] = useState(null)
   const [showArchivedProjects, setShowArchivedProjects] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const [topSearchText, setTopSearchText] = useState('')
+  const [issueStatsByProject, setIssueStatsByProject] = useState({})
   const {
     notifications,
     unreadCount,
@@ -121,6 +154,13 @@ export default function Project() {
   } = useIssueNotifications({ limit: 6 })
   const notificationRef = useRef(null)
   const topSearchInputRef = useRef(null)
+  const memberPickerRef = useRef(null)
+  const API_BASE_URL = (import.meta?.env?.VITE_API_BASE || 'http://localhost:8080')
+  const USERS_SEARCH_API_URL = `${API_BASE_URL}/api/users/search`
+  const normalizedRole = normalizeRole(currentUser?.role)
+  const isProjectManager = normalizedRole === 'admin' || normalizedRole === 'project manager'
+  const managerEmail = (currentUser?.email || '').trim().toLowerCase()
+  const memberEmail = managerEmail
   const activeProjects = projects.filter((project) => !project.isArchived)
   const archivedProjects = projects.filter((project) => project.isArchived)
   const visibleProjects = showArchivedProjects ? archivedProjects : activeProjects
@@ -145,6 +185,9 @@ export default function Project() {
       if (notificationRef.current && !notificationRef.current.contains(event.target)) {
         setShowNotifications(false)
       }
+      if (memberPickerRef.current && !memberPickerRef.current.contains(event.target)) {
+        setShowMemberSuggestions(false)
+      }
     }
 
     document.addEventListener('mousedown', handleOutsideClick)
@@ -156,6 +199,142 @@ export default function Project() {
     const timeoutId = setTimeout(() => topSearchInputRef.current?.focus(), 0)
     return () => clearTimeout(timeoutId)
   }, [mobileSearchOpen])
+
+  useEffect(() => {
+    let isMounted = true
+    const controller = new AbortController()
+
+    const fetchIssues = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/issues`, { signal: controller.signal })
+        if (!response.ok) {
+          throw new Error('Failed to load issues')
+        }
+        const data = await response.json()
+        const list = Array.isArray(data)
+          ? data
+          : (Array.isArray(data?.issues) ? data.issues : (Array.isArray(data?.data) ? data.data : []))
+        if (!isMounted) return
+
+        const stats = {}
+        list.forEach((issue) => {
+          const key = normalizeProjectKeyValue(issue?.project || issue?.projectKey || issue?.projectId)
+          if (!key) return
+          if (!stats[key]) {
+            stats[key] = { total: 0, completed: 0 }
+          }
+          stats[key].total += 1
+          const status = (issue?.status || '').toString().trim().toLowerCase()
+          if (status === 'done' || status === 'completed') {
+            stats[key].completed += 1
+          }
+        })
+
+        setIssueStatsByProject(stats)
+      } catch (err) {
+        if (!isMounted || err.name === 'AbortError') return
+        setIssueStatsByProject({})
+      }
+    }
+
+    fetchIssues()
+    return () => {
+      isMounted = false
+      controller.abort()
+    }
+  }, [API_BASE_URL])
+
+  useEffect(() => {
+    if (!user?.id) return
+    let isMounted = true
+    setProfileLoading(true)
+    fetch(`${API_BASE_URL}/api/user`, {
+      headers: { 'X-USER-ID': String(user.id) }
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!isMounted || !data) return
+        setProfileUser(data)
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (isMounted) setProfileLoading(false)
+      })
+    return () => { isMounted = false }
+  }, [API_BASE_URL, user?.id])
+
+  useEffect(() => {
+    let isMounted = true
+    const controller = new AbortController()
+    const fetchProjects = async () => {
+      if (user?.id && profileLoading && !managerEmail) {
+        return
+      }
+      setProjectsLoading(true)
+      setProjectsError('')
+      try {
+        const queryParams = new URLSearchParams()
+        if (isProjectManager && managerEmail) {
+          queryParams.set('managerEmail', managerEmail)
+        } else if (!isProjectManager && memberEmail) {
+          queryParams.set('memberEmail', memberEmail)
+        }
+        const query = queryParams.toString()
+        const response = await fetch(`${API_BASE_URL}/api/projects${query ? `?${query}` : ''}`, { signal: controller.signal })
+        if (!response.ok) {
+          const errorText = await response.text()
+          throw new Error(errorText || 'Failed to load projects')
+        }
+        const data = await response.json()
+        const list = Array.isArray(data) ? data : []
+        if (!isMounted) return
+        setProjects(list.map((project) => normalizeProject(project, displayName)))
+      } catch (err) {
+        if (!isMounted || err.name === 'AbortError') return
+        setProjectsError(err.message || 'Failed to load projects')
+        setProjects([])
+      } finally {
+        if (isMounted) setProjectsLoading(false)
+      }
+    }
+    fetchProjects()
+    return () => {
+      isMounted = false
+      controller.abort()
+    }
+  }, [API_BASE_URL, managerEmail, memberEmail, displayName, profileLoading, user?.id, isProjectManager])
+
+  useEffect(() => {
+    if (!showCreateModal) return
+    const searchTerm = memberSearch.trim()
+    if (searchTerm.length < 2) {
+      setAvailableMembers([])
+      setMembersError('')
+      setMembersLoading(false)
+      return
+    }
+
+    const controller = new AbortController()
+    const debounceId = setTimeout(async () => {
+      setMembersLoading(true)
+      setMembersError('')
+      try {
+        const results = await fetchTeamMembers(searchTerm, controller.signal)
+        setAvailableMembers(results)
+      } catch (err) {
+        if (err.name === 'AbortError') return
+        setAvailableMembers([])
+        setMembersError(err.message || 'Unable to load users')
+      } finally {
+        setMembersLoading(false)
+      }
+    }, 300)
+
+    return () => {
+      clearTimeout(debounceId)
+      controller.abort()
+    }
+  }, [showCreateModal, memberSearch, USERS_SEARCH_API_URL])
 
 
   function handleLogout() {
@@ -176,6 +355,13 @@ export default function Project() {
     setProjectDescription('')
     setIsPrivateProject(true)
     setEditingProjectId(null)
+    setTeamMembers([])
+    setMemberSearch('')
+    setShowMemberSuggestions(false)
+    setMemberCandidate({ memberId: '', name: '', email: '', role: 'Developer' })
+    setEmailVerificationStatus(null)
+    setVerifiedEmailUser(null)
+    setMembersError('')
   }
 
   function handleOpenCreateModal() {
@@ -189,7 +375,7 @@ export default function Project() {
   }
 
   function formatCreatedOn(date) {
-    return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`
+    return formatDateValue(date)
   }
 
   function getUniqueProjectKey(currentProjects, keyBase, excludedId = null) {
@@ -197,14 +383,14 @@ export default function Project() {
     let uniqueKey = (keyBase || '').toString().trim().toUpperCase()
     if (!uniqueKey) uniqueKey = 'PRJ'
     let suffix = 1
-    while (list.some((project) => project.id === uniqueKey && project.id !== excludedId)) {
+    while (list.some((project) => project.projectKey === uniqueKey && project.id !== excludedId)) {
       uniqueKey = `${keyBase}${suffix}`
       suffix += 1
     }
     return uniqueKey
   }
 
-  function handleSaveProject() {
+  async function handleSaveProject() {
     const normalizedName = projectName.trim()
     const normalizedKeyBase = projectKey.trim().toUpperCase()
     const normalizedDescription = projectDescription.trim()
@@ -213,49 +399,101 @@ export default function Project() {
       return
     }
 
-    const uniqueKey = getUniqueProjectKey(projects, normalizedKeyBase, editingProjectId)
-
-    if (editingProjectId) {
-      setProjects((current) => current.map((project) => (
-        project.id === editingProjectId
-          ? {
-              ...project,
-              id: uniqueKey,
-              icon: selectedProjectIcon,
-              name: normalizedName,
-              description: normalizedDescription || 'No description provided',
-              projectType: selectedProjectType
-            }
-          : project
-      )))
-      setShowCreateModal(false)
-      resetCreateForm()
+    const managerEmailValue = managerEmail || (currentUser?.email || '').trim().toLowerCase()
+    if (!managerEmailValue) {
+      alert('Unable to identify your account. Please log out and log in again.')
       return
     }
 
-    const nextProject = {
-      id: uniqueKey,
-      icon: selectedProjectIcon,
-      name: normalizedName,
-      description: normalizedDescription || 'No description provided',
-      completedIssues: 0,
-      totalIssues: 0,
-      teamLead: displayName,
-      createdOn: formatCreatedOn(new Date()),
-      isArchived: false,
-      projectType: selectedProjectType
+    try {
+      if (editingProjectId) {
+        const existing = projects.find((project) => project.id === editingProjectId)
+        const payload = {
+          projectKey: normalizedKeyBase,
+          icon: selectedProjectIcon,
+          name: normalizedName,
+          description: normalizedDescription || 'No description provided',
+          projectType: selectedProjectType,
+          isArchived: existing?.isArchived ?? false,
+          teamLead: existing?.teamLead || displayName,
+          managerEmail: managerEmailValue,
+          teamMembers: teamMembers.map((member) => ({
+            memberId: member.memberId || member.id || null,
+            name: member.name || '',
+            email: member.email || '',
+            role: member.role || '',
+            status: member.status || ''
+          }))
+        }
+        const response = await fetch(`${API_BASE_URL}/api/projects/${editingProjectId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        })
+        if (response.status === 409) {
+          const conflictText = await response.text()
+          alert(conflictText || 'Project key already exists.')
+          return
+        }
+        if (!response.ok) {
+          const errorText = await response.text()
+          throw new Error(errorText || 'Failed to update project')
+        }
+        const updated = normalizeProject(await response.json(), displayName)
+        setProjects((current) => current.map((project) => (
+          project.id === updated.id ? updated : project
+        )))
+        setShowCreateModal(false)
+        resetCreateForm()
+        return
+      }
+
+      const uniqueKey = getUniqueProjectKey(projects, normalizedKeyBase, editingProjectId)
+      const payload = {
+        projectKey: uniqueKey,
+        icon: selectedProjectIcon,
+        name: normalizedName,
+        description: normalizedDescription || 'No description provided',
+        projectType: selectedProjectType,
+        isArchived: false,
+        teamLead: displayName,
+        managerEmail: managerEmailValue,
+        teamMembers: teamMembers.map((member) => ({
+          memberId: member.memberId || member.id || null,
+          name: member.name || '',
+          email: member.email || '',
+          role: member.role || '',
+          status: member.status || ''
+        }))
+      }
+      const response = await fetch(`${API_BASE_URL}/api/projects`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      if (response.status === 409) {
+        const conflictText = await response.text()
+        alert(conflictText || 'Project key already exists.')
+        return
+      }
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(errorText || 'Failed to create project')
+      }
+      const created = normalizeProject(await response.json(), displayName)
+      setProjects((current) => [created, ...(Array.isArray(current) ? current : [])])
+
+      addNotification({
+        id: `project-created-${created.projectKey || created.id}-${Date.now()}`,
+        type: 'project_created',
+        title: `Project created: ${normalizedName} (${created.projectKey || created.id})`
+      })
+
+      setShowCreateModal(false)
+      resetCreateForm()
+    } catch (err) {
+      alert(err.message || 'Failed to save project')
     }
-
-    setProjects((current) => [nextProject, ...(Array.isArray(current) ? current : [])])
-
-    addNotification({
-      id: `project-created-${uniqueKey}-${Date.now()}`,
-      type: 'project_created',
-      title: `Project created: ${normalizedName} (${uniqueKey})`
-    })
-
-    setShowCreateModal(false)
-    resetCreateForm()
   }
 
   function handleEditProject(project) {
@@ -264,15 +502,31 @@ export default function Project() {
     setSelectedProjectIcon(project.icon || '🚀')
     setSelectedProjectType(project.projectType || 'Scrum')
     setProjectName(project.name || '')
-    setProjectKey(project.id || '')
+    setProjectKey(project.projectKey || project.id || '')
     setProjectDescription(project.description || '')
+    setTeamMembers(Array.isArray(project.teamMembers) ? project.teamMembers : [])
+    setMemberCandidate({ memberId: '', name: '', email: '', role: 'Developer' })
+    setMemberSearch('')
+    setShowMemberSuggestions(false)
+    setEmailVerificationStatus(null)
+    setVerifiedEmailUser(null)
     setShowCreateModal(true)
     setOpenProjectMenuId(null)
   }
 
-  function handleDeleteProject(projectId) {
-    setProjects((current) => current.filter((project) => project.id !== projectId))
-    setOpenProjectMenuId(null)
+  async function handleDeleteProject(projectId) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, { method: 'DELETE' })
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(errorText || 'Failed to delete project')
+      }
+      setProjects((current) => current.filter((project) => project.id !== projectId))
+    } catch (err) {
+      alert(err.message || 'Failed to delete project')
+    } finally {
+      setOpenProjectMenuId(null)
+    }
   }
 
 
@@ -311,8 +565,181 @@ export default function Project() {
     runIssueSearch()
   }
 
+  const scopeMembersForUser = (list) => {
+    return Array.isArray(list) ? list : []
+  }
+
+  const fetchTeamMembers = async (query, signal) => {
+    const response = await fetch(
+      `${USERS_SEARCH_API_URL}?query=${encodeURIComponent(query)}&limit=8`,
+      { signal }
+    )
+    if (!response.ok) {
+      throw new Error('Failed to fetch users')
+    }
+    const data = await response.json()
+    return Array.isArray(data) ? data : []
+  }
+
+  const selectMemberSuggestion = (member) => {
+    const name = (member?.name || '').trim()
+    const email = (member?.email || '').trim().toLowerCase()
+    if (!email) {
+      alert('Selected user is missing an email address.')
+      return
+    }
+
+    const displayNameValue = name || email
+    setMemberCandidate((prev) => ({
+      memberId: member?.id || member?.memberId || '',
+      name: displayNameValue,
+      email,
+      role: prev.role || resolveProjectRole(member?.role)
+    }))
+    setMemberSearch(displayNameValue)
+    setShowMemberSuggestions(false)
+    setEmailVerificationStatus('verified')
+    setVerifiedEmailUser({ name: displayNameValue, email })
+  }
+
+  const clearMemberCandidate = () => {
+    setMemberCandidate({ memberId: '', name: '', email: '', role: 'Developer' })
+    setEmailVerificationStatus(null)
+    setVerifiedEmailUser(null)
+  }
+
+  const verifyEmailAddress = async () => {
+    if (!memberCandidate.email) {
+      alert('Please enter an email address')
+      return
+    }
+
+    setEmailVerificationStatus('verifying')
+
+    try {
+      const email = memberCandidate.email.trim().toLowerCase()
+      const response = await fetch(`${API_BASE_URL}/api/users/verify-email?email=${encodeURIComponent(email)}`)
+
+      if (response.ok) {
+        const userData = await response.json()
+        setVerifiedEmailUser(userData)
+        setEmailVerificationStatus('verified')
+        const dbName = (userData?.name || '').trim()
+        if (dbName) {
+          setMemberCandidate((prev) => ({ ...prev, name: dbName, email }))
+        }
+        alert(`Email verified! User: ${userData.name || userData.email}`)
+      } else if (response.status === 404) {
+        setEmailVerificationStatus('not-found')
+        setVerifiedEmailUser(null)
+        alert('Email not found in database. Please check the email address.')
+      } else {
+        setEmailVerificationStatus('error')
+        setVerifiedEmailUser(null)
+        alert('Error verifying email. Server response: ' + response.status)
+      }
+    } catch (err) {
+      setEmailVerificationStatus('error')
+      setVerifiedEmailUser(null)
+      alert('Failed to verify email: ' + err.message)
+    }
+  }
+
+  const sendProjectInvitationEmail = async (email, name, role) => {
+    const SEND_EMAIL_URL = `${API_BASE_URL}/api/email/send-invitation`
+    const payload = {
+      recipientEmail: email,
+      recipientName: name,
+      role,
+      invitedBy: displayName,
+      organizationName: selectedOrg?.name || 'KavyaProMan'
+    }
+
+    const response = await fetch(SEND_EMAIL_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+
+    if (!response.ok) {
+      throw new Error('Failed to send invitation email')
+    }
+
+    return await response.json()
+  }
+
+  const handleAddProjectMember = async () => {
+    const name = (memberCandidate.name || '').trim()
+    const email = (memberCandidate.email || '').trim().toLowerCase()
+    const role = memberCandidate.role || 'Developer'
+
+    if (!name || !email) {
+      alert('Please enter both name and email')
+      return
+    }
+
+    const alreadyAdded = teamMembers.some((member) => (member?.email || '').trim().toLowerCase() === email)
+    if (alreadyAdded) {
+      alert('This member is already added to the project')
+      return
+    }
+
+    if (emailVerificationStatus !== 'verified') {
+      alert('Please verify the email address first by clicking the Verify button')
+      return
+    }
+
+    const displayNameValue = name || email
+    const shouldAdd = window.confirm(`Add ${displayNameValue} (${email}) as ${getRoleLabel(role) || role} to the project team?`)
+    if (!shouldAdd) {
+      return
+    }
+
+    const newMember = {
+      memberId: memberCandidate.memberId || null,
+      name: displayNameValue,
+      email,
+      role,
+      status: 'Invited'
+    }
+
+    setTeamMembers((current) => [...current, newMember])
+
+    try {
+      await sendProjectInvitationEmail(email, displayNameValue, role)
+    } catch (err) {
+      console.warn('Email sending failed, but member was added:', err)
+    }
+
+    alert(`${displayNameValue} was added to the project team.`)
+    clearMemberCandidate()
+    setMemberSearch('')
+    setShowMemberSuggestions(false)
+  }
+
+  const handleRemoveProjectMember = (email) => {
+    const normalizedEmail = (email || '').trim().toLowerCase()
+    setTeamMembers((current) => current.filter((member) => (member?.email || '').trim().toLowerCase() !== normalizedEmail))
+  }
+
   function renderCreateTabContent() {
     if (activeCreateTab === 'Members') {
+      const scopedMembers = scopeMembersForUser(availableMembers)
+      const rawSearchTerm = memberSearch.trim()
+      const searchTerm = rawSearchTerm.toLowerCase()
+      const isSearchReady = rawSearchTerm.length >= 2
+      const selectedEmails = new Set(teamMembers.map((member) => (member?.email || '').trim().toLowerCase()))
+      const filteredSuggestions = isSearchReady
+        ? scopedMembers.filter((member) => {
+            const name = (member?.name || '').toLowerCase()
+            const email = (member?.email || '').toLowerCase()
+            if (!name && !email) return false
+            const matches = name.includes(searchTerm) || email.includes(searchTerm)
+            if (!matches) return false
+            return !selectedEmails.has(email)
+          }).slice(0, 6)
+        : []
+
       return (
         <>
           <div className="create-field-block">
@@ -320,19 +747,197 @@ export default function Project() {
               Project Lead
             </label>
             <button className="project-lead-pill">
-              <span className="project-lead-avatar">SJ</span>
-              <span>Sarah Johnson</span>
+              <span className="project-lead-avatar">{getAvatarInitials(displayName, currentUser?.email)}</span>
+              <span>{displayName}</span>
             </button>
             <p className="create-input-hint">Set a lead who can guide delivery and ownership.</p>
           </div>
 
           <div className="create-field-block">
-            <div className="project-settings-card">
-              <div className="project-settings-title">
-                <FiUsers size={14} />
-                <span>Team Members</span>
+            <label>
+              Team Members
+            </label>
+            <div className="project-member-picker" ref={memberPickerRef}>
+              <div className="project-member-search">
+                <FiSearch size={14} />
+                <input
+                  type="text"
+                  placeholder="Search by name or email"
+                  value={memberSearch}
+                  onChange={(event) => {
+                    setMemberSearch(event.target.value)
+                    setShowMemberSuggestions(true)
+                  }}
+                  onFocus={() => setShowMemberSuggestions(true)}
+                />
+                {memberSearch && (
+                  <button
+                    type="button"
+                    className="project-member-clear"
+                    onClick={() => {
+                      setMemberSearch('')
+                      setShowMemberSuggestions(false)
+                    }}
+                    aria-label="Clear search"
+                  >
+                    <FiX size={14} />
+                  </button>
+                )}
               </div>
-              <p className="create-input-hint">Add and manage members for this project in this module.</p>
+
+              {showMemberSuggestions && (
+                <div className="project-member-suggestions">
+                  {membersLoading && (
+                    <div className="project-member-suggestion muted">Searching users...</div>
+                  )}
+                  {!membersLoading && isSearchReady && filteredSuggestions.map((member) => (
+                    <button
+                      key={member.id || member.email}
+                      type="button"
+                      className="project-member-suggestion"
+                      onClick={() => selectMemberSuggestion(member)}
+                    >
+                      <span className="project-member-avatar">{getAvatarInitials(member.name, member.email)}</span>
+                      <span className="project-member-text">
+                        <strong>{member.name || 'Unnamed'}</strong>
+                        <span>{member.email}</span>
+                      </span>
+                      <span className="project-member-role">{getRoleLabel(member.role || 'Developer')}</span>
+                    </button>
+                  ))}
+                  {!membersLoading && isSearchReady && filteredSuggestions.length === 0 && (
+                    <div className="project-member-suggestion muted">No matching users found</div>
+                  )}
+                  {!membersLoading && !rawSearchTerm && (
+                    <div className="project-member-suggestion muted">Start typing to search members</div>
+                  )}
+                  {!membersLoading && rawSearchTerm && !isSearchReady && (
+                    <div className="project-member-suggestion muted">Type at least 2 characters to search</div>
+                  )}
+                  {!membersLoading && membersError && (
+                    <div className="project-member-suggestion muted">{membersError}</div>
+                  )}
+                </div>
+              )}
+
+              <div className="project-member-form">
+                <div className="project-member-field">
+                  <label>Name *</label>
+                  <input
+                    type="text"
+                    placeholder="Enter member name"
+                    value={memberCandidate.name}
+                    onChange={(event) => setMemberCandidate((prev) => ({ ...prev, name: event.target.value }))}
+                  />
+                </div>
+                <div className="project-member-field project-member-field-full">
+                  <label>Email *
+                    {emailVerificationStatus === 'verified' && (
+                      <span className="verification-status verified">
+                        <FiCheck size={14} /> Verified
+                      </span>
+                    )}
+                    {emailVerificationStatus === 'not-found' && (
+                      <span className="verification-status not-found">Not Found</span>
+                    )}
+                    {emailVerificationStatus === 'error' && (
+                      <span className="verification-status error">Error</span>
+                    )}
+                  </label>
+                  <div className="project-member-email-row">
+                    <input
+                      type="email"
+                      placeholder="Enter member email"
+                      value={memberCandidate.email}
+                      onChange={(event) => {
+                        setMemberCandidate((prev) => ({ ...prev, email: sanitizeEmail(event.target.value) }))
+                        setEmailVerificationStatus(null)
+                        setVerifiedEmailUser(null)
+                      }}
+                      onKeyDown={preventLeadingSpace}
+                    />
+                    <button
+                      type="button"
+                      className={`verify-btn verify-btn-${emailVerificationStatus || 'default'}`}
+                      onClick={verifyEmailAddress}
+                      disabled={!memberCandidate.email || emailVerificationStatus === 'verifying'}
+                      title="Verify email address in database"
+                    >
+                      {emailVerificationStatus === 'verifying' ? (
+                        <>
+                          <FiRepeat size={16} style={{ marginRight: '4px', animation: 'spin 1s linear infinite' }} />
+                          Verifying...
+                        </>
+                      ) : emailVerificationStatus === 'verified' ? (
+                        <>
+                          <FiCheck size={16} style={{ marginRight: '4px' }} />
+                          Verified
+                        </>
+                      ) : (
+                        <>Verify</>
+                      )}
+                    </button>
+                  </div>
+                  {verifiedEmailUser && emailVerificationStatus === 'verified' && (
+                    <div className="project-member-verified">
+                      Found: {verifiedEmailUser.name || verifiedEmailUser.email}
+                    </div>
+                  )}
+                </div>
+                <div className="project-member-field">
+                  <label>Role</label>
+                  <select
+                    value={memberCandidate.role}
+                    onChange={(event) => setMemberCandidate((prev) => ({ ...prev, role: event.target.value }))}
+                  >
+                    {PROJECT_MEMBER_ROLES.map((role) => (
+                      <option key={role.value} value={role.value}>{role.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="project-member-actions">
+                <button type="button" className="project-member-add" onClick={handleAddProjectMember}>
+                  Add to Project
+                </button>
+                <button type="button" className="project-member-reset" onClick={clearMemberCandidate}>
+                  Clear
+                </button>
+              </div>
+            </div>
+            <p className="create-input-hint">Search by name or email and click a user to add them to the project team.</p>
+          </div>
+
+          <div className="create-field-block create-field-block-full">
+            <div className="project-team-list">
+              <div className="project-team-header">
+                <span>Project Team ({teamMembers.length})</span>
+              </div>
+              {teamMembers.length > 0 ? (
+                <div className="project-team-items">
+                  {teamMembers.map((member) => (
+                    <div className="project-team-item" key={member.email || member.memberId || member.name}>
+                      <span className="project-team-avatar">{getAvatarInitials(member.name, member.email)}</span>
+                      <span className="project-team-info">
+                        <span className="project-team-name">{member.name || 'Unnamed'}</span>
+                        <span className="project-team-email">{member.email}</span>
+                      </span>
+                      <span className="project-team-role">{getRoleLabel(member.role || 'Developer')}</span>
+                      <button
+                        type="button"
+                        className="project-team-remove"
+                        onClick={() => handleRemoveProjectMember(member.email)}
+                        aria-label={`Remove ${member.name || 'member'}`}
+                      >
+                        <FiX size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="project-team-empty">No team members added yet.</div>
+              )}
             </div>
           </div>
         </>
@@ -605,11 +1210,11 @@ export default function Project() {
           <div className="sidebar-footer mt-3 d-flex flex-column align-items-start">
             <div className="profile d-flex align-items-center w-100">
               <div className="avatar-icon">
-                {user?.avatar ? <img src={user.avatar} alt="avatar" /> : avatarInitials}
+                {currentUser?.avatar ? <img src={currentUser.avatar} alt="avatar" /> : avatarInitials}
               </div>
               <div className="ms-2 user-info">
                 <div className="user-name">{displayName}</div>
-                <div className="user-role">{user?.role || 'Member'}</div>
+                <div className="user-role">{currentUser?.role || 'Member'}</div>
               </div>
             </div>
             <button className="btn logout-badge mt-3" onClick={handleLogout} title="Logout">
@@ -763,9 +1368,11 @@ export default function Project() {
               )}
             </div>
 
-            <button className="btn create-issue-medium" onClick={() => navigate('/create-issue')}>
-              <FiPlus className="me-1" /> Create Issue
-            </button>
+            {isProjectManager && (
+              <button className="btn create-issue-medium" onClick={() => navigate('/create-issue')}>
+                <FiPlus className="me-1" /> Create Issue
+              </button>
+            )}
           </div>
         </header>
 
@@ -781,61 +1388,113 @@ export default function Project() {
                 <FiArchive className="me-2" />
                 {showArchivedProjects ? `View Active (${activeProjects.length})` : `View Archived (${archivedProjects.length})`}
               </button>
-              <button className="btn create-issue-medium" onClick={handleOpenCreateModal}>
-                <FiPlus className="me-1" /> Create Project
-              </button>
+              {isProjectManager && (
+                <button className="btn create-issue-medium" onClick={handleOpenCreateModal}>
+                  <FiPlus className="me-1" /> Create Project
+                </button>
+              )}
             </div>
           </div>
 
           <div className="projects-banner">
             <span className="projects-banner-dot" />
-            <span>Showing {visibleProjects.length} {showArchivedProjects ? 'archived' : 'active'} projects</span>
+            <span>
+              {projectsLoading
+                ? 'Loading projects...'
+                : `${isProjectManager ? '' : 'My Projects · '}Showing ${visibleProjects.length} ${showArchivedProjects ? 'archived' : 'active'} projects`}
+            </span>
           </div>
 
           <div className="projects-grid">
-            {visibleProjects.length === 0 ? (
+            {projectsLoading ? (
+              <div className="projects-empty-state">Loading projects...</div>
+            ) : projectsError ? (
+              <div className="projects-empty-state">{projectsError}</div>
+            ) : visibleProjects.length === 0 ? (
               <div className="projects-empty-state">
                 {showArchivedProjects ? 'No archived projects available right now.' : 'No active projects available right now.'}
               </div>
             ) : visibleProjects.map((project) => {
-              const progress = project.totalIssues > 0 ? (project.completedIssues / project.totalIssues) * 100 : 0
+              const projectKeyValue = project.projectKey || project.id
+              const normalizedKey = normalizeProjectKeyValue(projectKeyValue)
+              const normalizedNameKey = normalizeProjectKeyValue(project.name)
+              const issueSummary = issueStatsByProject[normalizedKey] || issueStatsByProject[normalizedNameKey]
+              const totalIssues = Number(issueSummary?.total ?? project.totalIssues ?? 0)
+              const completedIssues = Number(issueSummary?.completed ?? project.completedIssues ?? 0)
+              const progress = totalIssues > 0 ? (completedIssues / totalIssues) * 100 : 0
 
               return (
-                <article className="project-card-panel" key={project.id}>
+                <article
+                  className="project-card-panel"
+                  key={project.id || projectKeyValue}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Open ${project.name} board`}
+                  onClick={() => {
+                    navigate(`/projects/${projectKeyValue}/board`, { state: { project: { ...project, id: projectKeyValue } } })
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      navigate(`/projects/${projectKeyValue}/board`, { state: { project: { ...project, id: projectKeyValue } } })
+                    }
+                  }}
+                >
                   <div className="project-card-head">
                     <div className="project-card-title-wrap">
                       <div className="project-emoji">{project.icon}</div>
                       <div>
                         <h3 className="project-card-title">{project.name}</h3>
-                        <p className="project-card-code">{project.id}</p>
+                        <p className="project-card-code">{projectKeyValue}</p>
+                        {!isProjectManager && (
+                          <span className="project-assigned-badge">Assigned to you</span>
+                        )}
                       </div>
                     </div>
 
-                    <div className="project-card-menu">
-                      <button
-                        className="project-menu-btn"
-                        aria-label={`More actions for ${project.name}`}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          setOpenProjectMenuId((current) => (current === project.id ? null : project.id))
-                        }}
-                      >
-                        <FiMoreVertical size={18} />
-                      </button>
-                      {openProjectMenuId === project.id ? (
-                        <div className="project-menu-dropdown" role="menu" aria-label={`Actions for ${project.name}`}>
-                          <button className="project-menu-item" onClick={() => handleEditProject(project)}>Edit</button>
-                          <button className="project-menu-item danger" onClick={() => handleDeleteProject(project.id)}>Delete</button>
-                        </div>
-                      ) : null}
-                    </div>
+                    {isProjectManager && (
+                      <div className="project-card-menu">
+                        <button
+                          className="project-menu-btn"
+                          aria-label={`More actions for ${project.name}`}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setOpenProjectMenuId((current) => (current === project.id ? null : project.id))
+                          }}
+                        >
+                          <FiMoreVertical size={18} />
+                        </button>
+                        {openProjectMenuId === project.id ? (
+                          <div className="project-menu-dropdown" role="menu" aria-label={`Actions for ${project.name}`}>
+                            <button
+                              className="project-menu-item"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                handleEditProject(project)
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className="project-menu-item danger"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                handleDeleteProject(project.id)
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
                   </div>
 
                   <p className="project-card-description">{project.description}</p>
 
                   <div className="project-progress-head">
                     <span>Progress</span>
-                    <strong>{project.completedIssues}/{project.totalIssues} issues</strong>
+                    <strong>{completedIssues}/{totalIssues} issues</strong>
                   </div>
                   <div className="project-progress-track">
                     <div className="project-progress-fill" style={{ width: `${progress}%` }} />
@@ -851,8 +1510,24 @@ export default function Project() {
                   </div>
 
                   <div className="project-card-actions">
-                    <button className="project-action-btn" onClick={() => navigate(`/projects/${project.id}/board`, { state: { project } })}>Board</button>
-                    <button className="project-action-btn" onClick={() => navigate(`/projects/${project.id}/backlog`, { state: { project } })}>Backlog</button>
+                    <button
+                      className="project-action-btn"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        navigate(`/projects/${projectKeyValue}/board`, { state: { project: { ...project, id: projectKeyValue } } })
+                      }}
+                    >
+                      Board
+                    </button>
+                    <button
+                      className="project-action-btn"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        navigate(`/projects/${projectKeyValue}/backlog`, { state: { project: { ...project, id: projectKeyValue } } })
+                      }}
+                    >
+                      Backlog
+                    </button>
                   </div>
                 </article>
               )

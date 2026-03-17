@@ -464,7 +464,8 @@ html[data-theme='light'][data-user-role='project-manager'] .mobile-toggle svg {
 }
 
 .dash-header{
-    margin-top: 12 px !important;
+    margin-top: 20px !important;
+    mar
 }
 
 /* Top medium search row to match attached design */
@@ -995,6 +996,7 @@ html[data-theme='dark'] .notification-dismiss-btn:hover{background:#111827 !impo
 .create-issue-form label{font-weight:700;color:#111827}
 .create-issue-form .form-row{display:flex;flex-direction:column;gap:6px}
 .create-issue-form .two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.create-issue-form .three-col{display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:12px}
 .project-name{background:#f7f7f8;padding:8px 10px;border-radius:6px;border:1px solid #eee}
 .create-issue-form .toolbar{padding:8px;border-radius:8px;background:linear-gradient(180deg,#fbfdff,#f8faff);border:1px solid rgba(226,232,240,0.9);box-shadow:inset 0 1px 0 rgba(255,255,255,0.6)}
 .create-issue-form .form-actions{padding-top:12px;border-top:1px solid rgba(244,244,246,0.9);position:sticky;bottom:0;background:linear-gradient(180deg,rgba(255,255,255,0) 0%, #ffffff 40%);padding-bottom:12px;z-index:20}
@@ -1005,6 +1007,71 @@ html[data-theme='dark'] .notification-dismiss-btn:hover{background:#111827 !impo
 /* Enhanced inputs and focus states */
 .create-issue-form input, .create-issue-form textarea, .project-select, .summary-input, .description-area{transition:box-shadow .18s ease,border-color .18s ease,transform .12s ease;border-radius:10px}
 .create-issue-form input:focus, .create-issue-form textarea:focus, .project-select:focus, .summary-input:focus, .description-area:focus{outline:none;border-color:#6b5bff;box-shadow:0 10px 30px rgba(107,91,255,0.12);transform:translateY(-2px)}
+
+.assignee-field{position:relative}
+.assignee-search{position:relative}
+.assignee-dropdown{
+  position:absolute;
+  top:calc(100% + 6px);
+  left:0;
+  width:100%;
+  background:#ffffff;
+  border:1px solid rgba(226,232,240,0.9);
+  border-radius:12px;
+  box-shadow:0 14px 30px rgba(2,6,23,0.12);
+  padding:6px;
+  max-height:196px;
+  overflow:auto;
+  z-index:30;
+}
+.assignee-option{
+  width:100%;
+  text-align:left;
+  border:none;
+  background:transparent;
+  padding:10px 12px;
+  border-radius:10px;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  cursor:pointer;
+}
+.assignee-option:hover{background:#f8fafc}
+.assignee-name{font-weight:700;color:#0f172a;font-size:13px}
+.assignee-email{font-size:12px;color:#64748b}
+.assignee-empty{padding:10px 12px;font-size:12px;color:#94a3b8}
+.assignee-selected{
+  margin-top:8px;
+  padding:8px 10px;
+  border-radius:10px;
+  background:#f8fafc;
+  border:1px solid rgba(226,232,240,0.9);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+.assignee-selected-info{display:flex;flex-direction:column;gap:2px}
+.assignee-clear{
+  border:none;
+  background:transparent;
+  color:#ef4444;
+  font-weight:600;
+  font-size:12px;
+}
+
+.assignee-dropdown::-webkit-scrollbar{width:8px}
+.assignee-dropdown::-webkit-scrollbar-track{background:transparent;border-radius:999px}
+.assignee-dropdown::-webkit-scrollbar-thumb{
+  background:linear-gradient(180deg,#6b5bff,#38bdf8);
+  border-radius:999px;
+  border:2px solid transparent;
+  background-clip:padding-box;
+}
+.assignee-dropdown::-webkit-scrollbar-thumb:hover{
+  background:linear-gradient(180deg,#5b4bff,#0d6efd);
+}
+.assignee-dropdown{scrollbar-width:thin;scrollbar-color:#6b5bff rgba(0,0,0,0.06)}
 
 /* Buttons polish */
 .format-btn, .upload-btn, .cancel-btn, .create-btn{transition:transform .12s ease,box-shadow .12s ease,background .12s ease}
@@ -1029,6 +1096,7 @@ html[data-theme='dark'] .notification-dismiss-btn:hover{background:#111827 !impo
 @media(max-width:900px){
   .create-issue-container{width:calc(100% - 24px);padding:12px}
   .create-issue-form .two-col{grid-template-columns:1fr}
+  .create-issue-form .three-col{grid-template-columns:1fr}
 }
 
 /* Action row styles */
@@ -1113,6 +1181,14 @@ html[data-theme='dark'] .notification-dismiss-btn:hover{background:#111827 !impo
 .progress-count{font-weight:700}
 .progress-track{height:10px;background:#eef0f3;border-radius:8px;overflow:hidden}
 .progress-fill{height:100%;background:linear-gradient(90deg,#6b5bff,#0d6efd)}
+
+/* Active Projects icon - dark mode */
+html[data-theme='dark'] .project-top .project-icon{
+  background:linear-gradient(135deg,#0b1226 0%, #111827 100%) !important;
+  border:1px solid rgba(148,163,184,0.25);
+  color:#93c5fd;
+  box-shadow:0 10px 22px rgba(37,99,235,0.25);
+}
 
 @media(max-width:900px){
   .projects-grid{grid-template-columns:1fr}
@@ -1315,6 +1391,85 @@ html[data-theme='dark'] .apply-btn:active{
 
 html[data-theme='dark'] .create-issue-medium{
   border:1px solid #ffffff !important;
+}
+
+/* Create Issue modal - dark mode styling */
+html[data-theme='dark'] .create-issue-container{
+  background:linear-gradient(180deg,#0b1224 0%, #0a0f1e 100%) !important;
+  border:1px solid rgba(148,163,184,0.22) !important;
+  box-shadow:0 24px 70px rgba(0,0,0,0.55) !important;
+}
+
+html[data-theme='dark'] .create-issue-header{
+  border-bottom:1px solid rgba(148,163,184,0.2) !important;
+}
+
+html[data-theme='dark'] .create-issue-header h4{
+  color:#f8fafc !important;
+}
+
+html[data-theme='dark'] .create-issue-form label{
+  color:#e2e8f0 !important;
+}
+
+html[data-theme='dark'] .create-issue-form .toolbar,
+html[data-theme='dark'] .format-toolbar{
+  background:#0f172a !important;
+  border:1px solid rgba(148,163,184,0.2) !important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.04) !important;
+}
+
+html[data-theme='dark'] .format-btn,
+html[data-theme='dark'] .upload-btn{
+  background:#0b1226 !important;
+  border:1px solid rgba(148,163,184,0.2) !important;
+  color:#e2e8f0 !important;
+}
+html[data-theme='dark'] .format-btn:hover,
+html[data-theme='dark'] .upload-btn:hover{
+  background:#111827 !important;
+  color:#ffffff !important;
+}
+
+html[data-theme='dark'] .create-issue-form input,
+html[data-theme='dark'] .create-issue-form textarea,
+html[data-theme='dark'] .project-select,
+html[data-theme='dark'] .summary-input,
+html[data-theme='dark'] .description-area{
+  background:#05070f !important;
+  border:1px solid rgba(148,163,184,0.22) !important;
+  color:#e5e7eb !important;
+}
+
+html[data-theme='dark'] .create-issue-form input::placeholder,
+html[data-theme='dark'] .create-issue-form textarea::placeholder{
+  color:#94a3b8 !important;
+}
+
+html[data-theme='dark'] .assignee-dropdown{
+  background:#0b0b0b;
+  border-color:#334155;
+  box-shadow:0 18px 40px rgba(0,0,0,0.45);
+}
+html[data-theme='dark'] .assignee-option:hover{background:#111827}
+html[data-theme='dark'] .assignee-name{color:#e2e8f0}
+html[data-theme='dark'] .assignee-email{color:#94a3b8}
+html[data-theme='dark'] .assignee-selected{
+  background:#0b0b0b;
+  border-color:#334155;
+}
+html[data-theme='dark'] .assignee-dropdown::-webkit-scrollbar-thumb{
+  background:linear-gradient(180deg,#60a5fa,#22d3ee);
+}
+html[data-theme='dark'] .assignee-dropdown{scrollbar-color:#60a5fa rgba(255,255,255,0.08)}
+
+html[data-theme='dark'] .create-issue-form .form-actions{
+  background:linear-gradient(180deg, rgba(11,18,36,0) 0%, #0b1224 45%, #0a0f1e 100%) !important;
+  border-top:1px solid rgba(148,163,184,0.2) !important;
+}
+
+html[data-theme='dark'] .create-issue-container .modal-close{
+  color:#e2e8f0 !important;
 }
 
 /* Keep dashboard header controls on one line in mobile even if other page CSS loads later */
