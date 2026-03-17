@@ -8,29 +8,8 @@ import { API_ENDPOINTS } from '../config/api'
 function OrganizationPage() {
   const navigate = useNavigate();
   const { clearUser, user } = useAuth()
-  const seedOrganizations = [
-    {
-      id: 1,
-      name: "Kavya Technologies",
-      username: "kavya-tech",
-      description:
-        "Leading software development company specializing in project management solutions",
-      members: 4,
-      projects: 3,
-      role: "OWNER",
-    },
-    {
-      id: 2,
-      name: "Innovation Labs",
-      username: "innovation-labs",
-      description: "Research and development focused organization",
-      members: 3,
-      projects: 0,
-      role: "ADMIN",
-    },
-  ];
-
-  const [organizations, setOrganizations] = useState(seedOrganizations);
+  const [organizations, setOrganizations] = useState([]);
+  const [orgError, setOrgError] = useState('');
 
   const getNumericCount = (value) => {
     if (Array.isArray(value)) return value.length;
@@ -43,12 +22,6 @@ function OrganizationPage() {
 
   const getProjectCount = (org) =>
     getNumericCount(org.projects ?? org.projectCount ?? org.projectsCount ?? org.projectList);
-
-  const normalizeOrganizations = (list) => {
-    if (!Array.isArray(list)) return seedOrganizations;
-    if (list.length === 0) return seedOrganizations;
-    return list;
-  };
 
   const openOrganization = (org) => {
     // store selected org so dashboard can pick it up
@@ -67,6 +40,7 @@ function OrganizationPage() {
     const controller = new AbortController();
     const loadOrganizations = async () => {
       try {
+        setOrgError('');
         const res = await fetch(API_ENDPOINTS.GET_ORGANIZATIONS, {
           headers: { 'X-USER-ID': String(user.id) },
           signal: controller.signal,
@@ -74,10 +48,11 @@ function OrganizationPage() {
         if (!res.ok) throw new Error('Failed to load organizations');
         const data = await res.json();
         const list = Array.isArray(data) ? data : [];
-        setOrganizations(normalizeOrganizations(list));
+        setOrganizations(list);
       } catch (error) {
         if (error?.name !== 'AbortError') {
-          setOrganizations(seedOrganizations);
+          setOrgError('Unable to load organizations from the server.');
+          setOrganizations([]);
         }
       } finally {
         // no-op
@@ -137,6 +112,9 @@ function OrganizationPage() {
           className="org-search"
         />
       </div>
+      {orgError && (
+        <p className="org-error org-list-error">{orgError}</p>
+      )}
 
       {/* Organization Cards */}
       <div className="org-list-cards">
