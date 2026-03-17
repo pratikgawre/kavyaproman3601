@@ -12,6 +12,20 @@ function CustomizeOrganization() {
   const [logo, setLogo] = useState({ name: "", url: "" });
   const [logoUploading, setLogoUploading] = useState(false);
 
+  const loadStoredOrganizations = () => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('organizations') || '[]');
+      return Array.isArray(stored) ? stored : [];
+    } catch (error) {
+      return [];
+    }
+  };
+
+  const persistOrganization = (newOrg) => {
+    const stored = loadStoredOrganizations();
+    localStorage.setItem('organizations', JSON.stringify([...stored, newOrg]));
+  };
+
   const handleFileChange = async (e) => {
     const selectedFile = e.target.files[0];
     if (!selectedFile) return;
@@ -129,6 +143,23 @@ function CustomizeOrganization() {
             <button
               className="org-continue"
               onClick={() => {
+                const safeName = (orgName || "New Organization").trim();
+                const safeSlug = (slug || safeName || "new-org")
+                  .toLowerCase()
+                  .trim()
+                  .replace(/\s+/g, "-")
+                  .replace(/[^a-z0-9-]/g, "");
+                const newOrg = {
+                  id: Date.now(),
+                  name: safeName || "New Organization",
+                  username: safeSlug || "new-org",
+                  description: desc || "New organization description",
+                  members: 0,
+                  projects: 0,
+                  role: "OWNER",
+                  logoUrl: logo.url || "",
+                };
+                persistOrganization(newOrg);
                 alert("Organization Created!");
                 navigate("/organization");
               }}
