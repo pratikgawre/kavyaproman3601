@@ -160,6 +160,48 @@
 .notification-item-row[data-variant='subtask']{--notif-accent:#14b8a6;--notif-unread-bg:#f0fdfa}
 .notification-item-row[data-variant='issue'],
 .notification-item-row[data-variant='generic']{--notif-accent:#64748b;--notif-unread-bg:#f1f5f9}
+
+/* Dark mode support for notifications */
+html[data-theme='dark'] .notification-dropdown{
+  background:#000000;
+  border-color:#1f2937;
+  box-shadow:0 18px 38px rgba(0,0,0,0.55);
+}
+
+html[data-theme='dark'] .notification-header{
+  border-bottom-color:#1f2937;
+  color:#ffffff;
+}
+
+html[data-theme='dark'] .notification-item-row{
+  background:#000000;
+  border-bottom-color:#1f2937;
+}
+
+html[data-theme='dark'] .notification-item-row.unread{
+  background:#0b0b0b;
+}
+
+html[data-theme='dark'] .notification-item-row:hover{
+  background:#111827;
+}
+
+html[data-theme='dark'] .notification-title{
+  color:#ffffff;
+}
+
+html[data-theme='dark'] .notification-time{
+  color:#cbd5e1;
+}
+
+html[data-theme='dark'] .notification-dismiss-btn{
+  color:#cbd5e1;
+}
+
+html[data-theme='dark'] .notification-dismiss-btn:hover{
+  background:#111827;
+  color:#ffffff;
+}
 .invite-btn {
   background: #1a202c;
   color: white;
@@ -871,6 +913,9 @@ html[data-theme='dark'] .member-detail-stat {
   border: 1px solid #374151 !important;
 }
 
+html[data-theme='dark'] .role.admin,
+html[data-theme='dark'] .role.developer,
+html[data-theme='dark'] .role.manager,
 html[data-theme='dark'] .role.tester {
   background: #000000 !important;
   color: #ffffff !important;
@@ -1018,7 +1063,7 @@ html[data-theme='dark'] .member-stat strong {
 
 /* Dark Mode Support */
 html[data-theme='dark'] .role-card {
-  background: #1f2937 !important;
+  background: #000000 !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
@@ -1027,15 +1072,15 @@ html[data-theme='dark'] .role-card:hover {
 }
 
 html[data-theme='dark'] .role-title {
-  color: #f3f4f6 !important;
+  color: #ffffff !important;
 }
 
 html[data-theme='dark'] .role-description {
-  color: #d1d5db !important;
+  color: #e5e7eb !important;
 }
 
 html[data-theme='dark'] .permissions-list li {
-  color: #e5e7eb !important;
+  color: #ffffff !important;
   border-bottom-color: #374151 !important;
 }
 
@@ -1045,7 +1090,7 @@ html[data-theme='dark'] .dev-card,
 html[data-theme='dark'] .tester-card,
 html[data-theme='dark'] .ba-card,
 html[data-theme='dark'] .viewer-card {
-  background: #1f2937 !important;
+  background: #000000 !important;
 }
 
 html[data-theme='dark'] .admin-card .role-icon,

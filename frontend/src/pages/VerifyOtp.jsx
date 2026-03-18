@@ -11,6 +11,8 @@ export default function VerifyOtp() {
   const navigate = useNavigate()
   const { pendingUserId, pendingFlow, clearPending, setUser } = useAuth()
   const userId = pendingUserId || ''
+  const flow = pendingFlow || 'register'
+  const isTwoFactor = flow === '2fa'
 
   function handleChange(i, v) {
     if (!/^[0-9]?$/.test(v)) return
@@ -35,7 +37,8 @@ export default function VerifyOtp() {
     if (joined.length !== 6) return setError('Enter full 6-digit code')
     if (!userId) return setError('Missing verification context. Please login or register again.')
     try {
-      const res = await fetch(`${API_BASE}/api/auth/verify-otp`, {
+      const verifyPath = isTwoFactor ? 'verify-2fa' : 'verify-otp'
+      const res = await fetch(`${API_BASE}/api/auth/${verifyPath}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, code: joined })
@@ -43,9 +46,8 @@ export default function VerifyOtp() {
       const body = await res.json()
       if (!res.ok) throw new Error(body.message || 'Verification failed')
       // Decide next step depending on which flow initiated verification
-      const flow = pendingFlow || 'register'
       clearPending()
-      if (flow === 'login') {
+      if (flow === 'login' || flow === '2fa') {
         // after login verification, store user and navigate to organization
         const userToStore = { id: body.userId, email: body.email }
         if (body.name) userToStore.name = body.name
@@ -65,6 +67,7 @@ export default function VerifyOtp() {
 
   async function resend() {
     setError('')
+    if (isTwoFactor) return setError('Resend is not available for Authenticator App verification.')
     if (!userId) return setError('Missing verification context. Please login or register again.')
     try {
       const res = await fetch(`${API_BASE}/api/auth/resend-otp`, {
@@ -83,9 +86,13 @@ export default function VerifyOtp() {
   return (
     <div className="auth-root">
       <form className="auth-card otp-card" onSubmit={submit}>
-        <h2>Enter verification code</h2>
+        <h2>{isTwoFactor ? 'Enter authenticator code' : 'Enter verification code'}</h2>
         {error && <div className="auth-error">{error}</div>}
-        <p>We sent a 6-digit code to your email. Enter it below.</p>
+        <p>
+          {isTwoFactor
+            ? 'Open your Authenticator app and enter the 6-digit code below.'
+            : 'We sent a 6-digit code to your email. Enter it below.'}
+        </p>
         <div className="otp-row">
           {code.map((c, i) => (
             <div key={i} className="otp-box-wrap">
@@ -96,7 +103,9 @@ export default function VerifyOtp() {
         </div>
         <div style={{display:'flex',gap:10,flexDirection:'column'}}>
           <button className="auth-btn" type="submit">Verify</button>
-          <button type="button" className="auth-btn" style={{background:'#fff',color:'#4f46e5',border:'1px solid #e5e7eb'}} onClick={resend}>Resend code</button>
+          {!isTwoFactor && (
+            <button type="button" className="auth-btn" style={{background:'#fff',color:'#4f46e5',border:'1px solid #e5e7eb'}} onClick={resend}>Resend code</button>
+          )}
         </div>
       </form>
     </div>

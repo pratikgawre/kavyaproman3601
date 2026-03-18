@@ -28,12 +28,8 @@ public class MemberController {
     // Get member by ID
     @GetMapping("/{id}")
     public ResponseEntity<Member> getMemberById(@PathVariable String id) {
-        try {
-            Member member = memberService.getMemberById(id);
-            return ResponseEntity.ok(member);
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
-        }
+        Member member = memberService.getMemberById(id);
+        return ResponseEntity.ok(member);
     }
 
     // Create new member
@@ -48,22 +44,14 @@ public class MemberController {
     public ResponseEntity<Member> updateMember(
             @PathVariable String id,
             @RequestBody Member member) {
-        try {
-            Member updatedMember = memberService.updateMember(id, member);
-            return ResponseEntity.ok(updatedMember);
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
-        }
+        Member updatedMember = memberService.updateMember(id, member);
+        return ResponseEntity.ok(updatedMember);
     }
 
     // Delete member
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteMember(@PathVariable String id) {
-        try {
-            memberService.deleteMember(id);
-            return ResponseEntity.noContent().build();
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
-        }
+        memberService.deleteMember(id);
+        return ResponseEntity.noContent().build();
     }
 }

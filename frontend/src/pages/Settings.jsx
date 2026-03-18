@@ -4,6 +4,7 @@ import {
   FiGrid,
   FiFolder,
   FiUsers,
+  FiUser,
   FiBarChart2,
   FiCreditCard,
   FiSettings,
@@ -12,12 +13,18 @@ import {
   FiRepeat,
   FiArrowRight,
   FiLock,
+  FiSearch,
+  FiBell,
+  FiPlus,
+  FiMonitor,
+  FiShield,
   FiX
 } from 'react-icons/fi'
 import './Settings.css'
 import './Dashboard.css'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import useIssueNotifications from '../hooks/useIssueNotifications'
 import { uploadFile } from '../utils/upload'
 import API_BASE from '../config/api'
 
@@ -26,6 +33,7 @@ const sanitizeEmail = (value) => stripLeadingSpace(value).replace(/[^A-Za-z0-9@.
 const preventLeadingSpace = (e) => {
   if (e.key === ' ' && (e.currentTarget.selectionStart ?? 0) === 0) e.preventDefault()
 }
+const ALPHABETIC_NAME_REGEX = /^\p{L}+(?:\s+\p{L}+)*$/u
 const getAvatarInitials = (name, email) => {
   const source = (name || '').trim() || (email || '').trim()
   if (!source) return 'G'
@@ -35,11 +43,29 @@ const getAvatarInitials = (name, email) => {
   return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase()
 }
 
+function SettingsSectionHeader({ icon: Icon, title, subtitle, children }) {
+  return (
+    <div className="card-header">
+      <div className="settings-title-with-icon">
+        <Icon className="settings-section-icon" aria-hidden="true" />
+        <div className="settings-title-copy">
+          <h2>{title}</h2>
+          {subtitle && <p className="text-muted">{subtitle}</p>}
+        </div>
+      </div>
+      {children}
+    </div>
+  )
+}
+
 export default function Settings() {
   // basic UI state
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [activeTab, setActiveTab] = useState('profile')
+  const [showNotifications, setShowNotifications] = useState(false)
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+  const [topSearchText, setTopSearchText] = useState('')
 
   // router helper
   const navigate = useNavigate()
@@ -64,8 +90,20 @@ export default function Settings() {
   }, [])
 
   const { user, clearUser } = useAuth()
+  const {
+    notifications,
+    unreadCount,
+    loading: notificationsLoading,
+    error: notificationsError,
+    markAsRead: markNotificationAsRead,
+    markAllAsRead,
+    dismissNotification,
+    clearAllNotifications
+  } = useIssueNotifications({ limit: 6 })
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
   const avatarInitials = getAvatarInitials(user?.name, user?.email)
+  const notificationRef = useRef(null)
+  const topSearchInputRef = useRef(null)
 
   function toggleSidebarForScreen() {
     setCollapsed((prev) => {
@@ -82,13 +120,54 @@ export default function Settings() {
     navigate('/login', { replace: true })
   }
 
+  useEffect(() => {
+    function handleOutsideClick(event) {
+      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
+        setShowNotifications(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [])
+
+  useEffect(() => {
+    if (!mobileSearchOpen) return
+    const timeoutId = setTimeout(() => topSearchInputRef.current?.focus(), 0)
+    return () => clearTimeout(timeoutId)
+  }, [mobileSearchOpen])
+
+  const isMobileScreen = () => typeof window !== 'undefined' && window.innerWidth <= 768
+
+  const runIssueSearch = () => {
+    const query = (topSearchText || '').trim()
+    setMobileSearchOpen(false)
+    if (!query) {
+      navigate('/all-my-issues')
+      return
+    }
+    navigate(`/all-my-issues?q=${encodeURIComponent(query)}`)
+  }
+
+  const handleTopSearchIconClick = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (isMobileScreen() && !mobileSearchOpen) {
+      setMobileSearchOpen(true)
+      return
+    }
+
+    runIssueSearch()
+  }
+
   return (
     <div className="dashboard-root d-flex">
       <aside className={`sidebar d-flex flex-column ${collapsed ? 'collapsed' : ''} ${mobileOpen ? 'open' : ''}`}>
         <div className="sidebar-top">
           <div className="brand d-flex align-items-center">
             <div className="brand-logo">KP</div>
-            <div className="brand-name">KavyaProMan</div>
+            <div className="brand-name">KavyaProMan 360</div>
           </div>
           {/* <button className="btn btn-sm btn-link toggle-btn" onClick={() => setCollapsed(s => !s)} aria-label="Toggle sidebar">
             <FiMenu size={18} />
@@ -175,6 +254,139 @@ export default function Settings() {
 
       <main className={`content flex-grow-1 p-4 settings-page ${collapsed ? 'with-topbar' : ''}`}>
         <header className="dash-header mb-4">
+          <div className={`top-search-row mb-3 ${mobileSearchOpen ? 'mobile-search-open' : ''}`}>
+            <div
+              className={`input-group top-search-medium ${mobileSearchOpen ? 'mobile-open' : ''}`}
+              onClick={() => {
+                if (isMobileScreen() && !mobileSearchOpen) {
+                  setMobileSearchOpen(true)
+                  return
+                }
+                topSearchInputRef.current?.focus()
+              }}
+            >
+              <button
+                type="button"
+                className="input-group-text"
+                aria-label="Search"
+                onClick={handleTopSearchIconClick}
+              >
+                <FiSearch />
+              </button>
+              <input
+                ref={topSearchInputRef}
+                className="form-control"
+                placeholder="Search issues, projects..."
+                value={topSearchText}
+                onChange={(e) => setTopSearchText(e.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') runIssueSearch()
+                }}
+                onFocus={() => {
+                  if (isMobileScreen()) setMobileSearchOpen(true)
+                }}
+              />
+              {mobileSearchOpen && (
+                <button
+                  type="button"
+                  className="dashboard-search-close"
+                  aria-label="Close search"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setMobileSearchOpen(false)
+                  }}
+                >
+                  <FiX size={16} />
+                </button>
+              )}
+            </div>
+
+            <div className="notification-wrapper me-2" ref={notificationRef}>
+              <button
+                className={`btn btn-link bell-black ${unreadCount > 0 ? 'has-unread' : ''}`}
+                title="Notifications"
+                onClick={() => setShowNotifications((prev) => !prev)}
+                type="button"
+              >
+                <FiBell size={20} />
+              </button>
+              {unreadCount > 0 && <span className="notif-count">{unreadCount}</span>}
+
+              {showNotifications && (
+                <div className="notification-dropdown">
+                  <div className="notification-header">
+                    <span>Notifications</span>
+                    {(unreadCount > 0 || notifications.length > 0) && (
+                      <div className="notification-actions">
+                        {unreadCount > 0 && (
+                          <button className="mark-all-btn" type="button" onClick={markAllAsRead}>
+                            Mark all read
+                          </button>
+                        )}
+                        {notifications.length > 0 && (
+                          <button className="clear-all-btn" type="button" onClick={clearAllNotifications}>
+                            Clear all
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="notification-list">
+                    {notificationsLoading && (
+                      <div className="muted p-3">Loading notifications...</div>
+                    )}
+                    {!notificationsLoading && notifications.length === 0 && (
+                      <div className="muted p-3">{notificationsError || 'No notifications yet'}</div>
+                    )}
+                    {!notificationsLoading && notifications.length > 0 && notifications.map((item) => (
+                      <div
+                        key={item.id}
+                        className={`notification-item-row ${item.read ? 'read' : 'unread'}`}
+                        data-variant={item.variant}
+                        onClick={() => {
+                          markNotificationAsRead(item.id)
+                          setShowNotifications(false)
+                          if (item.href) navigate(item.href)
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            markNotificationAsRead(item.id)
+                            setShowNotifications(false)
+                            if (item.href) navigate(item.href)
+                          }
+                        }}
+                      >
+                        <div className="notification-item-body">
+                          <div className="notification-title">{item.title}</div>
+                          <div className="notification-time">{item.time}</div>
+                        </div>
+                        <button
+                          type="button"
+                          className="notification-dismiss-btn"
+                          aria-label="Dismiss notification"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            dismissNotification(item.id)
+                          }}
+                        >
+                          <FiX size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <button className="btn create-issue-medium" onClick={() => navigate('/create-issue')} type="button">
+              <FiPlus className="me-1" /> Create Issue
+            </button>
+          </div>
+
           <h1>Settings</h1>
           <p className="text-muted">Manage your account and application preferences</p>
         </header>
@@ -244,7 +456,24 @@ function ProfileSection() {
   const [profileLoading, setProfileLoading] = useState(false)
   const [profileSaving, setProfileSaving] = useState(false)
   const [profileError, setProfileError] = useState('')
+  const [profileFieldErrors, setProfileFieldErrors] = useState({ firstName: '', lastName: '' })
   const fileInputRef = useRef(null)
+
+  function getNameFieldError(fieldName, value) {
+    const trimmedValue = stripLeadingSpace((value || '').toString()).trim()
+    if (!trimmedValue) return ''
+    const label = fieldName === 'lastName' ? 'Last name' : 'First name'
+    return ALPHABETIC_NAME_REGEX.test(trimmedValue)
+      ? ''
+      : `${label} should contain only alphabetic characters`
+  }
+
+  function getProfileNameErrors(values) {
+    return {
+      firstName: getNameFieldError('firstName', values?.firstName),
+      lastName: getNameFieldError('lastName', values?.lastName)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -264,13 +493,16 @@ function ProfileSection() {
         const fullName = (body?.name || '').trim()
         const nameParts = fullName ? fullName.split(/\s+/) : []
 
-        setFormData({
+        const nextFormData = {
           firstName: nameParts[0] || '',
           lastName: nameParts.slice(1).join(' ') || '',
           email: body?.email || '',
           role: body?.role || 'Member',
           timezone: body?.timezone || 'UTC'
-        })
+        }
+
+        setFormData(nextFormData)
+        setProfileFieldErrors(getProfileNameErrors(nextFormData))
         setAvatar(body?.avatar || '')
 
         setUser({
@@ -295,8 +527,12 @@ function ProfileSection() {
 
   const handleChange = (e) => {
     const { name, value } = e.target
-    const nextValue = name === 'email' ? sanitizeEmail(value) : value
+    const nextValue = name === 'email' ? sanitizeEmail(value) : stripLeadingSpace(value)
     setFormData(prev => ({ ...prev, [name]: nextValue }))
+    if (name === 'firstName' || name === 'lastName') {
+      setProfileFieldErrors(prev => ({ ...prev, [name]: getNameFieldError(name, nextValue) }))
+    }
+    setProfileError('')
   }
 
   const handleAvatarClick = () => {
@@ -306,7 +542,15 @@ function ProfileSection() {
   async function saveProfile({ nextAvatar } = {}) {
     if (!user?.id) throw new Error('Please login again.')
 
-    let name = `${formData.firstName} ${formData.lastName}`.trim()
+    const nextFieldErrors = getProfileNameErrors(formData)
+    setProfileFieldErrors(nextFieldErrors)
+    if (nextFieldErrors.firstName || nextFieldErrors.lastName) {
+      throw new Error('Please correct the highlighted name fields.')
+    }
+
+    const normalizedFirstName = stripLeadingSpace(formData.firstName).trim()
+    const normalizedLastName = stripLeadingSpace(formData.lastName).trim()
+    let name = [normalizedFirstName, normalizedLastName].filter(Boolean).join(' ')
     let email = (formData.email || '').trim()
     let role = (formData.role || '').trim() || 'Member'
     let timezone = (formData.timezone || '').trim() || 'UTC'
@@ -347,14 +591,16 @@ function ProfileSection() {
 
     const savedName = ((body?.name ?? name) || '').trim()
     const savedParts = savedName ? savedName.split(/\s+/) : []
-
-    setFormData({
+    const nextSavedFormData = {
       firstName: savedParts[0] || '',
       lastName: savedParts.slice(1).join(' ') || '',
       email: body?.email ?? email,
       role: body?.role ?? role,
       timezone: body?.timezone ?? timezone
-    })
+    }
+
+    setFormData(nextSavedFormData)
+    setProfileFieldErrors(getProfileNameErrors(nextSavedFormData))
     setAvatar(body?.avatar ?? avatarToSave ?? '')
     setUser({ ...(user || {}), ...body })
 
@@ -431,12 +677,14 @@ function ProfileSection() {
 
   return (
     <div className="settings-card">
-      <div className="card-header">
-        <h2>Profile Settings</h2>
-        <p className="text-muted">Manage your personal information</p>
+      <SettingsSectionHeader
+        icon={FiUser}
+        title="Profile Settings"
+        subtitle="Manage your personal information"
+      >
         {profileError && <div className="text-danger small mt-2">{profileError}</div>}
         {profileLoading && <div className="text-muted small mt-2">Loading profile...</div>}
-      </div>
+      </SettingsSectionHeader>
 
       <div className="avatar-section d-flex align-items-center mb-4 pb-4">
         <div
@@ -487,25 +735,37 @@ function ProfileSection() {
           <label className="form-label">First Name</label>
           <input 
             type="text" 
-            className="form-control" 
+            className={`form-control ${profileFieldErrors.firstName ? 'is-invalid' : ''}`}
             name="firstName"
             value={formData.firstName}
-          onChange={handleChange}
-          disabled={profileLoading || profileSaving}
-          placeholder="First name" 
+            onChange={handleChange}
+            onKeyDown={preventLeadingSpace}
+            disabled={profileLoading || profileSaving}
+            placeholder="First name"
+            aria-invalid={Boolean(profileFieldErrors.firstName)}
+            aria-describedby={profileFieldErrors.firstName ? 'settings-first-name-error' : undefined}
           />
+          {profileFieldErrors.firstName && (
+            <div className="field-error" id="settings-first-name-error">{profileFieldErrors.firstName}</div>
+          )}
         </div>
         <div className="form-group mb-3">
           <label className="form-label">Last Name</label>
           <input 
             type="text" 
-            className="form-control" 
+            className={`form-control ${profileFieldErrors.lastName ? 'is-invalid' : ''}`}
             name="lastName"
             value={formData.lastName}
-          onChange={handleChange}
-          disabled={profileLoading || profileSaving}
-          placeholder="Last name" 
+            onChange={handleChange}
+            onKeyDown={preventLeadingSpace}
+            disabled={profileLoading || profileSaving}
+            placeholder="Last name"
+            aria-invalid={Boolean(profileFieldErrors.lastName)}
+            aria-describedby={profileFieldErrors.lastName ? 'settings-last-name-error' : undefined}
           />
+          {profileFieldErrors.lastName && (
+            <div className="field-error" id="settings-last-name-error">{profileFieldErrors.lastName}</div>
+          )}
         </div>
       </div>
 
@@ -554,33 +814,98 @@ function ProfileSection() {
   )
 }
 
+const DEFAULT_NOTIFICATION_PREFS = {
+  emailNotifications: true,
+  issueAssignments: true,
+  mentions: true,
+  comments: false,
+  statusChanges: true,
+  weeklySummary: true
+}
+
+const NOTIFICATION_OPTIONS = [
+  {
+    key: 'emailNotifications',
+    label: 'Email Notifications',
+    description: 'Receive email notifications for updates'
+  },
+  {
+    key: 'issueAssignments',
+    label: 'Issue Assignments',
+    description: 'Notify when issues are assigned to you'
+  },
+  {
+    key: 'mentions',
+    label: 'Mentions',
+    description: 'Notify when someone mentions you'
+  },
+  {
+    key: 'comments',
+    label: 'Comments',
+    description: 'Notify when someone comments on your issues'
+  },
+  {
+    key: 'statusChanges',
+    label: 'Status Changes',
+    description: 'Notify when issue status changes'
+  },
+  {
+    key: 'weeklySummary',
+    label: 'Weekly Summary',
+    description: 'Receive weekly project summary emails'
+  }
+]
+
+function readNotificationPrefs(storageKey) {
+  try {
+    if (typeof window === 'undefined') return { ...DEFAULT_NOTIFICATION_PREFS }
+    const raw = window.localStorage.getItem(storageKey)
+    if (!raw) return { ...DEFAULT_NOTIFICATION_PREFS }
+
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return { ...DEFAULT_NOTIFICATION_PREFS }
+
+    const next = { ...DEFAULT_NOTIFICATION_PREFS }
+    for (const key of Object.keys(DEFAULT_NOTIFICATION_PREFS)) {
+      if (typeof parsed[key] === 'boolean') next[key] = parsed[key]
+    }
+    return next
+  } catch {
+    return { ...DEFAULT_NOTIFICATION_PREFS }
+  }
+}
+
 // ============ Notifications Section ============
 function NotificationsSection() {
-  const [notifications, setNotifications] = useState({
-    emailNotifications: true,
-    issueAssignments: true,
-    mentions: true,
-    comments: false,
-    statusChanges: true,
-    weeklySummary: true
-  })
+  const { user } = useAuth()
+  const storageKey = user?.id ? `kpm360.notificationPrefs.${user.id}` : 'kpm360.notificationPrefs'
+  const [notifications, setNotifications] = useState(() => readNotificationPrefs(storageKey))
+
+  useEffect(() => {
+    setNotifications(readNotificationPrefs(storageKey))
+  }, [storageKey])
 
   const handleToggle = (key) => {
     setNotifications(prev => ({ ...prev, [key]: !prev[key] }))
   }
 
-  const toggleOption = (key) => {
+  const handleSavePreferences = () => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(notifications))
+      alert('Preferences saved successfully!')
+    } catch {
+      alert('Failed to save preferences')
+    }
+  }
+
+  const toggleOption = ({ key, label, description }) => {
     return (
       <div className="notification-item" key={key}>
-        <div className="d-flex align-items-center justify-content-between">
-          <label className="notif-label">
-            {key === 'emailNotifications' && 'Email Notifications'}
-            {key === 'issueAssignments' && 'Issue Assignments'}
-            {key === 'mentions' && 'Mentions'}
-            {key === 'comments' && 'Comments'}
-            {key === 'statusChanges' && 'Status Changes'}
-            {key === 'weeklySummary' && 'Weekly Summary'}
-          </label>
+        <div className="settings-option-row">
+          <div className="notification-copy">
+            <label className="notif-label">{label}</label>
+            <p className="notif-description">{description}</p>
+          </div>
           <div className={`toggle-switch ${notifications[key] ? 'active' : ''}`} onClick={() => handleToggle(key)}>
             <div className="toggle-slider"></div>
           </div>
@@ -591,21 +916,17 @@ function NotificationsSection() {
 
   return (
     <div className="settings-card">
-      <div className="card-header">
-        <h2>Notification Preferences</h2>
-        <p className="text-muted">Choose how you want to be notified</p>
-      </div>
+      <SettingsSectionHeader
+        icon={FiBell}
+        title="Notification Preferences"
+        subtitle="Choose how you want to be notified"
+      />
 
       <div className="notifications-list">
-        {toggleOption('emailNotifications')}
-        {toggleOption('issueAssignments')}
-        {toggleOption('mentions')}
-        {toggleOption('comments')}
-        {toggleOption('statusChanges')}
-        {toggleOption('weeklySummary')}
+        {NOTIFICATION_OPTIONS.map(toggleOption)}
       </div>
 
-      <button className="btn btn-dark mt-4">
+      <button className="btn btn-dark mt-4" onClick={handleSavePreferences}>
         Save Preferences
       </button>
     </div>
@@ -615,7 +936,7 @@ function NotificationsSection() {
 // ============ Appearance Section ============
 function AppearanceSection() {
   const [appearance, setAppearance] = useState(() => {
-    const savedTheme = localStorage.getItem('theme') || 'light'
+    const savedTheme = localStorage.getItem('theme') || 'dark'
     const savedAppearanceRaw = localStorage.getItem('appearanceSettings')
     const savedAppearance = savedAppearanceRaw ? JSON.parse(savedAppearanceRaw) : {}
 
@@ -642,15 +963,21 @@ function AppearanceSection() {
     localStorage.setItem('theme', appearance.theme)
     localStorage.setItem('appearanceSettings', JSON.stringify(appearance))
     document.documentElement.setAttribute('data-theme', appearance.theme)
+    document.documentElement.setAttribute('data-sidebar-density', appearance.sidebarDensity)
+    document.documentElement.setAttribute(
+      'data-sidebar-project-icons',
+      appearance.showProjectIcons ? 'show' : 'hide'
+    )
     alert('Appearance saved successfully!')
   }
 
   return (
     <div className="settings-card">
-      <div className="card-header">
-        <h2>Appearance</h2>
-        <p className="text-muted">Customize the look and feel</p>
-      </div>
+      <SettingsSectionHeader
+        icon={FiMonitor}
+        title="Appearance"
+        subtitle="Customize the look and feel"
+      />
 
       <div className="form-group mb-4">
         <label className="form-label">Theme</label>
@@ -691,9 +1018,21 @@ function AppearanceSection() {
       </div>
 
       <div className="form-group mb-4">
-        <div className="d-flex align-items-center justify-content-between">
+        <div className="settings-option-row">
           <label className="form-label m-0">Display project icons in sidebar</label>
-          <div className={`toggle-switch ${appearance.showProjectIcons ? 'active' : ''}`}>
+          <div
+            className={`toggle-switch ${appearance.showProjectIcons ? 'active' : ''}`}
+            onClick={() => setAppearance((prev) => ({ ...prev, showProjectIcons: !prev.showProjectIcons }))}
+            role="switch"
+            aria-checked={appearance.showProjectIcons}
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                setAppearance((prev) => ({ ...prev, showProjectIcons: !prev.showProjectIcons }))
+              }
+            }}
+          >
             <input 
               type="checkbox" 
               className="toggle-input"
@@ -723,24 +1062,85 @@ function SecuritySection({ apiBase }) {
 
   const [passwordError, setPasswordError] = useState('')
   const [confirmPasswordError, setConfirmPasswordError] = useState('')
+
+  // Authenticator App (TOTP) 2FA states
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false)
+  const [twoFactorPending, setTwoFactorPending] = useState(false)
+  const [twoFactorQr, setTwoFactorQr] = useState('')
+  const [twoFactorSecret, setTwoFactorSecret] = useState('')
+  const [twoFactorCode, setTwoFactorCode] = useState('')
+  const [twoFactorLoading, setTwoFactorLoading] = useState(false)
+  const [twoFactorError, setTwoFactorError] = useState('')
+  const [twoFactorMsg, setTwoFactorMsg] = useState('')
 
   // OTP / verification flow states
   const [otp, setOtp] = useState(['','','','','',''])
   const [otpError, setOtpError] = useState('')
   const [sendingCode, setSendingCode] = useState(false)
-  const [verified, setVerified] = useState(false)
+  const [verifiedResetCode, setVerifiedResetCode] = useState('')
   const [pendingUserId, setPendingUserId] = useState(null)
   const [codeSentMsg, setCodeSentMsg] = useState('')
 
   const userEmail = user?.email || ''
+  const currentOtpCode = otp.join('')
+  const isResetCodeVerified = currentOtpCode.length === 6 && verifiedResetCode === currentOtpCode
+
+  const twoFactorActive = twoFactorEnabled || twoFactorPending
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function load2fa() {
+      if (!user?.id) return
+      setTwoFactorError('')
+      setTwoFactorMsg('')
+      setTwoFactorLoading(true)
+
+      try {
+        const statusRes = await fetch(`${apiBase}/api/2fa/status`, {
+          headers: { 'X-USER-ID': String(user.id) }
+        })
+        const statusBody = await statusRes.json().catch(() => ({}))
+        if (!statusRes.ok) throw new Error(statusBody.message || 'Failed to load 2FA status')
+        if (cancelled) return
+
+        const enabled = !!statusBody.enabled
+        const pending = !!statusBody.pending
+        setTwoFactorEnabled(enabled)
+        setTwoFactorPending(pending)
+
+        // If setup is pending, fetch QR + secret so the user can continue setup
+        if (!enabled && pending) {
+          const setupRes = await fetch(`${apiBase}/api/2fa/setup`, {
+            method: 'POST',
+            headers: { 'X-USER-ID': String(user.id) }
+          })
+          const setupBody = await setupRes.json().catch(() => ({}))
+          if (!setupRes.ok) throw new Error(setupBody.message || 'Failed to load 2FA setup')
+          if (cancelled) return
+          setTwoFactorQr(setupBody.qrCodeDataUrl || '')
+          setTwoFactorSecret(setupBody.secret || '')
+        } else {
+          setTwoFactorQr('')
+          setTwoFactorSecret('')
+        }
+      } catch (err) {
+        if (!cancelled) setTwoFactorError(err.message || 'Failed to load 2FA status')
+      } finally {
+        if (!cancelled) setTwoFactorLoading(false)
+      }
+    }
+
+    load2fa()
+    return () => { cancelled = true }
+  }, [apiBase, user?.id])
 
   const passwordRules = useMemo(
     () => [
-      { id: 'length', label: 'Password is at least 8 characters', valid: passwords.newPassword.length >= 8 },
+      { id: 'length', label: 'Is at least 8 characters long', valid: passwords.newPassword.length >= 8 },
       { id: 'upper', label: 'Contains an uppercase letter (A-Z)', valid: /[A-Z]/.test(passwords.newPassword) },
       { id: 'lower', label: 'Contains a lowercase letter (a-z)', valid: /[a-z]/.test(passwords.newPassword) },
-      { id: 'digit', label: 'Contains a digit (0-9)', valid: /\d/.test(passwords.newPassword) },
+      { id: 'digit', label: 'Contains a number (0-9)', valid: /\d/.test(passwords.newPassword) },
       { id: 'special', label: 'Contains a special character (e.g. !@#$%)', valid: /[^A-Za-z0-9]/.test(passwords.newPassword) }
     ],
     [passwords.newPassword]
@@ -760,14 +1160,37 @@ function SecuritySection({ apiBase }) {
 
   function handleOtpChange(i, v){
     if(!/^[0-9]?$/.test(v)) return
-    const next = [...otp]; next[i]=v; setOtp(next)
+    const next = [...otp]
+    next[i] = v
+    const nextCode = next.join('')
+    setOtp(next)
+    if (verifiedResetCode && verifiedResetCode !== nextCode) {
+      setVerifiedResetCode('')
+      setOtpError(nextCode.length === 6 ? 'Please verify the current reset code.' : '')
+    } else if (otpError) {
+      setOtpError('')
+    }
+    setPasswordError('')
     if(v && i<5){ const nextEl = document.getElementById('sec-otp-'+(i+1)); if(nextEl) nextEl.focus() }
   }
 
-  function clearOtp(i){ const next=[...otp]; next[i]=''; setOtp(next); const el = document.getElementById('sec-otp-'+i); if(el) el.focus() }
+  function clearOtp(i){
+    const next=[...otp]
+    next[i]=''
+    setOtp(next)
+    if (verifiedResetCode) setVerifiedResetCode('')
+    setOtpError('')
+    setPasswordError('')
+    const el = document.getElementById('sec-otp-'+i)
+    if(el) el.focus()
+  }
 
   async function sendVerificationCode(){
-    setOtpError(''); setCodeSentMsg('');
+    setOtpError('')
+    setCodeSentMsg('')
+    setVerifiedResetCode('')
+    setOtp(['','','','','',''])
+    setPasswordError('')
     if(!userEmail) return setOtpError('No email configured for your account')
     setSendingCode(true)
     try{
@@ -782,19 +1205,27 @@ function SecuritySection({ apiBase }) {
 
   async function verifyCode(){
     setOtpError('')
-    const joined = otp.join('')
+    const joined = currentOtpCode
     if(joined.length!==6) return setOtpError('Enter full 6-digit code')
+    if(!(pendingUserId || (user && user.id))) return setOtpError('Please request a reset code first')
     try{
-      const res = await fetch(`${apiBase}/api/auth/verify-otp`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: pendingUserId || (user && user.id), code: joined }) })
+      const res = await fetch(`${apiBase}/api/auth/verify-reset-code`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: pendingUserId || (user && user.id), code: joined }) })
       const body = await res.json()
-      if(!res.ok) throw new Error(body.message || 'Verification failed')
-      setVerified(true)
-    }catch(err){ setOtpError(err.message) }
+      if(!res.ok) throw new Error(body.message || 'Invalid reset code')
+      setVerifiedResetCode(joined)
+    }catch(err){
+      setVerifiedResetCode('')
+      setOtpError(err.message || 'Invalid reset code')
+    }
   }
 
   async function handleUpdatePassword(){
     setPasswordError('')
-    if(!verified) return setPasswordError('Please verify your email before changing password')
+    if(!isResetCodeVerified) {
+      setVerifiedResetCode('')
+      setOtpError(currentOtpCode.length === 6 ? 'Please verify a valid reset code before changing password' : 'Enter and verify the 6-digit reset code first')
+      return setPasswordError('Please verify your reset code before changing password')
+    }
     if (!passwords.newPassword || !passwords.confirmPassword) return setPasswordError('All fields are required')
     if (passwords.newPassword !== passwords.confirmPassword) {
       setConfirmPasswordError('Passwords do not match')
@@ -810,29 +1241,121 @@ function SecuritySection({ apiBase }) {
     if (missing.length) return setPasswordError('Password must contain at least: ' + missing.join(', '))
 
     try{
-      const res = await fetch(`${apiBase}/api/auth/reset-password`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: pendingUserId || (user && user.id), code: otp.join(''), newPassword: passwords.newPassword }) })
+      const res = await fetch(`${apiBase}/api/auth/reset-password`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userId: pendingUserId || (user && user.id), code: currentOtpCode, newPassword: passwords.newPassword }) })
       const body = await res.json()
       if(!res.ok) throw new Error(body.message || 'Password change failed')
       alert('Password updated successfully')
       setPasswords({ newPassword:'', confirmPassword:'' })
       setConfirmPasswordError('')
-      setOtp(['','','','','','']); setVerified(false); setCodeSentMsg('')
-    }catch(err){ setPasswordError(err.message) }
+      setOtp(['','','','','',''])
+      setVerifiedResetCode('')
+      setCodeSentMsg('')
+      setOtpError('')
+    }catch(err){
+      const message = err.message || 'Password change failed'
+      if (message.toLowerCase().includes('reset code')) {
+        setVerifiedResetCode('')
+        setOtpError(message)
+        return
+      }
+      setPasswordError(message)
+    }
   }
 
-  const handleToggle2FA = () => { setTwoFactorEnabled(!twoFactorEnabled) }
+  async function handleToggle2FA() {
+    if (!user?.id) {
+      setTwoFactorError('Please login again.')
+      return
+    }
+
+    setTwoFactorError('')
+    setTwoFactorMsg('')
+    setTwoFactorLoading(true)
+    try {
+      if (twoFactorActive) {
+        const res = await fetch(`${apiBase}/api/2fa/disable`, {
+          method: 'POST',
+          headers: { 'X-USER-ID': String(user.id) }
+        })
+        const body = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(body.message || 'Failed to disable 2FA')
+        setTwoFactorEnabled(false)
+        setTwoFactorPending(false)
+        setTwoFactorQr('')
+        setTwoFactorSecret('')
+        setTwoFactorCode('')
+        setTwoFactorMsg('2FA disabled')
+      } else {
+        const res = await fetch(`${apiBase}/api/2fa/setup`, {
+          method: 'POST',
+          headers: { 'X-USER-ID': String(user.id) }
+        })
+        const body = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(body.message || 'Failed to start 2FA setup')
+        setTwoFactorEnabled(!!body.enabled)
+        setTwoFactorPending(!!body.pending)
+        setTwoFactorQr(body.qrCodeDataUrl || '')
+        setTwoFactorSecret(body.secret || '')
+        setTwoFactorCode('')
+      }
+    } catch (err) {
+      setTwoFactorError(err.message || '2FA action failed')
+    } finally {
+      setTwoFactorLoading(false)
+    }
+  }
+
+  async function confirmAndEnable2FA() {
+    if (!user?.id) {
+      setTwoFactorError('Please login again.')
+      return
+    }
+
+    const code = String(twoFactorCode || '').trim()
+    if (!/^\d{6}$/.test(code)) {
+      setTwoFactorError('Enter a valid 6-digit authenticator code')
+      return
+    }
+
+    setTwoFactorError('')
+    setTwoFactorMsg('')
+    setTwoFactorLoading(true)
+    try {
+      const res = await fetch(`${apiBase}/api/2fa/confirm`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-USER-ID': String(user.id)
+        },
+        body: JSON.stringify({ code })
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body.message || 'Failed to enable 2FA')
+      setTwoFactorEnabled(true)
+      setTwoFactorPending(false)
+      setTwoFactorQr('')
+      setTwoFactorSecret('')
+      setTwoFactorCode('')
+      setTwoFactorMsg('2FA enabled')
+    } catch (err) {
+      setTwoFactorError(err.message || 'Failed to enable 2FA')
+    } finally {
+      setTwoFactorLoading(false)
+    }
+  }
 
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
   return (
-    <div>
+    <div className="settings-security-stack">
       {/* Change Password Card (email verification flow) */}
       <div className="settings-card mb-4">
-        <div className="card-header">
-          <h2>Change Password</h2>
-          <p className="text-muted">We'll send a verification code to your email before allowing password change</p>
-        </div>
+        <SettingsSectionHeader
+          icon={FiLock}
+          title="Change Password"
+          subtitle="We'll send a verification code to your email before allowing password change"
+        />
 
         <div className="mb-3">
           <label className="form-label">Email</label>
@@ -856,12 +1379,15 @@ function SecuritySection({ apiBase }) {
         </div>
 
         <div className="verify-code-row">
-          <button type="button" className="verify-btn" onClick={verifyCode} disabled={verified}>Verify code</button>
-          {verified && <span className="verified-badge">Verified</span>}
+          <button type="button" className="verify-btn" onClick={verifyCode} disabled={isResetCodeVerified}>Verify code</button>
+          {isResetCodeVerified && <span className="verified-badge">Code Verified</span>}
         </div>
 
         <div className="form-group mb-3 new-password-group">
           <label className="form-label">New Password</label>
+          <p className="password-guidance">
+            Suggested password should include uppercase letters, lowercase letters, numbers, special characters, and be at least 8 characters long.
+          </p>
           <div className="password-wrapper">
             <input
               type={showNewPassword ? 'text' : 'password'}
@@ -871,7 +1397,7 @@ function SecuritySection({ apiBase }) {
               onChange={handlePasswordChange}
               placeholder="Enter your new password"
               autoComplete="new-password"
-              disabled={!verified}
+              disabled={!isResetCodeVerified}
             />
             <button type="button" className="password-toggle" onClick={() => setShowNewPassword(s => !s)} aria-label={showNewPassword ? 'Hide password' : 'Show password'}>
               {showNewPassword ? (
@@ -909,7 +1435,7 @@ function SecuritySection({ apiBase }) {
               onChange={handlePasswordChange}
               placeholder="Confirm your new password"
               autoComplete="new-password"
-              disabled={!verified}
+              disabled={!isResetCodeVerified}
             />
             <button type="button" className="password-toggle" onClick={() => setShowConfirmPassword(s => !s)} aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}>
               {showConfirmPassword ? (
@@ -942,7 +1468,7 @@ function SecuritySection({ apiBase }) {
         <button 
           className="btn btn-dark mt-2"
           onClick={handleUpdatePassword}
-          disabled={!verified}
+          disabled={!isResetCodeVerified}
         >
           Update Password
         </button>
@@ -950,60 +1476,109 @@ function SecuritySection({ apiBase }) {
 
       {/* Two-Factor Authentication Card */}
       <div className="settings-card">
-        <div className="card-header">
-          <h2>Two-Factor Authentication</h2>
-          <p className="text-muted">Add an extra layer of security to your account</p>
-        </div>
+        <SettingsSectionHeader
+          icon={FiShield}
+          title="Two-Factor Authentication"
+          subtitle="Add an extra layer of security to your account"
+        />
 
-        <div className="d-flex align-items-center justify-content-between mb-4">
+        <div className="settings-option-row mb-4">
           <label className="form-label m-0">Enable Two-Factor Authentication</label>
-          <div className={`toggle-switch ${twoFactorEnabled ? 'active' : ''}`} onClick={handleToggle2FA}>
+          <div
+            className={`toggle-switch ${twoFactorActive ? 'active' : ''} ${twoFactorLoading ? 'disabled' : ''}`}
+            onClick={() => { if (!twoFactorLoading) handleToggle2FA() }}
+            role="switch"
+            aria-checked={twoFactorActive}
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (twoFactorLoading) return
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                handleToggle2FA()
+              }
+            }}
+          >
             <div className="toggle-slider"></div>
           </div>
         </div>
 
+        {twoFactorError && (
+          <div className="alert alert-danger" role="alert">
+            {twoFactorError}
+          </div>
+        )}
+
+        {twoFactorMsg && (
+          <div className="alert alert-success" role="alert">
+            {twoFactorMsg}
+          </div>
+        )}
+
         {twoFactorEnabled && (
+          <div className="alert alert-info" role="alert">
+            Two-factor authentication is enabled for your account.
+          </div>
+        )}
+
+        {twoFactorActive && !twoFactorEnabled && (
           <div className="qr-code-section">
             <div className="qr-placeholder">
               <div className="qr-code-box">
-                <svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
-                  <rect width="120" height="120" fill="#f0f0f0" />
-                  <rect x="10" y="10" width="30" height="30" fill="#333" />
-                  <rect x="80" y="10" width="30" height="30" fill="#333" />
-                  <rect x="10" y="80" width="30" height="30" fill="#333" />
-                  <rect x="50" y="50" width="20" height="20" fill="#333" />
-                </svg>
+                {twoFactorQr ? (
+                  <img src={twoFactorQr} alt="2FA QR code" />
+                ) : (
+                  <div className="text-muted" style={{ fontSize: 12 }}>Generating QR…</div>
+                )}
               </div>
               <p className="text-muted mt-3">Scan this QR code using Google Authenticator</p>
+              {twoFactorSecret && (
+                <p className="text-muted" style={{ fontSize: 12, margin: 0, textAlign: 'center' }}>
+                  Or enter this key manually: <code style={{ wordBreak: 'break-all' }}>{twoFactorSecret}</code>
+                </p>
+              )}
             </div>
 
-            <button 
+            <div className="form-group mt-3" style={{ maxWidth: 320 }}>
+              <label className="form-label">Authenticator code</label>
+              <input
+                className="form-control"
+                inputMode="numeric"
+                pattern="\\d*"
+                maxLength={6}
+                value={twoFactorCode}
+                onChange={(e) => setTwoFactorCode(e.target.value.replace(/\\D/g, '').slice(0, 6))}
+                placeholder="Enter 6-digit code"
+              />
+            </div>
+
+            <button
               className="btn btn-dark mt-4"
-              onClick={() => {
-                alert('2FA has been enabled!')
-              }}
+              onClick={confirmAndEnable2FA}
+              disabled={twoFactorLoading}
             >
-              Confirm and Enable 2FA
+              {twoFactorLoading ? 'Enabling...' : 'Confirm and Enable 2FA'}
             </button>
           </div>
         )}
 
-        {!twoFactorEnabled && (
+        {!twoFactorActive && (
           <button 
             className="btn btn-dark"
             onClick={handleToggle2FA}
+            disabled={twoFactorLoading}
           >
-            Enable 2FA
+            {twoFactorLoading ? 'Loading...' : 'Enable 2FA'}
           </button>
         )}
     
        
-        {twoFactorEnabled && (
+        {twoFactorActive && (
           <button 
             className="btn btn-outline-danger mt-2"
             onClick={handleToggle2FA}
+            disabled={twoFactorLoading}
           >
-            Disable 2FA
+            {twoFactorEnabled ? 'Disable 2FA' : 'Cancel 2FA Setup'}
           </button>
         )}
       </div>

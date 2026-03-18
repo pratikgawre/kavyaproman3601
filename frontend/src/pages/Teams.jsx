@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from 'react-router-dom'
 import "./Teams.css";
+import "./Dashboard.css";
 import { FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLogOut, FiMenu, FiSearch, FiBell, FiPlus, FiX, FiCheck, FiRepeat, FiArrowRight } from 'react-icons/fi'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
@@ -101,8 +102,11 @@ export default function Teams() {
   // Fetch team members and stats on component mount
   useEffect(() => {
     fetchTeamMembers();
-    fetchIssues();
   }, []);
+
+  useEffect(() => {
+    fetchIssues();
+  }, [user?.id]);
 
   // sync sidebar state from global controller
   useEffect(() => {
@@ -152,10 +156,17 @@ export default function Teams() {
   };
 
   const fetchIssues = async () => {
+    if (!user?.id) {
+      setIssues([]);
+      return;
+    }
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 2000);
     try {
-      const response = await fetch(ISSUES_API_URL, { signal: controller.signal });
+      const response = await fetch(ISSUES_API_URL, {
+        signal: controller.signal,
+        headers: { 'X-USER-ID': String(user.id) }
+      });
       if (!response.ok) {
         console.error('Issues API response not ok:', response.status);
         throw new Error('Failed to fetch issues');
@@ -474,7 +485,7 @@ export default function Teams() {
         <div className="sidebar-top">
           <div className="brand d-flex align-items-center">
             <div className="brand-logo">KP</div>
-            <div className="brand-name">KavyaProMan</div>
+            <div className="brand-name">KavyaProMan 360</div>
           </div>
         </div>
 

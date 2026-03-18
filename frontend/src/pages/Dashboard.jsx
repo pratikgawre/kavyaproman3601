@@ -572,7 +572,7 @@ export default function Dashboard({ initialShowCreate = false }) {
         <div className="sidebar-top">
           <div className="brand d-flex align-items-center">
             <div className="brand-logo">KP</div>
-            <div className="brand-name">KavyaProMan</div>
+            <div className="brand-name">KavyaProMan 360</div>
           </div>
           {/* <button className="btn btn-sm btn-link toggle-btn" onClick={() => setCollapsed(s => !s)} aria-label="Toggle sidebar">
             <FiMenu size={18} />

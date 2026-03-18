@@ -38,6 +38,15 @@ export default function Login() {
       const body = await res.json()
       if (!res.ok) throw new Error(body.message || 'Login failed')
 
+      // If Authenticator App 2FA is enabled, verify TOTP code
+      if (body.twoFactorRequired || body.message === '2FA required') {
+        setPendingUserId(body.userId)
+        setPendingFlow('2fa')
+        alert('Enter the 6-digit code from your Authenticator app to complete login.')
+        navigate('/verify-otp')
+        return
+      }
+
       // If OTP was sent, navigate to verify page (always expected now)
       if (body.message === 'OTP sent to email') {
         setPendingUserId(body.userId)
