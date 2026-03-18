@@ -7,7 +7,16 @@ import { useAuth } from '../context/AuthContext'
 import useIssueNotifications from '../hooks/useIssueNotifications'
 
 const stripLeadingSpace = (value) => value.replace(/^\s+/, '')
-const sanitizeEmail = (value) => stripLeadingSpace(value).replace(/[^A-Za-z0-9@.]/g, '')
+const sanitizeName = (value) => stripLeadingSpace(value).replace(/[^A-Za-z\s]/g, '')
+const sanitizeEmail = (value) => {
+  const cleaned = stripLeadingSpace(value).replace(/[^A-Za-z0-9@.]/g, '')
+  const atIndex = cleaned.indexOf('@')
+  if (atIndex === -1) return cleaned
+  const local = cleaned.slice(0, atIndex)
+  const domain = cleaned.slice(atIndex + 1).replace(/[0-9]/g, '')
+  return `${local}@${domain}`
+}
+const isNameValid = (value) => /^[A-Za-z\s]+$/.test(value)
 const preventLeadingSpace = (e) => {
   if (e.key === ' ' && (e.currentTarget.selectionStart ?? 0) === 0) e.preventDefault()
 }
@@ -125,7 +134,7 @@ export default function Teams() {
   const [inviteFormData, setInviteFormData] = useState({
     name: '',
     email: '',
-    role: 'Developer',
+    role: '',
     projectId: ''
   });
 
@@ -553,6 +562,11 @@ export default function Teams() {
     setSelectedMember(null);
   };
 
+  const scrollToMemberList = () => {
+    if (!memberListRef.current) return;
+    memberListRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   const handleStatClick = (statName) => {
     if (statName === 'Active Projects') {
       navigate('/projects');
@@ -560,6 +574,20 @@ export default function Teams() {
     }
     if (statName === 'Avg. Workload') {
       navigate('/all-my-issues');
+      return;
+    }
+    if (statName === 'Project Managers') {
+      setActiveTab('Members');
+      setSelectedRole('Admin');
+      setSearchTerm('');
+      setTimeout(scrollToMemberList, 0);
+      return;
+    }
+    if (statName === 'Total Members') {
+      setActiveTab('Members');
+      setSelectedRole('All Roles');
+      setSearchTerm('');
+      setTimeout(scrollToMemberList, 0);
       return;
     }
     alert(`Viewing ${statName} details`);
@@ -574,48 +602,88 @@ export default function Teams() {
     setEmailVerificationStatus('verifying');
 
     try {
-      const email = inviteFormData.email.trim().toLowerCase();
+      const email = sanitizeEmail(inviteFormData.email || '').trim().toLowerCase();
       
       // Check if user exists in the database by email
       const response = await fetch(`${API_BASE_URL}/api/users/verify-email?email=${encodeURIComponent(email)}`);
       
       console.log('Email verification response:', response.status, response.ok);
       
-      if (response.ok) {
-        const userData = await response.json();
-        console.log('User found:', userData);
-        setVerifiedEmailUser(userData);
-        setEmailVerificationStatus('verified');
-        // Always sync the name from DB once verified
-        const dbName = (userData?.name || '').trim();
-        if (dbName) {
-          setInviteFormData((prev) => ({ ...prev, name: dbName, email }));
+        if (response.ok) {
+          const userData = await response.json();
+          console.log('User found:', userData);
+          setVerifiedEmailUser(userData);
+          setEmailVerificationStatus('verified');
+          // Always sync the name from DB once verified
+          const dbName = sanitizeName(userData?.name || '').trim();
+          const dbRole = (userData?.role || '').trim();
+          setInviteFormData((prev) => ({
+            ...prev,
+            name: dbName || prev.name,
+            email,
+            role: dbRole
+          }));
+          alert(`Email verified! User: ${userData.name || userData.email}`);
+        } else if (response.status === 404) {
+          setEmailVerificationStatus('not-found');
+          setVerifiedEmailUser(null);
+          setInviteFormData((prev) => ({ ...prev, role: '' }));
+          alert('Email not found in database. Please check the email address.');
+        } else {
+          const errorText = await response.text();
+          console.error('Verification error response:', errorText);
+          setEmailVerificationStatus('error');
+          setVerifiedEmailUser(null);
+          setInviteFormData((prev) => ({ ...prev, role: '' }));
+          alert('Error verifying email. Server response: ' + response.status);
         }
-        alert(`Email verified! User: ${userData.name || userData.email}`);
-      } else if (response.status === 404) {
-        setEmailVerificationStatus('not-found');
-        setVerifiedEmailUser(null);
-        alert('Email not found in database. Please check the email address.');
-      } else {
-        const errorText = await response.text();
-        console.error('Verification error response:', errorText);
+      } catch (err) {
         setEmailVerificationStatus('error');
         setVerifiedEmailUser(null);
-        alert('Error verifying email. Server response: ' + response.status);
+        setInviteFormData((prev) => ({ ...prev, role: '' }));
+        console.error('Verification error:', err);
+        alert('Failed to verify email: ' + err.message);
       }
-    } catch (err) {
-      setEmailVerificationStatus('error');
-      setVerifiedEmailUser(null);
-      console.error('Verification error:', err);
-      alert('Failed to verify email: ' + err.message);
-    }
   };
+
+  const resetInviteForm = () => {
+    setInviteFormData({ name: '', email: '', role: '', projectId: '' })
+    setEmailVerificationStatus(null)
+    setVerifiedEmailUser(null)
+    setNameSearchResults([])
+    setShowNameSuggestions(false)
+  }
+
+  const closeInviteModal = () => {
+    setShowInviteModal(false)
+    resetInviteForm()
+  }
 
   const handleInviteSubmit = async (e) => {
     e.preventDefault();
-    
-    if (!inviteFormData.name || !inviteFormData.email || !inviteFormData.role) {
+
+    const normalizedName = sanitizeName(inviteFormData.name || '').trim()
+    const normalizedEmail = sanitizeEmail(inviteFormData.email || '').trim().toLowerCase()
+    const normalizedRole = (inviteFormData.role || '').trim()
+
+    if (!normalizedName || !normalizedEmail || !normalizedRole) {
       alert('Please fill all fields');
+      return;
+    }
+
+    if (!isNameValid(normalizedName)) {
+      alert('Name should contain only alphabets');
+      return;
+    }
+
+    const emailAtIndex = normalizedEmail.indexOf('@')
+    if (emailAtIndex === -1 || !normalizedEmail.slice(emailAtIndex + 1)) {
+      alert('Please enter a valid email address');
+      return;
+    }
+
+    if (/\d/.test(normalizedEmail.slice(emailAtIndex + 1))) {
+      alert('Numbers are not allowed after @ in the email');
       return;
     }
 
@@ -630,7 +698,6 @@ export default function Teams() {
         alert('Unable to identify your account. Please log out and log in again.');
         return;
       }
-      const normalizedEmail = inviteFormData.email.trim().toLowerCase();
       const selectedProjectForInvite = inviteFormData.projectId
         ? projects.find((project) => {
           const idValue = project?.id ? String(project.id) : '';
@@ -652,11 +719,14 @@ export default function Teams() {
           return;
         }
       }
-      const payload = {
-        ...inviteFormData,
-        projectId: undefined,
-        managerEmail
-      };
+    const payload = {
+      ...inviteFormData,
+      name: normalizedName,
+      email: normalizedEmail,
+      role: normalizedRole,
+      projectId: undefined,
+      managerEmail
+    };
       const response = await fetch(MEMBERS_API_URL, {
         method: 'POST',
         headers: {
@@ -679,7 +749,7 @@ export default function Teams() {
       
       // Send invitation email
       try {
-        await sendInvitationEmail(inviteFormData.email, inviteFormData.name, inviteFormData.role);
+        await sendInvitationEmail(normalizedEmail, normalizedName, normalizedRole);
       } catch (emailErr) {
         console.warn('Email sending failed, but member was added:', emailErr);
       }
@@ -697,9 +767,9 @@ export default function Teams() {
           });
           const newTeamEntry = {
             memberId: newMember?.id || newMember?.memberId || null,
-            name: inviteFormData.name,
+            name: normalizedName,
             email: normalizedEmail,
-            role: inviteFormData.role || 'Developer',
+            role: normalizedRole,
             status: 'Invited'
           };
           const nextTeam = existingIndex >= 0
@@ -712,28 +782,23 @@ export default function Teams() {
         }
       }
 
-      setShowInviteModal(false);
-      setInviteFormData({ name: '', email: '', role: 'Developer', projectId: '' });
-      setEmailVerificationStatus(null);
-      setVerifiedEmailUser(null);
-      setNameSearchResults([]);
-      setShowNameSuggestions(false);
+      closeInviteModal();
       alert('Member invited successfully and email sent');
     } catch (err) {
       if (usingFallbackData) {
         const localMember = {
           id: Date.now(),
           ...inviteFormData,
+          name: normalizedName,
+          email: normalizedEmail,
+          role: normalizedRole,
           managerEmail: currentUser?.email || null,
           projects: 0,
           activeIssues: 0,
           image: ''
         };
         setMembers([...members, localMember]);
-        setShowInviteModal(false);
-        setInviteFormData({ name: '', email: '', role: 'Developer' });
-        setEmailVerificationStatus(null);
-        setVerifiedEmailUser(null);
+        closeInviteModal();
         return;
       }
       alert('Error inviting member: ' + err.message);
@@ -1775,39 +1840,41 @@ export default function Teams() {
       )}
 
       {/* Invite Modal */}
-      {showInviteModal && (
-        <div className="modal-overlay" onClick={() => setShowInviteModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Invite Team Member</h2>
-              <button 
-                className="modal-close"
-                onClick={() => setShowInviteModal(false)}
-              >
-                <FiX size={20} />
-              </button>
-            </div>
+        {showInviteModal && (
+          <div className="modal-overlay" onClick={closeInviteModal}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>Invite Team Member</h2>
+                <button 
+                  className="modal-close"
+                  onClick={closeInviteModal}
+                >
+                  <FiX size={20} />
+                </button>
+              </div>
 
             <form onSubmit={handleInviteSubmit} className="invite-form">
               <div className="form-group">
                 <label htmlFor="name">Name *</label>
                 <div className="name-suggest-wrapper" ref={nameSuggestRef}>
-                  <input
-                    id="name"
-                    type="text"
-                    placeholder="Enter member name"
-                    value={inviteFormData.name}
-                    onFocus={() => {
-                      if ((inviteFormData.name || '').trim().length >= 2) {
+                    <input
+                      id="name"
+                      type="text"
+                      placeholder="Enter member name"
+                      value={inviteFormData.name}
+                      onFocus={() => {
+                        if ((inviteFormData.name || '').trim().length >= 2) {
+                          setShowNameSuggestions(true);
+                        }
+                      }}
+                      onChange={(e) => {
+                        const cleaned = sanitizeName(e.target.value)
+                        setInviteFormData({ ...inviteFormData, name: cleaned });
                         setShowNameSuggestions(true);
-                      }
-                    }}
-                    onChange={(e) => {
-                      setInviteFormData({ ...inviteFormData, name: e.target.value });
-                      setShowNameSuggestions(true);
-                    }}
-                    required
-                  />
+                      }}
+                      onKeyDown={preventLeadingSpace}
+                      required
+                    />
                   {showNameSuggestions && (
                     <div className="name-suggestions">
                       {nameSearchLoading ? (
@@ -1819,18 +1886,21 @@ export default function Teams() {
                             type="button"
                             className="name-suggestion"
                             onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => {
-                              const email = (userOption?.email || '').trim().toLowerCase();
-                              setInviteFormData((prev) => ({
-                                ...prev,
-                                name: userOption?.name || prev.name,
-                                email
-                              }));
-                              if (email) {
-                                setEmailVerificationStatus('verified');
-                                setVerifiedEmailUser(userOption);
-                              }
-                              setShowNameSuggestions(false);
+                              onClick={() => {
+                                const email = sanitizeEmail(userOption?.email || '').trim().toLowerCase();
+                                const selectedName = sanitizeName(userOption?.name || inviteFormData.name || '');
+                                const dbRole = (userOption?.role || '').trim();
+                                setInviteFormData((prev) => ({
+                                  ...prev,
+                                  name: selectedName || prev.name,
+                                  email,
+                                  role: dbRole
+                                }));
+                                if (email) {
+                                  setEmailVerificationStatus('verified');
+                                  setVerifiedEmailUser(userOption);
+                                }
+                                setShowNameSuggestions(false);
                             }}
                           >
                             <span className="name-suggestion-title">{userOption?.name || 'User'}</span>
@@ -1868,12 +1938,16 @@ export default function Teams() {
                     id="email"
                     type="email"
                     placeholder="Enter member email"
-                    value={inviteFormData.email}
-                    onChange={(e) => {
-                      setInviteFormData({...inviteFormData, email: sanitizeEmail(e.target.value)});
-                      setEmailVerificationStatus(null);
-                      setVerifiedEmailUser(null);
-                    }}
+                      value={inviteFormData.email}
+                      onChange={(e) => {
+                        setInviteFormData({
+                          ...inviteFormData,
+                          email: sanitizeEmail(e.target.value),
+                          role: ''
+                        });
+                        setEmailVerificationStatus(null);
+                        setVerifiedEmailUser(null);
+                      }}
                     onKeyDown={preventLeadingSpace}
                     required
                     style={{flex: 1}}
@@ -1909,19 +1983,20 @@ export default function Teams() {
                 )}
               </div>
 
-              <div className="form-group">
-                <label htmlFor="role">Role *</label>
-                <select
-                  id="role"
-                  value={inviteFormData.role}
-                  onChange={(e) => setInviteFormData({...inviteFormData, role: e.target.value})}
-                  required
-                >
-                  <option value="Admin">Project Manager</option>
-                  <option>Developer</option>
-                  <option>Tester</option>
-                </select>
-              </div>
+                <div className="form-group">
+                  <label htmlFor="role">Role *</label>
+                  <select
+                    id="role"
+                    value={inviteFormData.role}
+                    disabled
+                  >
+                    {inviteFormData.role ? (
+                      <option value={inviteFormData.role}>{getRoleLabel(inviteFormData.role)}</option>
+                    ) : (
+                      <option value="">Role will be set after verification</option>
+                    )}
+                  </select>
+                </div>
 
               <div className="form-group">
                 <label htmlFor="project">Project</label>
@@ -1945,14 +2020,14 @@ export default function Teams() {
                 </select>
               </div>
 
-              <div className="modal-footer">
-                <button 
-                  type="button"
-                  className="btn-cancel"
-                  onClick={() => setShowInviteModal(false)}
-                >
-                  Cancel
-                </button>
+                <div className="modal-footer">
+                  <button 
+                    type="button"
+                    className="btn-cancel"
+                    onClick={closeInviteModal}
+                  >
+                    Cancel
+                  </button>
                 <button 
                   type="submit"
                   className="btn-invite"

@@ -312,10 +312,10 @@
 }
 
 .board-issue-card {
-  background: #ffffff;
-  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid rgba(226, 232, 240, 0.9);
   border-radius: 14px;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
   display: flex;
   flex-direction: column;
   gap: 11px;
@@ -356,22 +356,32 @@
   align-items: center;
   border-radius: 999px;
   display: inline-flex;
-  font-size: 12px;
-  height: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  height: 22px;
   justify-content: center;
-  width: 20px;
+  letter-spacing: 0.3px;
+  padding: 0 8px;
+  text-transform: uppercase;
+  width: auto;
 }
 
 .board-issue-bug {
   background: #fee2e2;
+  border: 1px solid #fca5a5;
+  color: #991b1b;
 }
 
 .board-issue-story {
   background: #dbeafe;
+  border: 1px solid #93c5fd;
+  color: #1e3a8a;
 }
 
 .board-issue-task {
   background: #dcfce7;
+  border: 1px solid #86efac;
+  color: #166534;
 }
 
 .board-issue-key {
@@ -386,6 +396,17 @@
   font-weight: 700;
   line-height: 1.32;
   margin: 0;
+}
+
+.board-issue-meta {
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.board-issue-meta span {
+  color: #111827;
+  font-weight: 700;
 }
 
 .board-issue-labels {
@@ -409,6 +430,23 @@
   display: flex;
   justify-content: space-between;
   margin-top: auto;
+}
+
+.board-issue-assignee {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.board-issue-assignee-name {
+  color: #111827;
+  font-size: 13px;
+  font-weight: 600;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .board-issue-avatar {
@@ -514,7 +552,9 @@ html[data-theme='dark'] .board-column-count {
 }
 
 html[data-theme='dark'] .board-issue-card {
-  background: #000000 !important;
+  background: linear-gradient(180deg, #0b1226 0%, #0f172a 100%) !important;
+  border: 1px solid #1f2937 !important;
+  box-shadow: 0 12px 26px rgba(2, 6, 23, 0.55) !important;
 }
 
 html[data-theme='dark'] .board-issue-key,
@@ -524,9 +564,43 @@ html[data-theme='dark'] .board-issue-points {
   color: #ffffff !important;
 }
 
+html[data-theme='dark'] .board-issue-meta {
+  color: #94a3b8 !important;
+}
+
+html[data-theme='dark'] .board-issue-meta span {
+  color: #e2e8f0 !important;
+}
+
+html[data-theme='dark'] .board-issue-assignee-name {
+  color: #e2e8f0 !important;
+}
+
 html[data-theme='dark'] .board-issue-label,
 html[data-theme='dark'] .board-issue-points {
   background: #111827 !important;
+}
+
+html[data-theme='dark'] .board-issue-type {
+  color: #e2e8f0;
+}
+
+html[data-theme='dark'] .board-issue-bug {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  color: #fecaca;
+}
+
+html[data-theme='dark'] .board-issue-story {
+  background: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.45);
+  color: #bfdbfe;
+}
+
+html[data-theme='dark'] .board-issue-task {
+  background: rgba(34, 197, 94, 0.2);
+  border: 1px solid rgba(34, 197, 94, 0.45);
+  color: #bbf7d0;
 }
 
 html[data-theme='dark'] .board-filter-pill,

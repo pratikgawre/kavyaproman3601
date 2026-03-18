@@ -38,6 +38,8 @@ import { useAuth } from '../context/AuthContext'
 import useIssueNotifications from '../hooks/useIssueNotifications'
 import { getInitials } from '../utils/initials'
 
+const normalizeRole = (role) => (role || "").trim().toLowerCase();
+
 const Reports = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("velocity");
@@ -50,6 +52,7 @@ const Reports = () => {
   const { user, clearUser } = useAuth()
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
   const avatarInitials = getInitials(user?.name || displayName, user?.email)
+  const isDeveloper = normalizeRole(user?.role) === 'developer'
   const [selectedOrg, setSelectedOrg] = useState(() => {
     try {
       return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null
@@ -400,9 +403,11 @@ const Reports = () => {
             )}
           </div>
 
-          <button className="btn create-issue-medium" onClick={() => navigate("/create-issue")}>
-            <FiPlus /> Create Issue
-          </button>
+          {!isDeveloper && (
+            <button className="btn create-issue-medium" onClick={() => navigate("/create-issue")}>
+              <FiPlus /> Create Issue
+            </button>
+          )}
         </div>
 
         {/* ===== HEADER + DROPDOWN ===== */}
