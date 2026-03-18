@@ -114,4 +114,21 @@ public class MemberService {
     private String normalizeEmail(String email) {
         return email == null ? null : email.trim().toLowerCase();
     }
+
+    private void applyUserAvatar(Member member) {
+        if (member == null) {
+            return;
+        }
+        if (member.getImage() != null && !member.getImage().isBlank()) {
+            return;
+        }
+        String email = normalizeEmail(member.getEmail());
+        if (email == null || email.isBlank()) {
+            return;
+        }
+        userRepository.findByEmailIgnoreCase(email)
+                .map(user -> user.getAvatar())
+                .filter(avatar -> avatar != null && !avatar.isBlank())
+                .ifPresent(member::setImage);
+    }
 }

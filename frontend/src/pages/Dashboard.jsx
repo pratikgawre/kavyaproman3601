@@ -21,6 +21,58 @@ function normalizeRole(role) {
   return (role || '').trim().toLowerCase()
 }
 
+function normalizeStatus(value) {
+  const normalized = (value || '').toString().trim().toLowerCase()
+  if (normalized === 'todo' || normalized === 'to-do') return 'todo'
+  if (normalized === 'progress' || normalized === 'in-progress' || normalized === 'in progress') return 'progress'
+  if (normalized === 'review' || normalized === 'in-review' || normalized === 'in review') return 'review'
+  if (normalized === 'done' || normalized === 'completed') return 'done'
+  return 'todo'
+}
+
+function statusLabelFromStatus(status) {
+  const normalized = normalizeStatus(status)
+  if (normalized === 'todo') return 'to do'
+  if (normalized === 'progress') return 'in progress'
+  if (normalized === 'review') return 'in review'
+  if (normalized === 'done') return 'done'
+  return 'to do'
+}
+
+function parseBackendDate(value) {
+  if (!value) return null
+  if (value instanceof Date) return value
+  if (Array.isArray(value) && value.length >= 3) {
+    const year = Number(value[0])
+    const monthIndex = Number(value[1]) - 1
+    const day = Number(value[2])
+    const hour = Number(value[3] || 0)
+    const minute = Number(value[4] || 0)
+    const second = Number(value[5] || 0)
+    const nano = Number(value[6] || 0)
+    if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || !Number.isFinite(day)) return null
+    const ms = Number.isFinite(nano) ? Math.floor(nano / 1_000_000) : 0
+    const d = new Date(year, monthIndex, day, hour, minute, second, ms)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+  if (typeof value === 'object') {
+    const year = Number(value.year)
+    const monthValue = Number(value.monthValue ?? value.month)
+    const day = Number(value.dayOfMonth ?? value.day)
+    const hour = Number(value.hour ?? 0)
+    const minute = Number(value.minute ?? 0)
+    const second = Number(value.second ?? 0)
+    const nano = Number(value.nano ?? 0)
+    if (Number.isFinite(year) && Number.isFinite(monthValue) && Number.isFinite(day)) {
+      const ms = Number.isFinite(nano) ? Math.floor(nano / 1_000_000) : 0
+      const d = new Date(year, monthValue - 1, day, hour, minute, second, ms)
+      return Number.isNaN(d.getTime()) ? null : d
+    }
+  }
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
 function getDefaultDueDateRange(daysBack = 30) {
   const today = new Date()
   const to = formatDateForInput(today)
@@ -382,6 +434,9 @@ export default function Dashboard({ initialShowCreate = false }) {
   const descRef = useRef(null)
   const [totalIssues, setTotalIssues] = useState(0)
   const [difficultyCounts, setDifficultyCounts] = useState({ High:0, Medium:0, Low:0 })
+  const [taskCounts, setTaskCounts] = useState({ todo: 0, progress: 0, review: 0 })
+  const [overdueTasks, setOverdueTasks] = useState([])
+  const [recentActivities, setRecentActivities] = useState([])
   const preselectedProjectKey = useMemo(() => {
     const fromState = location.state?.projectKey || location.state?.project?.projectKey || location.state?.project?.id
     return fromState ? String(fromState).trim() : ''
@@ -452,15 +507,6 @@ export default function Dashboard({ initialShowCreate = false }) {
       }
     })
   ), [projects])
-  const taskCounts = useMemo(() => {
-    const counts = { todo: 0, progress: 0, review: 0 }
-    BOARD_COLUMNS.forEach((column) => {
-      if (Object.prototype.hasOwnProperty.call(counts, column.key)) {
-        counts[column.key] = Array.isArray(column.issues) ? column.issues.length : 0
-      }
-    })
-    return counts
-  }, [])
   const sprintProgress = useMemo(() => {
     let total = 0
     let done = 0
@@ -490,25 +536,6 @@ export default function Dashboard({ initialShowCreate = false }) {
     const daysPast = Math.abs(daysUntilEnd)
     return `Ended ${daysPast} day${daysPast === 1 ? '' : 's'} ago`
   }, [activeSprint.start, activeSprint.end])
-  const recentActivities = useMemo(() => (
-    BOARD_COLUMNS
-      .flatMap((column) =>
-        (column.issues || []).map((issue) => ({
-          key: issue.id,
-          title: issue.title,
-          type: (issue.type || '').toLowerCase(),
-          assignee: issue.assignee || 'Unassigned',
-          statusLabel: (column.title || '').toLowerCase(),
-          dotColor: ['critical', 'high'].includes((issue.priority || '').toLowerCase()) ? 'red' : 'orange'
-        }))
-      )
-      .slice(0, 6)
-  ), [])
-  const overdueTasks = [
-    { id: 'KPM-2', title: 'Implement Kanban board with drag and drop' },
-    { id: 'KPM-3', title: 'Add sprint planning interface' },
-    { id: 'KPM-4', title: 'Bug: Filter not working on board view' }
-  ]
   // load counts for dashboard summary
   useEffect(()=>{
     async function loadCounts(){
@@ -516,6 +543,9 @@ export default function Dashboard({ initialShowCreate = false }) {
         if (!user?.id) {
           setTotalIssues(0)
           setDifficultyCounts({ High:0, Medium:0, Low:0 })
+          setTaskCounts({ todo: 0, progress: 0, review: 0 })
+          setOverdueTasks([])
+          setRecentActivities([])
           return
         }
         const res = await fetch(`${API_BASE}/api/issues`, { headers: { 'X-USER-ID': String(user.id) } })
@@ -537,10 +567,58 @@ export default function Dashboard({ initialShowCreate = false }) {
           else if(diff.toLowerCase()==='low') counts.Low++
         })
         setDifficultyCounts(counts)
+
+        const nextTaskCounts = { todo: 0, progress: 0, review: 0 }
+        const today = formatDateForInput(new Date())
+        const nextOverdue = []
+        scoped.forEach((it) => {
+          const status = normalizeStatus(it.status)
+          if (status === 'todo') nextTaskCounts.todo += 1
+          else if (status === 'progress') nextTaskCounts.progress += 1
+          else if (status === 'review') nextTaskCounts.review += 1
+
+          const deadline = (it.deadlineDate || '').toString().trim()
+          if (deadline && deadline < today && status !== 'done') {
+            nextOverdue.push({
+              id: (it.issueKey || it.key || it.id || '').toString(),
+              title: (it.summary || it.title || 'Untitled issue').toString(),
+              projectKey: (it.project || '').toString().trim().toUpperCase(),
+              deadlineDate: deadline
+            })
+          }
+        })
+        nextOverdue.sort((a, b) => (a.deadlineDate || '').localeCompare(b.deadlineDate || ''))
+        setTaskCounts(nextTaskCounts)
+        setOverdueTasks(nextOverdue)
+
+        const nextActivities = scoped
+          .slice()
+          .sort((a, b) => {
+            const ad = parseBackendDate(a?.updatedAt || a?.createdAt)
+            const bd = parseBackendDate(b?.updatedAt || b?.createdAt)
+            return (bd?.getTime() || 0) - (ad?.getTime() || 0)
+          })
+          .slice(0, 6)
+          .map((it) => {
+            const key = (it.issueKey || it.key || it.id || '').toString().trim()
+            const issueType = (it.issueType || it.type || 'task').toString().trim()
+            const assignee = (it.assigneeName || it.assignee || it.creatorName || it.assigneeEmail || 'Unassigned').toString()
+            const priorityOrDifficulty = (it.priority || it.difficulty || '').toString().toLowerCase().trim()
+            return {
+              key: key || String(it.id || ''),
+              title: (it.summary || it.title || 'Untitled issue').toString(),
+              type: issueType.toLowerCase(),
+              assignee,
+              statusLabel: statusLabelFromStatus(it.status),
+              dotColor: ['critical', 'high'].includes(priorityOrDifficulty) ? 'red' : 'orange',
+              projectKey: (it.project || '').toString().trim().toUpperCase()
+            }
+          })
+        setRecentActivities(nextActivities)
       }catch(e){ console.error('load dashboard counts failed', e) }
     }
     loadCounts()
-  },[API_BASE, isProjectManager, userEmail])
+  },[API_BASE, isProjectManager, userEmail, user?.id])
 
   function handleLogout() {
     // clear user and force replace to login so back won't return to protected page
@@ -549,13 +627,9 @@ export default function Dashboard({ initialShowCreate = false }) {
   }
 
   function openBoardByStatus(statusKey) {
-    const projectItem = activeProjects[0]
-    if (!projectItem) return
-    const projectKey = projectItem.projectKey || projectItem.id
-    if (!projectKey) return
-    navigate(`/projects/${projectKey}/board?status=${statusKey}`, {
-      state: { project: { ...projectItem, id: projectKey, projectKey } }
-    })
+    const normalized = (statusKey || '').toString().trim().toLowerCase()
+    if (!normalized) return
+    navigate(`/all-my-issues?status=${encodeURIComponent(normalized)}`)
   }
 
   function openProjectBoard(project) {
@@ -576,12 +650,15 @@ export default function Dashboard({ initialShowCreate = false }) {
     })
   }
 
-  function openIssueFromActivity(issueKey) {
+  function openIssueFromActivity(issueKey, projectKeyOverride) {
     if (!issueKey) return
-    const projectItem = activeProjects[0]
-    if (!projectItem) return
-    const projectKey = projectItem.projectKey || projectItem.id
-    if (!projectKey) return
+    const override = (projectKeyOverride || '').toString().trim()
+    const fallbackProject = activeProjects[0]?.projectKey || activeProjects[0]?.id || ''
+    const projectKey = (override || fallbackProject).toString().trim()
+    if (!projectKey) {
+      navigate(`/all-my-issues?q=${encodeURIComponent(issueKey)}`)
+      return
+    }
     navigate(`/projects/${projectKey}/board?issue=${encodeURIComponent(issueKey)}`)
   }
 
@@ -1504,28 +1581,32 @@ export default function Dashboard({ initialShowCreate = false }) {
           <div className="overdue-card">
             <div className="overdue-card-body">
               <div className="muted overdue-title">Overdue Tasks</div>
-              <h3 className="overdue-count">3</h3>
+              <h3 className="overdue-count">{overdueTasks.length}</h3>
 
-              <ul className="overdue-list">
-                {overdueTasks.map((task) => (
-                  <li
-                    key={task.id}
-                    className="overdue-item"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => openIssueFromActivity(task.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
-                        openIssueFromActivity(task.id)
-                      }
-                    }}
-                  >
-                    <span className="overdue-icon">!</span>
-                    <span className="overdue-text">{task.title}</span>
-                  </li>
-                ))}
-              </ul>
+              {overdueTasks.length === 0 ? (
+                <div className="muted">No overdue tasks</div>
+              ) : (
+                <ul className="overdue-list">
+                  {overdueTasks.map((task) => (
+                    <li
+                      key={`${task.projectKey || 'project'}:${task.id}`}
+                      className="overdue-item"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openIssueFromActivity(task.id, task.projectKey)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          openIssueFromActivity(task.id, task.projectKey)
+                        }
+                      }}
+                    >
+                      <span className="overdue-icon">!</span>
+                      <span className="overdue-text">{task.title}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
         </section>
@@ -1538,41 +1619,45 @@ export default function Dashboard({ initialShowCreate = false }) {
             </div>
 
             <div className="activity-list">
-              {recentActivities.map((item, index) => (
-                <div
-                  key={item.key}
-                  className={`activity-item ${index === 2 ? 'highlight' : ''}`}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => openIssueFromActivity(item.key)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') openIssueFromActivity(item.key) }}
-                >
-                  <div className="activity-icon-square">
-                    <div className={`activity-dot ${item.dotColor}`} />
-                  </div>
+              {recentActivities.length === 0 ? (
+                <div className="muted">No recent activity</div>
+              ) : (
+                recentActivities.map((item, index) => (
+                  <div
+                    key={`${item.projectKey || 'project'}:${item.key}`}
+                    className={`activity-item ${index === 2 ? 'highlight' : ''}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openIssueFromActivity(item.key, item.projectKey)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') openIssueFromActivity(item.key, item.projectKey) }}
+                  >
+                    <div className="activity-icon-square">
+                      <div className={`activity-dot ${item.dotColor}`} />
+                    </div>
 
-                  <div className="activity-body">
-                    <div className="activity-meta">
-                      <span className="activity-key">{item.key}</span>
-                      <span className="activity-type">{item.type}</span>
-                    </div>
-                    <div className="activity-title">{item.title}</div>
-                    <div className="activity-sub muted">
-                      <span className="activity-sub-item">
-                        <FiTag className="activity-sub-icon" />
-                        {item.statusLabel}
-                      </span>
-                      <span className="activity-sub-item">
-                        <FiGrid className="activity-sub-icon" />
-                        Board data
-                      </span>
-                      <span className="activity-user">
-                        <div className="small-avatar">{getInitials(item.assignee)}</div> {item.assignee}
-                      </span>
+                    <div className="activity-body">
+                      <div className="activity-meta">
+                        <span className="activity-key">{item.key}</span>
+                        <span className="activity-type">{item.type}</span>
+                      </div>
+                      <div className="activity-title">{item.title}</div>
+                      <div className="activity-sub muted">
+                        <span className="activity-sub-item">
+                          <FiTag className="activity-sub-icon" />
+                          {item.statusLabel}
+                        </span>
+                        <span className="activity-sub-item">
+                          <FiGrid className="activity-sub-icon" />
+                          Board data
+                        </span>
+                        <span className="activity-user">
+                          <div className="small-avatar">{getInitials(item.assignee)}</div> {item.assignee}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </section>
