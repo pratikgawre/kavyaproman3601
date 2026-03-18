@@ -21,9 +21,18 @@ public class ProjectController {
     @GetMapping
     public ResponseEntity<List<Project>> getProjects(
             @RequestParam(required = false) String managerEmail,
-            @RequestParam(required = false) String memberEmail
+            @RequestParam(required = false) String memberEmail,
+            @RequestParam(required = false) String organizationId,
+            @RequestParam(required = false) String organizationUsername,
+            @RequestParam(required = false) String organizationName
     ) {
-        return ResponseEntity.ok(projectService.getProjects(managerEmail, memberEmail));
+        return ResponseEntity.ok(projectService.getProjects(
+                managerEmail,
+                memberEmail,
+                organizationId,
+                organizationUsername,
+                organizationName
+        ));
     }
 
     @GetMapping("/{id}")

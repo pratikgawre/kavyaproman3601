@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -20,13 +21,32 @@ public class ProjectService {
         this.projectRepository = projectRepository;
     }
 
-    public List<Project> getProjects(String managerEmail, String memberEmail) {
+    public List<Project> getProjects(
+            String managerEmail,
+            String memberEmail,
+            String organizationId,
+            String organizationUsername,
+            String organizationName
+    ) {
         String normalizedManager = normalizeEmail(managerEmail);
+        String normalizedMember = normalizeEmail(memberEmail);
+        String normalizedOrgId = normalizeText(organizationId);
+        String normalizedOrgUsername = normalizeSlug(organizationUsername);
+        String normalizedOrgName = normalizeText(organizationName);
+
+        boolean hasOrgFilter = (normalizedOrgId != null && !normalizedOrgId.isEmpty())
+                || (normalizedOrgUsername != null && !normalizedOrgUsername.isEmpty())
+                || (normalizedOrgName != null && !normalizedOrgName.isEmpty());
+
+        if (hasOrgFilter) {
+            List<Project> scoped = collectProjects(normalizedOrgId, normalizedOrgUsername, normalizedOrgName);
+            return filterByAccess(scoped, normalizedManager, normalizedMember);
+        }
+
         if (normalizedManager != null && !normalizedManager.isEmpty()) {
             return projectRepository.findByManagerEmail(normalizedManager);
         }
 
-        String normalizedMember = normalizeEmail(memberEmail);
         if (normalizedMember != null && !normalizedMember.isEmpty()) {
             return projectRepository.findByTeamMembersEmail(normalizedMember);
         }
@@ -53,6 +73,9 @@ public class ProjectService {
         project.setName(normalizedName);
         project.setDescription(normalizeText(project.getDescription()));
         project.setManagerEmail(normalizeEmail(project.getManagerEmail()));
+        project.setOrganizationId(normalizeText(project.getOrganizationId()));
+        project.setOrganizationUsername(normalizeSlug(project.getOrganizationUsername()));
+        project.setOrganizationName(normalizeText(project.getOrganizationName()));
         project.setTeamMembers(normalizeTeamMembers(project.getTeamMembers()));
 
         if (project.getProjectType() == null || project.getProjectType().trim().isEmpty()) {
@@ -133,6 +156,18 @@ public class ProjectService {
             existing.setManagerEmail(normalizeEmail(updated.getManagerEmail()));
         }
 
+        if (updated.getOrganizationId() != null) {
+            existing.setOrganizationId(normalizeText(updated.getOrganizationId()));
+        }
+
+        if (updated.getOrganizationUsername() != null) {
+            existing.setOrganizationUsername(normalizeSlug(updated.getOrganizationUsername()));
+        }
+
+        if (updated.getOrganizationName() != null) {
+            existing.setOrganizationName(normalizeText(updated.getOrganizationName()));
+        }
+
         if (updated.getTeamMembers() != null) {
             existing.setTeamMembers(normalizeTeamMembers(updated.getTeamMembers()));
         }
@@ -170,6 +205,61 @@ public class ProjectService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    private List<Project> collectProjects(String organizationId, String organizationUsername, String organizationName) {
+        Map<String, Project> uniqueProjects = new LinkedHashMap<>();
+        if (organizationId != null && !organizationId.isEmpty()) {
+            addProjects(uniqueProjects, projectRepository.findByOrganizationId(organizationId));
+        }
+        if (organizationUsername != null && !organizationUsername.isEmpty()) {
+            addProjects(uniqueProjects, projectRepository.findByOrganizationUsername(organizationUsername));
+        }
+        if (organizationName != null && !organizationName.isEmpty()) {
+            addProjects(uniqueProjects, projectRepository.findByOrganizationNameIgnoreCase(organizationName));
+        }
+        return new ArrayList<>(uniqueProjects.values());
+    }
+
+    private void addProjects(Map<String, Project> target, List<Project> projects) {
+        if (projects == null) return;
+        for (Project project : projects) {
+            if (project == null) continue;
+            String key = project.getId() != null ? project.getId() : project.getProjectKey();
+            if (key == null) continue;
+            target.put(key, project);
+        }
+    }
+
+    private List<Project> filterByAccess(List<Project> projects, String managerEmail, String memberEmail) {
+        if (projects == null || projects.isEmpty()) {
+            return new ArrayList<>();
+        }
+        if (managerEmail != null && !managerEmail.isEmpty()) {
+            return projects.stream()
+                    .filter(project -> managerEmail.equals(normalizeEmail(project.getManagerEmail())))
+                    .collect(Collectors.toList());
+        }
+        if (memberEmail != null && !memberEmail.isEmpty()) {
+            return projects.stream()
+                    .filter(project -> hasMemberEmail(project, memberEmail))
+                    .collect(Collectors.toList());
+        }
+        return projects;
+    }
+
+    private boolean hasMemberEmail(Project project, String memberEmail) {
+        if (project == null || memberEmail == null || memberEmail.isEmpty()) return false;
+        List<ProjectMember> members = project.getTeamMembers();
+        if (members == null || members.isEmpty()) return false;
+        for (ProjectMember member : members) {
+            if (member == null) continue;
+            String email = normalizeEmail(member.getEmail());
+            if (memberEmail.equals(email)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private List<ProjectMember> normalizeTeamMembers(List<ProjectMember> members) {
         if (members == null) return null;
         Map<String, ProjectMember> unique = new LinkedHashMap<>();
@@ -195,5 +285,16 @@ public class ProjectService {
             unique.put(key, normalized);
         }
         return new ArrayList<>(unique.values());
+    }
+
+    private String normalizeSlug(String value) {
+        if (value == null) return null;
+        String normalized = value.trim().toLowerCase();
+        if (normalized.isEmpty()) return null;
+        normalized = normalized.replaceAll("\\s+", "-");
+        normalized = normalized.replaceAll("[^a-z0-9-]", "");
+        normalized = normalized.replaceAll("-{2,}", "-");
+        normalized = normalized.replaceAll("(^-+)|(-+$)", "");
+        return normalized.isEmpty() ? null : normalized;
     }
 }

@@ -32,7 +32,7 @@
 }
 
 /* Consistent top spacing across pages (matches Project/Board/Backlog) */
-.dashboard-root > main.content{
+.dashboard-root > main.content:not(.with-topbar){
   padding-top:12px !important;
 }
 .content::-webkit-scrollbar{width:12px}
@@ -1397,6 +1397,13 @@ html[data-theme='dark'] .large-info-card .info-card{
 html[data-theme='dark'] .large-info-card h5,
 html[data-theme='dark'] .large-info-card .muted{
   color:#ffffff !important;
+}
+
+/* Active Projects: ensure project initials (KP/WR/MB) are readable in dark mode */
+html[data-theme='dark'] .project-top .project-icon{
+  background:#000000 !important;
+  color:#ffffff !important;
+  border:1px solid rgba(255,255,255,0.18);
 }
 
 html[data-theme='dark'] .apply-btn,

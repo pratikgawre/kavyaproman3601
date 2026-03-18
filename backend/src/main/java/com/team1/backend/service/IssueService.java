@@ -127,6 +127,20 @@ public class IssueService {
         return saved;
     }
 
+    public Issue update(String userId, String id, Issue updated) {
+        User user = requireUser(userId);
+        Issue existing = repo.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Issue not found"));
+        if (existing.getCreatorEmail() != null
+                && user.getEmail() != null
+                && !existing.getCreatorEmail().equalsIgnoreCase(user.getEmail())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed");
+        }
+        updated.setCreatorEmail(existing.getCreatorEmail());
+        updated.setCreatorName(existing.getCreatorName());
+        return update(id, updated);
+    }
+
     public Issue update(String id, Issue updated){
         return repo.findById(id).map(existing -> {
             if (updated.getCreatorName() != null) {
@@ -191,6 +205,18 @@ public class IssueService {
             updated.setUpdatedAt(LocalDateTime.now());
             return repo.save(updated);
         });
+    }
+
+    public void delete(String userId, String id) {
+        User user = requireUser(userId);
+        Issue existing = repo.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Issue not found"));
+        if (existing.getCreatorEmail() != null
+                && user.getEmail() != null
+                && !existing.getCreatorEmail().equalsIgnoreCase(user.getEmail())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed");
+        }
+        repo.delete(existing);
     }
 
     public void delete(String id){ repo.deleteById(id); }

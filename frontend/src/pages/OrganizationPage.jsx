@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import './Auth.css'
 import { useAuth } from '../context/AuthContext'
@@ -6,54 +6,53 @@ import { useAuth } from '../context/AuthContext'
 
 function OrganizationPage() {
   const navigate = useNavigate();
-  const { clearUser } = useAuth()
-  const defaultOrganizations = [
-    {
-      id: 1,
-      name: "Kavya Technologies",
-      username: "kavya-tech",
-      description:
-        "Leading software development company specializing in project management solutions",
-      members: 4,
-      projects: 3,
-      role: "OWNER",
-    },
-    {
-      id: 2,
-      name: "Innovation Labs",
-      username: "innovation-labs",
-      description: "Research and development focused organization",
-      members: 3,
-      projects: 0,
-      role: "ADMIN",
-    },
-  ];
+  const { clearUser, user } = useAuth()
+  const API_BASE = (import.meta?.env?.VITE_API_BASE || 'http://localhost:8080')
+  const [organizations, setOrganizations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [searchText, setSearchText] = useState('');
+  const [activeMenuOrgId, setActiveMenuOrgId] = useState(null);
+  const [deletingOrgId, setDeletingOrgId] = useState(null);
 
-  const loadStoredOrganizations = () => {
-    try {
-      const stored = JSON.parse(localStorage.getItem('organizations') || '[]');
-      return Array.isArray(stored) ? stored : [];
-    } catch (error) {
-      return [];
-    }
-  };
+  useEffect(() => {
+    const controller = new AbortController()
+    setLoading(true)
+    setError('')
 
-  const mergeOrganizations = (base, extra) => {
-    const merged = [...base];
-    const existingKeys = new Set(base.map((org) => org.username || org.id));
-    extra.forEach((org) => {
-      const key = org.username || org.id;
-      if (!existingKeys.has(key)) {
-        existingKeys.add(key);
-        merged.push(org);
-      }
-    });
-    return merged;
-  };
+    fetch(`${API_BASE}/api/organizations`, { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errorText = await res.text()
+          throw new Error(errorText || 'Failed to load organizations')
+        }
+        return res.json()
+      })
+      .then((data) => {
+        setOrganizations(Array.isArray(data) ? data : [])
+      })
+      .catch((err) => {
+        if (err.name === 'AbortError') return
+        setOrganizations([])
+        setError(err.message || 'Failed to load organizations')
+      })
+      .finally(() => {
+        setLoading(false)
+      })
 
-  const [organizations, setOrganizations] = useState(() =>
-    mergeOrganizations(defaultOrganizations, loadStoredOrganizations())
-  );
+    return () => controller.abort()
+  }, [API_BASE])
+
+  const filteredOrganizations = useMemo(() => {
+    const query = searchText.trim().toLowerCase()
+    if (!query) return organizations
+    return (organizations || []).filter((org) => {
+      const name = (org?.name || '').toLowerCase()
+      const username = (org?.username || '').toLowerCase()
+      const description = (org?.description || '').toLowerCase()
+      return name.includes(query) || username.includes(query) || description.includes(query)
+    })
+  }, [organizations, searchText])
 
   const getNumericCount = (value) => {
     if (Array.isArray(value)) return value.length;
@@ -67,7 +66,14 @@ function OrganizationPage() {
   const getProjectCount = (org) =>
     getNumericCount(org.projects ?? org.projectCount ?? org.projectList);
 
+  const getOrgKey = (org) => {
+    if (!org) return ''
+    const candidate = org.id || org._id || org.username || org.name || ''
+    return candidate.toString()
+  }
+
   const openOrganization = (org) => {
+    setActiveMenuOrgId(null)
     // store selected org so dashboard can pick it up
     localStorage.setItem('org', JSON.stringify(org))
     // notify other pages about the change
@@ -79,25 +85,51 @@ function OrganizationPage() {
     navigate('/dashboard')
   }
 
-  // Create Organization
-  const createOrganization = () => {
-    const name = prompt("Enter organization name:");
-    if (!name) return;
+  const toggleOrgMenu = (orgId, event) => {
+    event.stopPropagation()
+    setActiveMenuOrgId((prev) => (prev === orgId ? null : orgId))
+  }
 
-    const newOrg = {
-      id: Date.now(),
-      name: name,
-      username: name.toLowerCase().replace(/\s+/g, "-"),
-      description: "New organization description",
-      members: 0,
-      projects: 0,
-      role: "OWNER",
-    };
+  const handleEditOrganization = (org) => {
+    setActiveMenuOrgId(null)
+    const editState = {
+      orgName: org?.name || '',
+      slug: org?.username || '',
+      desc: org?.description || '',
+      orgId: getOrgKey(org)
+    }
+    navigate('/customize', { state: editState })
+  }
 
-    setOrganizations((prev) => [...prev, newOrg]);
-    const stored = loadStoredOrganizations();
-    localStorage.setItem('organizations', JSON.stringify([...stored, newOrg]));
-  };
+  const handleDeleteOrganization = async (org) => {
+    setActiveMenuOrgId(null)
+    const displayName = (org?.name || org?.username || 'this organization').trim()
+    const confirmed = window.confirm(`Delete ${displayName}? This cannot be undone.`)
+    if (!confirmed) return
+
+    const organizationId = org?.id || org?._id
+    if (!organizationId) {
+      alert('Unable to identify the organization to delete.')
+      return
+    }
+
+    try {
+      setDeletingOrgId(getOrgKey(org))
+      const response = await fetch(`${API_BASE}/api/organizations/${organizationId}`, {
+        method: 'DELETE'
+      })
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '')
+        throw new Error(errorText || 'Failed to delete organization')
+      }
+      setOrganizations((prev) => (prev || []).filter((item) => getOrgKey(item) !== getOrgKey(org)))
+    } catch (err) {
+      console.error('Delete organization failed', err)
+      alert(err.message || 'Failed to delete organization')
+    } finally {
+      setDeletingOrgId(null)
+    }
+  }
 
   return (
     <div className="org-list-container">
@@ -147,14 +179,32 @@ function OrganizationPage() {
           type="text"
           placeholder="Search organizations..."
           className="org-search"
+          value={searchText}
+          onChange={(event) => setSearchText(event.target.value)}
         />
       </div>
 
       {/* Organization Cards */}
       <div className="org-list-cards">
-        {organizations.map((org) => (
+        {loading && (
+          <div className="org-list-empty">Loading organizations...</div>
+        )}
+        {!loading && error && (
+          <div className="org-list-empty">{error}</div>
+        )}
+        {!loading && !error && filteredOrganizations.length === 0 && (
+          <div className="org-list-empty">No organizations yet. Create one to get started.</div>
+        )}
+        {!loading && !error && filteredOrganizations.map((org) => {
+          const orgKey = getOrgKey(org);
+          const displayName = (org?.name || org?.username || 'Organization').trim();
+          const displayUsername = (org?.username || '').trim();
+          const roleLabel = (org?.role || 'MEMBER').toUpperCase();
+          const initial = displayName ? displayName.charAt(0).toUpperCase() : 'O';
+          const isDeleting = deletingOrgId === orgKey;
+          return (
           <div
-            key={org.id}
+            key={orgKey || `${displayName}-${displayUsername}`}
             className="org-list-card"
             role="button"
             tabIndex={0}
@@ -169,12 +219,12 @@ function OrganizationPage() {
             <div className="org-list-card-top">
               <div className="org-list-card-header">
                 <div className="org-list-icon">
-                  {org.name.charAt(0)}
+                  {initial}
                 </div>
                 <div className="org-list-title-wrap">
                   <div className="org-list-name">
-                    <h3>{org.name}</h3>
-                    {org.role === 'OWNER' && (
+                    <h3>{displayName}</h3>
+                    {roleLabel === 'OWNER' && (
                       <span className="org-list-crown" aria-hidden="true">
                         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                           <path d="M3 8l4 4 5-7 5 7 4-4v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8z" />
@@ -182,26 +232,56 @@ function OrganizationPage() {
                       </span>
                     )}
                   </div>
-                  <p className="org-list-username">{org.username}</p>
+                  <p className="org-list-username">{displayUsername}</p>
                 </div>
               </div>
-              <button
-                className="org-card-arrow"
-                type="button"
-                aria-label={`Open ${org.name}`}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  openOrganization(org)
-                }}
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <path d="M9 6l6 6-6 6" />
-                </svg>
-              </button>
+              <div className="org-card-controls">
+                <div className="org-card-actions">
+                  <button
+                    className="org-card-menu-button"
+                    type="button"
+                    onClick={(event) => toggleOrgMenu(orgKey, event)}
+                    aria-haspopup="menu"
+                    aria-expanded={activeMenuOrgId === orgKey}
+                    aria-label={`Organization actions for ${displayName}`}
+                  >
+                    <span className="org-card-menu-icon" aria-hidden="true"></span>
+                  </button>
+                  {activeMenuOrgId === orgKey && (
+                    <div className="org-card-menu-panel" onClick={(event) => event.stopPropagation()}>
+                      <button type="button" onClick={() => handleEditOrganization(org)}>
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="danger"
+                        onClick={() => handleDeleteOrganization(org)}
+                        disabled={isDeleting}
+                        aria-busy={isDeleting || undefined}
+                      >
+                        {isDeleting ? 'Deleting…' : 'Delete'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <button
+                  className="org-card-arrow"
+                  type="button"
+                  aria-label={`Open ${displayName}`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    openOrganization(org)
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M9 6l6 6-6 6" />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             <p className="org-list-description">
-              {org.description}
+              {org.description || 'No description added yet.'}
             </p>
 
             <div className="org-list-meta">
@@ -225,10 +305,10 @@ function OrganizationPage() {
                   {getProjectCount(org)} projects
                 </span>
               </div>
-              <span className="org-list-role">{org.role}</span>
+              <span className="org-list-role">{roleLabel}</span>
             </div>
           </div>
-        ))}
+        )})}
       </div>
 
       {/* Create Organization */}

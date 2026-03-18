@@ -2,29 +2,20 @@ import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import "./Auth.css";
 import { uploadFile } from "../utils/upload";
+import { useAuth } from "../context/AuthContext";
 
 function CustomizeOrganization() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
+  const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080';
 
-  const { orgName, slug, desc } = location.state || {};
+  const { orgName = "", slug = "", desc = "" } = location.state || {};
 
   const [logo, setLogo] = useState({ name: "", url: "" });
   const [logoUploading, setLogoUploading] = useState(false);
-
-  const loadStoredOrganizations = () => {
-    try {
-      const stored = JSON.parse(localStorage.getItem('organizations') || '[]');
-      return Array.isArray(stored) ? stored : [];
-    } catch (error) {
-      return [];
-    }
-  };
-
-  const persistOrganization = (newOrg) => {
-    const stored = loadStoredOrganizations();
-    localStorage.setItem('organizations', JSON.stringify([...stored, newOrg]));
-  };
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
   const handleFileChange = async (e) => {
     const selectedFile = e.target.files[0];
@@ -41,6 +32,60 @@ function CustomizeOrganization() {
     } finally {
       setLogoUploading(false);
       e.target.value = "";
+    }
+  };
+
+  const handleCreateOrganization = async () => {
+    const safeName = (orgName || "").trim();
+    const safeSlug = (slug || safeName || "new-org")
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-]/g, "");
+
+    if (!safeName) {
+      setSubmitError("Organization name is required");
+      return;
+    }
+    if (!safeSlug) {
+      setSubmitError("URL slug is required");
+      return;
+    }
+
+    setSubmitting(true);
+    setSubmitError("");
+
+    const payload = {
+      name: safeName,
+      username: safeSlug,
+      description: (desc || "").trim(),
+      members: 0,
+      projects: 0,
+      role: "OWNER",
+      logoUrl: logo.url || "",
+    };
+
+    const ownerEmail = (user?.email || "").trim().toLowerCase();
+    if (ownerEmail) {
+      payload.ownerEmail = ownerEmail;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/organizations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.message || "Failed to create organization");
+      }
+      alert("Organization Created!");
+      navigate("/organization");
+    } catch (err) {
+      setSubmitError(err.message || "Failed to create organization");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -131,6 +176,8 @@ function CustomizeOrganization() {
             </div>
           </div>
 
+          {submitError && <p className="org-error">{submitError}</p>}
+
           {/* Buttons */}
           <div className="org-buttons">
             <button
@@ -142,29 +189,10 @@ function CustomizeOrganization() {
 
             <button
               className="org-continue"
-              onClick={() => {
-                const safeName = (orgName || "New Organization").trim();
-                const safeSlug = (slug || safeName || "new-org")
-                  .toLowerCase()
-                  .trim()
-                  .replace(/\s+/g, "-")
-                  .replace(/[^a-z0-9-]/g, "");
-                const newOrg = {
-                  id: Date.now(),
-                  name: safeName || "New Organization",
-                  username: safeSlug || "new-org",
-                  description: desc || "New organization description",
-                  members: 0,
-                  projects: 0,
-                  role: "OWNER",
-                  logoUrl: logo.url || "",
-                };
-                persistOrganization(newOrg);
-                alert("Organization Created!");
-                navigate("/organization");
-              }}
+              onClick={handleCreateOrganization}
+              disabled={logoUploading || submitting}
             >
-              ✓ Create Organization
+              {submitting ? "Creating..." : "✓ Create Organization"}
             </button>
           </div>
 
@@ -175,4 +203,5 @@ function CustomizeOrganization() {
 }
 
 export default CustomizeOrganization;
+
 

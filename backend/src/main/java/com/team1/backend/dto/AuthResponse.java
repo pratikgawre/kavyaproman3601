@@ -8,6 +8,7 @@ public class AuthResponse {
     private String name;
     private String role;
     private String avatar;
+    private boolean twoFactorRequired;
 
     public AuthResponse() {}
 
@@ -96,5 +97,13 @@ public class AuthResponse {
 
     public void setAvatar(String avatar) {
         this.avatar = avatar;
+    }
+
+    public boolean isTwoFactorRequired() {
+        return twoFactorRequired;
+    }
+
+    public void setTwoFactorRequired(boolean twoFactorRequired) {
+        this.twoFactorRequired = twoFactorRequired;
     }
 }

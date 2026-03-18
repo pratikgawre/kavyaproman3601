@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from 'react-router-dom'
 import "./Teams.css";
+import "./Dashboard.css";
 import { FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLogOut, FiMenu, FiSearch, FiBell, FiPlus, FiX, FiCheck, FiRepeat, FiArrowRight } from 'react-icons/fi'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
@@ -147,6 +148,9 @@ export default function Teams() {
   const PROJECTS_API_URL = `${API_BASE_URL}/api/projects`;
   const userEmail = (currentUser?.email || '').trim().toLowerCase();
   const managerEmail = (currentUser?.email || '').trim().toLowerCase();
+  const organizationId = selectedOrg?.id || selectedOrg?._id || null;
+  const organizationUsername = selectedOrg?.username || selectedOrg?.slug || null;
+  const organizationName = selectedOrg?.name || null;
   const isProjectManager = isProjectManagerRole(currentUser?.role);
   const visibleTab = isProjectManager ? activeTab : "Members";
 
@@ -206,12 +210,24 @@ export default function Teams() {
   // Fetch team members and stats on component mount
   useEffect(() => {
     fetchTeamMembers();
+  }, [managerEmail, userEmail, isProjectManager, organizationId, organizationUsername, organizationName]);
+
+  useEffect(() => {
     fetchIssues();
   }, []);
 
   useEffect(() => {
+    fetchIssues();
+  }, [user?.id]);
+
+  // sync sidebar state from global controller
+  useEffect(() => {
     fetchProjects();
-  }, [managerEmail, userEmail, isProjectManager]);
+  }, [managerEmail, userEmail, isProjectManager, organizationId, organizationUsername, organizationName]);
+
+  useEffect(() => {
+    setSelectedProjectId('all');
+  }, [organizationId, organizationUsername, organizationName]);
 
   useEffect(() => {
     setEditingId(null);
@@ -285,7 +301,21 @@ export default function Teams() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 1500);
     try {
-      const response = await fetch(MEMBERS_API_URL, { signal: controller.signal });
+      const queryParams = new URLSearchParams();
+      if (isProjectManager && managerEmail) {
+        queryParams.set('managerEmail', managerEmail);
+      } else if (!isProjectManager && userEmail) {
+        queryParams.set('memberEmail', userEmail);
+      }
+      if (organizationId) {
+        queryParams.set('organizationId', organizationId);
+      } else if (organizationUsername) {
+        queryParams.set('organizationUsername', organizationUsername);
+      } else if (organizationName) {
+        queryParams.set('organizationName', organizationName);
+      }
+      const query = queryParams.toString();
+      const response = await fetch(`${MEMBERS_API_URL}${query ? `?${query}` : ''}`, { signal: controller.signal });
       if (!response.ok) {
         throw new Error('Failed to fetch members');
       }
@@ -310,6 +340,13 @@ export default function Teams() {
       queryParams.set('managerEmail', managerEmail);
     } else if (!isProjectManager && userEmail) {
       queryParams.set('memberEmail', userEmail);
+    }
+    if (organizationId) {
+      queryParams.set('organizationId', organizationId);
+    } else if (organizationUsername) {
+      queryParams.set('organizationUsername', organizationUsername);
+    } else if (organizationName) {
+      queryParams.set('organizationName', organizationName);
     }
     const query = queryParams.toString();
     if (!query) {
@@ -338,10 +375,17 @@ export default function Teams() {
   };
 
   const fetchIssues = async () => {
+    if (!user?.id) {
+      setIssues([]);
+      return;
+    }
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 2000);
     try {
-      const response = await fetch(ISSUES_API_URL, { signal: controller.signal });
+      const response = await fetch(ISSUES_API_URL, {
+        signal: controller.signal,
+        headers: { 'X-USER-ID': String(user.id) }
+      });
       if (!response.ok) {
         console.error('Issues API response not ok:', response.status);
         throw new Error('Failed to fetch issues');
@@ -468,7 +512,10 @@ export default function Teams() {
         email: normalizedEmail,
         role: editingMember.role || 'Developer',
         managerEmail: (editingMember.managerEmail || currentUser?.email || '').trim() || undefined,
-        image: editingMember.image || editingMember.avatar || undefined
+        image: editingMember.image || editingMember.avatar || undefined,
+        organizationId: organizationId || undefined,
+        organizationUsername: organizationUsername || undefined,
+        organizationName: organizationName || undefined
       };
 
       const upsertMember = async () => {
@@ -1201,7 +1248,7 @@ export default function Teams() {
         <div className="sidebar-top">
           <div className="brand d-flex align-items-center">
             <div className="brand-logo">KP</div>
-            <div className="brand-name">KavyaProMan</div>
+            <div className="brand-name">KavyaProMan 360</div>
           </div>
         </div>
 

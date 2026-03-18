@@ -24,17 +24,20 @@ public class AuthService {
     private final UserRepository userRepository;
     private final BCryptPasswordEncoder passwordEncoder;
     private final EmailDeliveryService emailService;
+    private final TwoFactorService twoFactorService;
     private final Environment environment;
     private final boolean otpDevLogEnabled;
 
     public AuthService(UserRepository userRepository,
                        BCryptPasswordEncoder passwordEncoder,
                        EmailDeliveryService emailService,
+                       TwoFactorService twoFactorService,
                        Environment environment,
                        @Value("${auth.otp.dev-log.enabled:true}") boolean otpDevLogEnabled) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
+        this.twoFactorService = twoFactorService;
         this.environment = environment;
         this.otpDevLogEnabled = otpDevLogEnabled;
     }
@@ -89,6 +92,14 @@ public class AuthService {
         if (!passwordEncoder.matches(req.getPassword(), user.getPassword())) {
             return new AuthResponse(false, "Invalid credentials");
         }
+
+        // If Authenticator App 2FA is enabled, require a TOTP code instead of email OTP.
+        if (user.isTwoFactorEnabled()) {
+            AuthResponse res = successWithUser("2FA required", user);
+            res.setTwoFactorRequired(true);
+            return res;
+        }
+
         // Always generate and send OTP for login (force OTP on every sign-in)
         SecureRandom rnd = new SecureRandom();
         int code = rnd.nextInt(1_000_000);
@@ -111,13 +122,26 @@ public class AuthService {
         Optional<User> u = userRepository.findById(userId);
         if (u.isEmpty()) return new AuthResponse(false, "User not found");
         User user = u.get();
-        if (user.isVerified()) return successWithUser("Already verified", user);
-        if (user.getVerificationCode() == null) return new AuthResponse(false, "No verification code found");
-        if (!user.getVerificationCode().equals(code)) return new AuthResponse(false, "Invalid verification code");
+        String stored = user.getVerificationCode();
+        if (stored == null || stored.isBlank()) {
+            if (user.isVerified()) return successWithUser("Already verified", user);
+            return new AuthResponse(false, "No verification code found");
+        }
+        if (code == null || code.isBlank()) return new AuthResponse(false, "Missing verification code");
+        if (!stored.equals(code)) return new AuthResponse(false, "Invalid verification code");
         user.setVerified(true);
         user.setVerificationCode(null);
         userRepository.save(user);
         return successWithUser("Verification successful", user);
+    }
+
+    public AuthResponse verifyTwoFactor(String userId, String code) {
+        Optional<User> u = userRepository.findById(userId);
+        if (u.isEmpty()) return new AuthResponse(false, "User not found");
+        User user = u.get();
+        if (!user.isTwoFactorEnabled()) return new AuthResponse(false, "2FA is not enabled");
+        if (!twoFactorService.verifyEnabledCode(user, code)) return new AuthResponse(false, "Invalid 2FA code");
+        return successWithUser("2FA verification successful", user);
     }
 
     public AuthResponse resendOtp(String userId) {
@@ -161,6 +185,17 @@ public class AuthService {
         boolean sent = sendOtpEmail(user, subject, body, otp, "forgot-password");
         if (!sent) return new AuthResponse(false, "Failed to send reset email");
         return successWithUser("Reset code sent", user);
+    }
+
+    public AuthResponse verifyResetCode(String userId, String code) {
+        Optional<User> u = userRepository.findById(userId);
+        if (u.isEmpty()) return new AuthResponse(false, "User not found");
+        User user = u.get();
+        String stored = user.getVerificationCode();
+        if (stored == null || stored.isBlank()) return new AuthResponse(false, "No active reset code found");
+        if (code == null || code.isBlank()) return new AuthResponse(false, "Missing reset code");
+        if (!stored.equals(code)) return new AuthResponse(false, "Invalid reset code");
+        return successWithUser("Reset code verified", user);
     }
 
     // reset password using code

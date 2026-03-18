@@ -796,6 +796,17 @@ html[data-theme='dark'] .org-url input::placeholder {
   gap: 25px;
 }
 
+.org-list-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 26px 18px;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5f5;
+  color: #64748b;
+  font-size: 14px;
+}
+
 @media (max-width: 900px) {
   .org-list-cards {
     grid-template-columns: 1fr;
@@ -811,11 +822,96 @@ html[data-theme='dark'] .org-url input::placeholder {
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
   transition: all 0.25s ease;
   cursor: pointer;
+  position: relative;
 }
 
 .org-list-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 16px 30px rgba(15, 23, 42, 0.12);
+}
+
+.org-card-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.org-card-actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.org-card-menu-button {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: none;
+  background: #f4f5f8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.org-card-menu-button:hover,
+.org-card-menu-button:focus-visible {
+  background: #e0e7ff;
+  box-shadow: 0 4px 10px rgba(39, 39, 121, 0.15);
+  outline: none;
+}
+
+.org-card-menu-icon {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: -6px 0 0 currentColor, 6px 0 0 currentColor;
+  display: block;
+}
+
+.org-card-menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 130px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.12);
+  padding: 6px 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.org-card-menu-panel button {
+  font-size: 13px;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+  color: #0f172a;
+  transition: background 0.2s ease;
+}
+
+.org-card-menu-panel button:hover:not(:disabled),
+.org-card-menu-panel button:focus-visible {
+  background: #e0e7ff;
+  outline: none;
+}
+
+.org-card-menu-panel button.danger {
+  color: #dc2626;
+}
+
+.org-card-menu-panel button:disabled {
+  color: #94a3b8;
+  cursor: not-allowed;
 }
 
 /* CARD HEADER */

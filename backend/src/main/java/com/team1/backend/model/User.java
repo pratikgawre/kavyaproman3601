@@ -28,6 +28,15 @@ public class User {
 
     private String verificationCode;
 
+    // TOTP (Authenticator App) 2FA
+    private boolean twoFactorEnabled = false;
+
+    // Base32 secret used when 2FA is enabled
+    private String twoFactorSecret;
+
+    // Base32 secret generated during setup (until confirmed)
+    private String twoFactorPendingSecret;
+
     public User() {}
 
     public User(String name, String email, String password) {
@@ -116,5 +125,29 @@ public class User {
 
     public void setVerificationCode(String verificationCode) {
         this.verificationCode = verificationCode;
+    }
+
+    public boolean isTwoFactorEnabled() {
+        return twoFactorEnabled;
+    }
+
+    public void setTwoFactorEnabled(boolean twoFactorEnabled) {
+        this.twoFactorEnabled = twoFactorEnabled;
+    }
+
+    public String getTwoFactorSecret() {
+        return twoFactorSecret;
+    }
+
+    public void setTwoFactorSecret(String twoFactorSecret) {
+        this.twoFactorSecret = twoFactorSecret;
+    }
+
+    public String getTwoFactorPendingSecret() {
+        return twoFactorPendingSecret;
+    }
+
+    public void setTwoFactorPendingSecret(String twoFactorPendingSecret) {
+        this.twoFactorPendingSecret = twoFactorPendingSecret;
     }
 }
