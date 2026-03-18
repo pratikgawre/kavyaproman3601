@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { useNavigate, NavLink } from "react-router-dom";
+import { useNavigate, NavLink, useLocation } from "react-router-dom";
 import {
   FiGrid,
   FiFolder,
@@ -38,22 +38,102 @@ import { useAuth } from '../context/AuthContext'
 import useIssueNotifications from '../hooks/useIssueNotifications'
 import { getInitials } from '../utils/initials'
 
+const normalizeRole = (role) => (role || "").toString().trim().toLowerCase();
+
+const normalizeStatus = (status) => {
+  const normalized = (status || "").toString().trim().toLowerCase();
+  if (normalized === "todo" || normalized === "to-do") return "todo";
+  if (normalized === "progress" || normalized === "in-progress" || normalized === "in progress") return "progress";
+  if (normalized === "review" || normalized === "in-review" || normalized === "in review") return "review";
+  if (normalized === "done" || normalized === "completed") return "done";
+  return "todo";
+};
+
+const normalizeProjectKey = (value) => (value || "").toString().trim().toUpperCase();
+
+const pointsFromDifficulty = (difficulty) => {
+  const diff = (difficulty || "").toString().trim().toLowerCase();
+  if (diff === "high") return 8;
+  if (diff === "low") return 2;
+  return 5;
+};
+const HOURS_PER_POINT = 8;
+
+function parseBackendDate(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (Array.isArray(value) && value.length >= 3) {
+    const year = Number(value[0]);
+    const monthIndex = Number(value[1]) - 1;
+    const day = Number(value[2]);
+    const hour = Number(value[3] || 0);
+    const minute = Number(value[4] || 0);
+    const second = Number(value[5] || 0);
+    const nano = Number(value[6] || 0);
+    if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || !Number.isFinite(day)) return null;
+    const ms = Number.isFinite(nano) ? Math.floor(nano / 1_000_000) : 0;
+    const d = new Date(year, monthIndex, day, hour, minute, second, ms);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof value === "object") {
+    const year = Number(value.year);
+    const monthValue = Number(value.monthValue ?? value.month);
+    const day = Number(value.dayOfMonth ?? value.day);
+    const hour = Number(value.hour ?? 0);
+    const minute = Number(value.minute ?? 0);
+    const second = Number(value.second ?? 0);
+    const nano = Number(value.nano ?? 0);
+    if (Number.isFinite(year) && Number.isFinite(monthValue) && Number.isFinite(day)) {
+      const ms = Number.isFinite(nano) ? Math.floor(nano / 1_000_000) : 0;
+      const d = new Date(year, monthValue - 1, day, hour, minute, second, ms);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+  }
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+const dateKey = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const startOfWeek = (date) => {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = (day + 6) % 7; // Monday as first day
+  d.setDate(d.getDate() - diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+};
+
+const formatShortDate = (date) =>
+  date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
 const Reports = () => {
+  const location = useLocation();
   const navigate = useNavigate();
+  const API_BASE = (import.meta?.env?.VITE_API_BASE || "http://localhost:8080");
   const [activeTab, setActiveTab] = useState("velocity");
+  const [isCompactViewport, setIsCompactViewport] = useState(
+    () => typeof window !== "undefined" && window.innerWidth <= 768
+  );
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [topSearchText, setTopSearchText] = useState("");
-  const [selectedProject, setSelectedProject] = useState("KavyaProMan 360");
 
   const { user, clearUser } = useAuth()
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
   const avatarInitials = getInitials(user?.name || displayName, user?.email)
+  const userEmail = (user?.email || "").trim().toLowerCase();
+  const isProjectManager = ["admin", "project manager"].includes(normalizeRole(user?.role));
   const [selectedOrg, setSelectedOrg] = useState(() => {
     try {
       return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null
-    } catch (e) { return null }
+    } catch { return null }
   })
   const avatar = user?.avatar || ''
 
@@ -63,7 +143,7 @@ const Reports = () => {
       const org = e?.detail || null
       setSelectedOrg(org)
       try { if (org) localStorage.setItem('org', JSON.stringify(org)) }
-      catch (err) {}
+      catch (err) { void err }
     }
     window.addEventListener('org:changed', onOrgChanged)
     return () => window.removeEventListener('org:changed', onOrgChanged)
@@ -71,11 +151,101 @@ const Reports = () => {
 
   function handleLogout(){ clearUser(); navigate('/login', { replace:true }) }
 
-  const projects = [
-    "KavyaProMan 360",
-    "Website Redesign",
-    "Mobile App",
-  ];
+  const projectKeyFrom = (projectItem) =>
+    normalizeProjectKey(projectItem?.projectKey || projectItem?.id || "");
+  const projectLabel = (projectItem) => {
+    const key = projectKeyFrom(projectItem);
+    const name = projectItem?.name || key || "Project";
+    return key ? `${name} (${key})` : name;
+  };
+
+  const [projects, setProjects] = useState([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+  const [projectsError, setProjectsError] = useState("");
+  const [selectedProjectKey, setSelectedProjectKey] = useState(() => {
+    const fromState = normalizeProjectKey(
+      location.state?.project?.projectKey ||
+      location.state?.project?.id ||
+      location.state?.project ||
+      ""
+    );
+    if (fromState) return fromState;
+
+    const fromQuery = normalizeProjectKey(new URLSearchParams(location.search || "").get("project") || "");
+    if (fromQuery) return fromQuery;
+
+    try {
+      const stored = typeof window !== "undefined" ? (localStorage.getItem("reports:project") || "") : "";
+      return normalizeProjectKey(stored);
+    } catch (err) {
+      void err;
+      return "";
+    }
+  });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let ignore = false;
+
+    const email = (user?.email || "").trim();
+    let query = "";
+    if (email) {
+      const key = isProjectManager ? "managerEmail" : "memberEmail";
+      query = `?${key}=${encodeURIComponent(email)}`;
+    }
+
+    Promise.resolve()
+      .then(() => {
+        if (ignore) return;
+        setProjectsLoading(true);
+        setProjectsError("");
+      })
+      .then(() => fetch(`${API_BASE}/api/projects${query}`, { signal: controller.signal }))
+      .then(async (res) => {
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(errorText || "Failed to load projects");
+        }
+        return res.json();
+      })
+      .then((data) => {
+        if (ignore) return;
+        setProjects(Array.isArray(data) ? data : []);
+      })
+      .catch((err) => {
+        if (ignore) return;
+        if (err.name === "AbortError") return;
+        setProjects([]);
+        setProjectsError(err.message || "Failed to load projects");
+      })
+      .finally(() => {
+        if (ignore) return;
+        setProjectsLoading(false);
+      });
+
+    return () => {
+      ignore = true;
+      controller.abort();
+    };
+  }, [API_BASE, isProjectManager, user?.email]);
+
+  const availableProjectKeys = useMemo(
+    () => (projects || []).map(projectKeyFrom).filter(Boolean),
+    [projects]
+  );
+
+  const activeProjectKey = useMemo(() => {
+    const normalized = normalizeProjectKey(selectedProjectKey);
+    if (normalized && availableProjectKeys.includes(normalized)) return normalized;
+    return availableProjectKeys[0] || "";
+  }, [availableProjectKeys, selectedProjectKey]);
+
+  useEffect(() => {
+    if (!activeProjectKey) return;
+    try {
+      localStorage.setItem("reports:project", activeProjectKey);
+    } catch (err) { void err }
+  }, [activeProjectKey]);
 
   // sync sidebar state from global controller
   useEffect(() => {
@@ -88,52 +258,196 @@ const Reports = () => {
     return () => window.removeEventListener('sidebar:state', sync)
   }, [])
 
-  // ===== SAMPLE DATA =====
-  const issues = [
-    { id: 1, status: "Completed", estimated: 10, logged: 8, sprint: "Sprint 1" },
-    { id: 2, status: "In Progress", estimated: 12, logged: 6, sprint: "Sprint 1" },
-    { id: 3, status: "Completed", estimated: 8, logged: 8, sprint: "Sprint 2" },
-    { id: 4, status: "To Do", estimated: 15, logged: 0, sprint: "Sprint 2" },
-    { id: 5, status: "Completed", estimated: 20, logged: 18, sprint: "Sprint 3" },
-  ];
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onResize = () => setIsCompactViewport(window.innerWidth <= 768);
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
-  const totalIssues = issues.length;
-  const completedIssues = issues.filter(i => i.status === "Completed").length;
-  const completionRate = Math.round((completedIssues / totalIssues) * 100);
-  const totalEstimated = issues.reduce((s, i) => s + i.estimated, 0);
-  const totalLogged = issues.reduce((s, i) => s + i.logged, 0);
+  const [issues, setIssues] = useState([]);
+  const [issuesLoading, setIssuesLoading] = useState(false);
+  const [issuesError, setIssuesError] = useState("");
+
+  useEffect(() => {
+    if (!activeProjectKey) return;
+
+    const controller = new AbortController();
+    let ignore = false;
+
+    Promise.resolve()
+      .then(() => {
+        if (ignore) return;
+        setIssuesLoading(true);
+        setIssuesError("");
+      })
+      .then(() => fetch(`${API_BASE}/api/issues?project=${encodeURIComponent(activeProjectKey)}`, { signal: controller.signal }))
+      .then(async (res) => {
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(errorText || "Failed to load issues");
+        }
+        return res.json();
+      })
+      .then((data) => {
+        if (ignore) return;
+        setIssues(Array.isArray(data) ? data : []);
+      })
+      .catch((err) => {
+        if (ignore) return;
+        if (err.name === "AbortError") return;
+        setIssues([]);
+        setIssuesError(err.message || "Failed to load issues");
+      })
+      .finally(() => {
+        if (ignore) return;
+        setIssuesLoading(false);
+      });
+
+    return () => {
+      ignore = true;
+      controller.abort();
+    };
+  }, [API_BASE, activeProjectKey]);
+
+  const visibleIssues = useMemo(() => {
+    const list = activeProjectKey ? (issues || []) : [];
+    if (isProjectManager || !userEmail) return list;
+    return list.filter((issue) => {
+      const assigneeEmail = (issue?.assigneeEmail || issue?.assignee || issue?.creatorEmail || "")
+        .toString()
+        .toLowerCase();
+      return assigneeEmail && assigneeEmail === userEmail;
+    });
+  }, [activeProjectKey, issues, isProjectManager, userEmail]);
+
+  const issuePoints = (issue) => {
+    const points = Number(issue?.points);
+    if (Number.isFinite(points)) return points;
+    return pointsFromDifficulty(issue?.difficulty);
+  };
+
+  const totalIssues = (visibleIssues || []).length;
+  const completedIssues = (visibleIssues || []).filter((i) => normalizeStatus(i.status) === "done").length;
+  const completionRate = totalIssues > 0 ? Math.round((completedIssues / totalIssues) * 100) : 0;
+  const totalPoints = (visibleIssues || []).reduce((sum, issue) => sum + issuePoints(issue), 0);
+  const estimatedHours = totalPoints * HOURS_PER_POINT;
+  const loggedHours = Math.round((visibleIssues || []).reduce((sum, issue) => {
+    const estimate = issuePoints(issue) * HOURS_PER_POINT;
+    const status = normalizeStatus(issue.status);
+    if (status === "done") return sum + estimate;
+    if (status === "review") return sum + estimate * 0.8;
+    if (status === "progress") return sum + estimate * 0.5;
+    return sum;
+  }, 0));
 
   // ===== VELOCITY =====
   const velocityData = useMemo(() => {
-    const sprintMap = {};
-    issues.forEach(issue => {
-      if (issue.status === "Completed") {
-        sprintMap[issue.sprint] =
-          (sprintMap[issue.sprint] || 0) + issue.estimated;
-      }
+    const now = new Date();
+    const currentWeekStart = startOfWeek(now);
+    const weeks = [];
+    for (let offset = 5; offset >= 0; offset -= 1) {
+      const weekStart = new Date(currentWeekStart);
+      weekStart.setDate(weekStart.getDate() - offset * 7);
+      weeks.push({
+        key: dateKey(weekStart),
+        label: formatShortDate(weekStart),
+        points: 0,
+      });
+    }
+
+    const byKey = new Map(weeks.map((w) => [w.key, w]));
+    (visibleIssues || []).forEach((issue) => {
+      if (normalizeStatus(issue.status) !== "done") return;
+      const completionDate = parseBackendDate(issue.updatedAt) || parseBackendDate(issue.createdAt);
+      if (!completionDate) return;
+      const weekStart = startOfWeek(completionDate);
+      const key = dateKey(weekStart);
+      const bucket = byKey.get(key);
+      if (!bucket) return;
+      bucket.points += issuePoints(issue);
     });
 
-    return Object.keys(sprintMap).map(sprint => ({
-      sprint,
-      points: sprintMap[sprint],
-    }));
-  }, [issues]);
+    return weeks.map((w) => ({ period: w.label, points: w.points }));
+  }, [visibleIssues]);
 
-  const burndownData = [
-    { day: "Day 1", remaining: 50 },
-    { day: "Day 2", remaining: 40 },
-    { day: "Day 3", remaining: 30 },
-    { day: "Day 4", remaining: 15 },
-    { day: "Day 5", remaining: 5 },
-  ];
+  const burndownData = useMemo(() => {
+    const rangeDays = 7;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const days = [];
+    for (let offset = rangeDays - 1; offset >= 0; offset -= 1) {
+      const dayStart = new Date(today);
+      dayStart.setDate(dayStart.getDate() - offset);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setHours(23, 59, 59, 999);
+      days.push({ label: formatShortDate(dayStart), end: dayEnd, remaining: 0 });
+    }
 
-  const distributionData = [
-    { name: "To Do", value: issues.filter(i => i.status === "To Do").length },
-    { name: "In Progress", value: issues.filter(i => i.status === "In Progress").length },
-    { name: "Completed", value: completedIssues },
-  ];
+    const all = visibleIssues || [];
+    days.forEach((day) => {
+      let remaining = 0;
+      all.forEach((issue) => {
+        const created = parseBackendDate(issue.createdAt) || parseBackendDate(issue.updatedAt);
+        if (created && created > day.end) return;
 
-  const COLORS = ["#f4b400", "#0969da", "#2da44e"];
+        const points = issuePoints(issue);
+        const status = normalizeStatus(issue.status);
+        if (status !== "done") {
+          remaining += points;
+          return;
+        }
+
+        const completedAt = parseBackendDate(issue.updatedAt) || created;
+        if (!completedAt || completedAt > day.end) {
+          remaining += points;
+        }
+      });
+      day.remaining = remaining;
+    });
+
+    return days.map((d) => ({ day: d.label, remaining: d.remaining }));
+  }, [visibleIssues]);
+
+  const issueTypeDistributionData = useMemo(() => {
+    const counts = new Map();
+    (visibleIssues || []).forEach((issue) => {
+      const raw = (issue.issueType || issue.type || "Task").toString().trim();
+      const normalized = raw ? raw.toLowerCase() : "task";
+      const label = normalized.charAt(0).toUpperCase() + normalized.slice(1);
+      counts.set(label, (counts.get(label) || 0) + 1);
+    });
+
+    const preferred = ["Story", "Task", "Bug", "Epic"];
+    const ordered = [];
+    preferred.forEach((label) => {
+      const value = counts.get(label);
+      if (value) ordered.push([label, value]);
+      counts.delete(label);
+    });
+    const rest = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+    return [...ordered, ...rest].map(([type, value]) => ({ type, value }));
+  }, [visibleIssues]);
+
+  const statusDistributionData = useMemo(() => {
+    const buckets = {
+      todo: 0,
+      progress: 0,
+      review: 0,
+      done: 0,
+    };
+    (visibleIssues || []).forEach((issue) => {
+      const key = normalizeStatus(issue.status);
+      buckets[key] = (buckets[key] || 0) + 1;
+    });
+    return [
+      { status: "To Do", value: buckets.todo },
+      { status: "In Progress", value: buckets.progress },
+      { status: "In Review", value: buckets.review },
+      { status: "Done", value: buckets.done },
+    ];
+  }, [visibleIssues]);
   // Notifications state for topbar
   const [showNotifications, setShowNotifications] = useState(false);
   const {
@@ -270,7 +584,7 @@ const Reports = () => {
       <div className={`mobile-overlay ${mobileOpen ? "show" : ""}`} onClick={() => { setMobileOpen(false); setCollapsed(true); }} />
 
       {/* ===== MAIN CONTENT ===== */}
-      <main className="content flex-grow-1 p-4">
+      <main className="content flex-grow-1 p-4 reports-main">
 
         {/* ===== TOP SEARCH ===== */}
         <div className={`top-search-row mb-4 ${mobileSearchOpen ? "mobile-search-open" : ""}`}>
@@ -414,48 +728,71 @@ const Reports = () => {
 
           <select
             className="project-dropdown"
-            value={selectedProject}
-            onChange={(e) => setSelectedProject(e.target.value)}
+            value={activeProjectKey}
+            onChange={(e) => setSelectedProjectKey(normalizeProjectKey(e.target.value))}
+            disabled={projectsLoading || projects.length === 0}
           >
-            {projects.map(p => (
-              <option key={p}>{p}</option>
-            ))}
+            {projectsLoading && <option value="">Loading projects...</option>}
+            {!projectsLoading && projects.length === 0 && <option value="">No projects</option>}
+            {!projectsLoading && projects.length > 0 && projects.map((p) => {
+              const key = projectKeyFrom(p);
+              return (
+                <option key={key} value={key}>
+                  {projectLabel(p)}
+                </option>
+              );
+            })}
           </select>
         </div>
+
+        {(projectsError || issuesError) && (
+          <p className="text-danger mt-2 mb-0">
+            {projectsError || issuesError}
+          </p>
+        )}
+        {(projectsLoading || issuesLoading) && (
+          <p className="text-muted mt-2 mb-0">
+            {projectsLoading ? "Loading projects..." : "Loading report data..."}
+          </p>
+        )}
 
         {/* ===== SUMMARY CARDS WITH ICONS ===== */}
         <div className="reports-cards">
 
           <div className="report-card">
-            <FiActivity className="card-icon blue-icon" />
-            <div>
+            <div className="report-card-top">
               <h4>Total Issues</h4>
-              <h2>{totalIssues}</h2>
+              <FiActivity className="card-icon blue-icon" />
             </div>
+            <h2>{totalIssues}</h2>
+            <p className="card-subtext">Across all statuses</p>
           </div>
 
           <div className="report-card">
-            <FiTarget className="card-icon green-icon" />
-            <div>
+            <div className="report-card-top">
               <h4>Completion Rate</h4>
-              <h2>{completionRate}%</h2>
+              <FiTarget className="card-icon green-icon" />
             </div>
+            <h2>{completionRate}%</h2>
+            <p className="card-subtext">{completedIssues} of {totalIssues} completed</p>
           </div>
 
           <div className="report-card">
-            <FiClock className="card-icon purple-icon" />
-            <div>
+            <div className="report-card-top">
               <h4>Estimated Hours</h4>
-              <h2>{totalEstimated}h</h2>
+              <FiClock className="card-icon purple-icon" />
             </div>
+            <h2>{estimatedHours}h</h2>
+            <p className="card-subtext">Total estimated time</p>
           </div>
 
           <div className="report-card">
-            <FiTrendingUp className="card-icon orange-icon" />
-            <div>
+            <div className="report-card-top">
               <h4>Logged Hours</h4>
-              <h2>{totalLogged}h</h2>
+              <FiTrendingUp className="card-icon orange-icon" />
             </div>
+            <h2>{loggedHours}h</h2>
+            <p className="card-subtext">Actual time logged</p>
           </div>
 
         </div>
@@ -471,27 +808,39 @@ const Reports = () => {
         <div className="reports-chart mt-4">
 
           {activeTab === "velocity" && (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={velocityData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="sprint" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="points" fill="#0969da" />
-              </BarChart>
-            </ResponsiveContainer>
+            <>
+              <div className="chart-panel-header">
+                <h3 className="chart-panel-title">Sprint Velocity</h3>
+                <p className="chart-panel-subtitle">Story points completed per sprint</p>
+              </div>
+              <ResponsiveContainer width="100%" height={isCompactViewport ? 240 : 300}>
+                <BarChart data={velocityData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="period" tick={{ fontSize: isCompactViewport ? 11 : 12 }} />
+                  <YAxis width={isCompactViewport ? 30 : 44} />
+                  <Tooltip />
+                  <Bar dataKey="points" fill="#0969da" />
+                </BarChart>
+              </ResponsiveContainer>
+            </>
           )}
 
           {activeTab === "burndown" && (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={burndownData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="day" />
-                <YAxis />
-                <Tooltip />
-                <Line type="monotone" dataKey="remaining" stroke="#2da44e" />
-              </LineChart>
-            </ResponsiveContainer>
+            <>
+              <div className="chart-panel-header">
+                <h3 className="chart-panel-title">Sprint Burndown</h3>
+                <p className="chart-panel-subtitle">Remaining story points over the last 7 days</p>
+              </div>
+              <ResponsiveContainer width="100%" height={isCompactViewport ? 240 : 300}>
+                <LineChart data={burndownData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="day" tick={{ fontSize: isCompactViewport ? 11 : 12 }} />
+                  <YAxis width={isCompactViewport ? 30 : 44} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="remaining" stroke="#2da44e" />
+                </LineChart>
+              </ResponsiveContainer>
+            </>
           )}
 
           {activeTab === "distribution" && (
@@ -502,18 +851,14 @@ const Reports = () => {
       <h4>Issue Type Distribution</h4>
       <p className="text-muted">Breakdown by issue type</p>
 
-      <ResponsiveContainer width="100%" height={250}>
+      <ResponsiveContainer width="100%" height={isCompactViewport ? 220 : 250}>
         <BarChart
-          data={[
-            { type: "Story", value: 6 },
-            { type: "Task", value: 2 },
-            { type: "Bug", value: 1 },
-            { type: "Epic", value: 1 },
-          ]}
+          data={issueTypeDistributionData}
+          margin={isCompactViewport ? { top: 8, right: 8, left: -16, bottom: 8 } : undefined}
         >
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="type" />
-          <YAxis />
+          <XAxis dataKey="type" tick={{ fontSize: isCompactViewport ? 11 : 12 }} />
+          <YAxis width={isCompactViewport ? 30 : 44} />
           <Tooltip />
           <Bar dataKey="value" fill="#8250df" radius={[6, 6, 0, 0]} />
         </BarChart>
@@ -525,17 +870,21 @@ const Reports = () => {
       <h4>Status Distribution</h4>
       <p className="text-muted">Issues by workflow status</p>
 
-      <ResponsiveContainer width="100%" height={250}>
+      <ResponsiveContainer width="100%" height={isCompactViewport ? 220 : 250}>
         <BarChart
-          data={[
-            { status: "To Do", value: 3 },
-            { status: "In Progress", value: 3 },
-            { status: "Done", value: 1 },
-          ]}
+          data={statusDistributionData}
+          margin={isCompactViewport ? { top: 8, right: 8, left: -16, bottom: 20 } : undefined}
         >
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="status" />
-          <YAxis />
+          <XAxis
+            dataKey="status"
+            interval={0}
+            tick={{ fontSize: isCompactViewport ? 10 : 12 }}
+            angle={isCompactViewport ? -18 : 0}
+            textAnchor={isCompactViewport ? "end" : "middle"}
+            height={isCompactViewport ? 52 : 30}
+          />
+          <YAxis width={isCompactViewport ? 30 : 44} />
           <Tooltip />
           <Bar dataKey="value" fill="#2da44e" radius={[6, 6, 0, 0]} />
         </BarChart>

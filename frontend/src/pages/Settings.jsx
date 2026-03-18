@@ -18,7 +18,8 @@ import {
   FiPlus,
   FiMonitor,
   FiShield,
-  FiX
+  FiX,
+  FiChevronDown
 } from 'react-icons/fi'
 import './Settings.css'
 import './Dashboard.css'
@@ -42,6 +43,21 @@ const getAvatarInitials = (name, email) => {
   if (parts.length === 1) return parts[0].charAt(0).toUpperCase()
   return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase()
 }
+const REGISTRATION_ROLE_OPTIONS = ['Admin', 'Project Manager', 'Developer', 'Tester', 'Business Analyst']
+const COMMON_TIMEZONE_OPTIONS = [
+  'UTC',
+  'Asia/Kolkata',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'Europe/London',
+  'Europe/Berlin',
+  'Asia/Dubai',
+  'Asia/Singapore',
+  'Asia/Tokyo',
+  'Australia/Sydney'
+]
 
 function SettingsSectionHeader({ icon: Icon, title, subtitle, children }) {
   return (
@@ -62,9 +78,9 @@ export default function Settings() {
   // basic UI state
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const [activeTab, setActiveTab] = useState('profile')
   const [showNotifications, setShowNotifications] = useState(false)
-  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const [topSearchText, setTopSearchText] = useState('')
 
   // router helper
@@ -132,7 +148,7 @@ export default function Settings() {
   }, [])
 
   useEffect(() => {
-    if (!mobileSearchOpen) return
+    if (!mobileSearchOpen) return undefined
     const timeoutId = setTimeout(() => topSearchInputRef.current?.focus(), 0)
     return () => clearTimeout(timeoutId)
   }, [mobileSearchOpen])
@@ -141,7 +157,6 @@ export default function Settings() {
 
   const runIssueSearch = () => {
     const query = (topSearchText || '').trim()
-    setMobileSearchOpen(false)
     if (!query) {
       navigate('/all-my-issues')
       return
@@ -289,7 +304,7 @@ export default function Settings() {
               {mobileSearchOpen && (
                 <button
                   type="button"
-                  className="dashboard-search-close"
+                  className="settings-search-close"
                   aria-label="Close search"
                   onClick={(event) => {
                     event.stopPropagation()
@@ -434,7 +449,6 @@ export default function Settings() {
 // ============ Profile Section ============
 function ProfileSection() {
   const { user, setUser } = useAuth()
-  const registrationRoles = ['Admin', 'Project Manager', 'Developer', 'Tester', 'Business Analyst']
   const [formData, setFormData] = useState(() => {
     const fullName = (user?.name || '').trim()
     const nameParts = fullName ? fullName.split(/\s+/) : []
@@ -447,9 +461,12 @@ function ProfileSection() {
       timezone: user?.timezone || 'UTC'
     }
   })
-  const roleOptions = formData.role && !registrationRoles.includes(formData.role)
-    ? [formData.role, ...registrationRoles]
-    : registrationRoles
+  const roleOptions = formData.role && !REGISTRATION_ROLE_OPTIONS.includes(formData.role)
+    ? [formData.role, ...REGISTRATION_ROLE_OPTIONS]
+    : REGISTRATION_ROLE_OPTIONS
+  const timezoneOptions = formData.timezone && !COMMON_TIMEZONE_OPTIONS.includes(formData.timezone)
+    ? [formData.timezone, ...COMMON_TIMEZONE_OPTIONS]
+    : COMMON_TIMEZONE_OPTIONS
   const [avatar, setAvatar] = useState(user?.avatar || '')
   const [showAvatarViewer, setShowAvatarViewer] = useState(false)
   const [avatarUploading, setAvatarUploading] = useState(false)
@@ -790,20 +807,25 @@ function ProfileSection() {
       <div className="form-row">
         <div className="form-group mb-3">
           <label className="form-label">Role</label>
-          <select className="form-control" name="role" value={formData.role} onChange={handleChange} disabled={profileLoading || profileSaving}>
-            {roleOptions.map((role) => (
-              <option key={role} value={role}>{role}</option>
-            ))}
-          </select>
+          <div className="settings-select-wrap">
+            <select className="form-control settings-select" name="role" value={formData.role} onChange={handleChange} disabled={profileLoading || profileSaving}>
+              {roleOptions.map((role) => (
+                <option key={role} value={role}>{role}</option>
+              ))}
+            </select>
+            <FiChevronDown className="settings-select-icon" aria-hidden="true" />
+          </div>
         </div>
         <div className="form-group mb-3">
           <label className="form-label">Timezone</label>
-          <select className="form-control" name="timezone" value={formData.timezone} onChange={handleChange} disabled={profileLoading || profileSaving}>
-            <option>UTC</option>
-            <option>GMT</option>
-            <option>EST</option>
-            <option>PST</option>
-          </select>
+          <div className="settings-select-wrap">
+            <select className="form-control settings-select" name="timezone" value={formData.timezone} onChange={handleChange} disabled={profileLoading || profileSaving}>
+              {timezoneOptions.map((timezone) => (
+                <option key={timezone} value={timezone}>{timezone}</option>
+              ))}
+            </select>
+            <FiChevronDown className="settings-select-icon" aria-hidden="true" />
+          </div>
         </div>
       </div>
 
