@@ -138,6 +138,9 @@ export default function Teams() {
   const PROJECTS_API_URL = `${API_BASE_URL}/api/projects`;
   const userEmail = (currentUser?.email || '').trim().toLowerCase();
   const managerEmail = (currentUser?.email || '').trim().toLowerCase();
+  const organizationId = selectedOrg?.id || selectedOrg?._id || null;
+  const organizationUsername = selectedOrg?.username || selectedOrg?.slug || null;
+  const organizationName = selectedOrg?.name || null;
   const isProjectManager = isProjectManagerRole(currentUser?.role);
   const visibleTab = isProjectManager ? activeTab : "Members";
 
@@ -197,12 +200,19 @@ export default function Teams() {
   // Fetch team members and stats on component mount
   useEffect(() => {
     fetchTeamMembers();
+  }, [managerEmail, userEmail, isProjectManager, organizationId, organizationUsername, organizationName]);
+
+  useEffect(() => {
     fetchIssues();
   }, []);
 
   useEffect(() => {
     fetchProjects();
-  }, [managerEmail, userEmail, isProjectManager]);
+  }, [managerEmail, userEmail, isProjectManager, organizationId, organizationUsername, organizationName]);
+
+  useEffect(() => {
+    setSelectedProjectId('all');
+  }, [organizationId, organizationUsername, organizationName]);
 
   useEffect(() => {
     setEditingId(null);
@@ -276,7 +286,21 @@ export default function Teams() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 1500);
     try {
-      const response = await fetch(MEMBERS_API_URL, { signal: controller.signal });
+      const queryParams = new URLSearchParams();
+      if (isProjectManager && managerEmail) {
+        queryParams.set('managerEmail', managerEmail);
+      } else if (!isProjectManager && userEmail) {
+        queryParams.set('memberEmail', userEmail);
+      }
+      if (organizationId) {
+        queryParams.set('organizationId', organizationId);
+      } else if (organizationUsername) {
+        queryParams.set('organizationUsername', organizationUsername);
+      } else if (organizationName) {
+        queryParams.set('organizationName', organizationName);
+      }
+      const query = queryParams.toString();
+      const response = await fetch(`${MEMBERS_API_URL}${query ? `?${query}` : ''}`, { signal: controller.signal });
       if (!response.ok) {
         throw new Error('Failed to fetch members');
       }
@@ -301,6 +325,13 @@ export default function Teams() {
       queryParams.set('managerEmail', managerEmail);
     } else if (!isProjectManager && userEmail) {
       queryParams.set('memberEmail', userEmail);
+    }
+    if (organizationId) {
+      queryParams.set('organizationId', organizationId);
+    } else if (organizationUsername) {
+      queryParams.set('organizationUsername', organizationUsername);
+    } else if (organizationName) {
+      queryParams.set('organizationName', organizationName);
     }
     const query = queryParams.toString();
     if (!query) {
@@ -459,7 +490,10 @@ export default function Teams() {
         email: normalizedEmail,
         role: editingMember.role || 'Developer',
         managerEmail: (editingMember.managerEmail || currentUser?.email || '').trim() || undefined,
-        image: editingMember.image || editingMember.avatar || undefined
+        image: editingMember.image || editingMember.avatar || undefined,
+        organizationId: organizationId || undefined,
+        organizationUsername: organizationUsername || undefined,
+        organizationName: organizationName || undefined
       };
 
       const upsertMember = async () => {
@@ -655,7 +689,10 @@ export default function Teams() {
       const payload = {
         ...inviteFormData,
         projectId: undefined,
-        managerEmail
+        managerEmail,
+        organizationId: organizationId || undefined,
+        organizationUsername: organizationUsername || undefined,
+        organizationName: organizationName || undefined
       };
       const response = await fetch(MEMBERS_API_URL, {
         method: 'POST',

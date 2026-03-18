@@ -279,6 +279,16 @@ export default function Project() {
         } else if (!isProjectManager && memberEmail) {
           queryParams.set('memberEmail', memberEmail)
         }
+        const organizationId = selectedOrg?.id || selectedOrg?._id || ''
+        const organizationUsername = selectedOrg?.username || selectedOrg?.slug || ''
+        const organizationName = selectedOrg?.name || ''
+        if (organizationId) {
+          queryParams.set('organizationId', organizationId)
+        } else if (organizationUsername) {
+          queryParams.set('organizationUsername', organizationUsername)
+        } else if (organizationName) {
+          queryParams.set('organizationName', organizationName)
+        }
         const query = queryParams.toString()
         const response = await fetch(`${API_BASE_URL}/api/projects${query ? `?${query}` : ''}`, { signal: controller.signal })
         if (!response.ok) {
@@ -302,7 +312,20 @@ export default function Project() {
       isMounted = false
       controller.abort()
     }
-  }, [API_BASE_URL, managerEmail, memberEmail, displayName, profileLoading, user?.id, isProjectManager])
+  }, [
+    API_BASE_URL,
+    managerEmail,
+    memberEmail,
+    displayName,
+    profileLoading,
+    user?.id,
+    isProjectManager,
+    selectedOrg?.id,
+    selectedOrg?._id,
+    selectedOrg?.username,
+    selectedOrg?.slug,
+    selectedOrg?.name
+  ])
 
   useEffect(() => {
     if (!showCreateModal) return
@@ -400,6 +423,9 @@ export default function Project() {
     }
 
     const managerEmailValue = managerEmail || (currentUser?.email || '').trim().toLowerCase()
+    const organizationId = selectedOrg?.id || selectedOrg?._id || null
+    const organizationUsername = selectedOrg?.username || selectedOrg?.slug || null
+    const organizationName = selectedOrg?.name || null
     if (!managerEmailValue) {
       alert('Unable to identify your account. Please log out and log in again.')
       return
@@ -417,6 +443,9 @@ export default function Project() {
           isArchived: existing?.isArchived ?? false,
           teamLead: existing?.teamLead || displayName,
           managerEmail: managerEmailValue,
+          organizationId: organizationId || undefined,
+          organizationUsername: organizationUsername || undefined,
+          organizationName: organizationName || undefined,
           teamMembers: teamMembers.map((member) => ({
             memberId: member.memberId || member.id || null,
             name: member.name || '',
@@ -458,6 +487,9 @@ export default function Project() {
         isArchived: false,
         teamLead: displayName,
         managerEmail: managerEmailValue,
+        organizationId: organizationId || undefined,
+        organizationUsername: organizationUsername || undefined,
+        organizationName: organizationName || undefined,
         teamMembers: teamMembers.map((member) => ({
           memberId: member.memberId || member.id || null,
           name: member.name || '',

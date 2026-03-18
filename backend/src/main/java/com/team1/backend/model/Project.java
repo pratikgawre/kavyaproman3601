@@ -34,6 +34,12 @@ public class Project {
 
     private String managerEmail;
 
+    private String organizationId;
+
+    private String organizationUsername;
+
+    private String organizationName;
+
     private List<ProjectMember> teamMembers;
 
     private Integer totalIssues = 0;
@@ -116,6 +122,30 @@ public class Project {
 
     public void setManagerEmail(String managerEmail) {
         this.managerEmail = managerEmail;
+    }
+
+    public String getOrganizationId() {
+        return organizationId;
+    }
+
+    public void setOrganizationId(String organizationId) {
+        this.organizationId = organizationId;
+    }
+
+    public String getOrganizationUsername() {
+        return organizationUsername;
+    }
+
+    public void setOrganizationUsername(String organizationUsername) {
+        this.organizationUsername = organizationUsername;
+    }
+
+    public String getOrganizationName() {
+        return organizationName;
+    }
+
+    public void setOrganizationName(String organizationName) {
+        this.organizationName = organizationName;
     }
 
     public List<ProjectMember> getTeamMembers() {

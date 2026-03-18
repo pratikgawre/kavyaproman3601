@@ -21,8 +21,20 @@ public class MemberController {
 
     // Get all members
     @GetMapping
-    public ResponseEntity<List<Member>> getAllMembers() {
-        List<Member> members = memberService.getAllMembers();
+    public ResponseEntity<List<Member>> getAllMembers(
+            @RequestParam(required = false) String managerEmail,
+            @RequestParam(required = false) String memberEmail,
+            @RequestParam(required = false) String organizationId,
+            @RequestParam(required = false) String organizationUsername,
+            @RequestParam(required = false) String organizationName
+    ) {
+        List<Member> members = memberService.getMembers(
+                managerEmail,
+                memberEmail,
+                organizationId,
+                organizationUsername,
+                organizationName
+        );
         return ResponseEntity.ok(members);
     }
 
