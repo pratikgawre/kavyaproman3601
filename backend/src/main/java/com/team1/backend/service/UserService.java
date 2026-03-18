@@ -4,12 +4,17 @@ import com.team1.backend.dto.UpdateUserRequest;
 import com.team1.backend.dto.UserDto;
 import com.team1.backend.model.User;
 import com.team1.backend.repository.UserRepository;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 @Service
 public class UserService {
@@ -69,6 +74,18 @@ public class UserService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already in use");
         }
         return toDto(u);
+    }
+
+    public List<UserDto> searchUsers(String query, int limit) {
+        String trimmed = query == null ? "" : query.trim();
+        if (trimmed.isEmpty()) {
+            return Collections.emptyList();
+        }
+        int safeLimit = Math.min(Math.max(limit, 1), 20);
+        String regex = ".*" + Pattern.quote(trimmed) + ".*";
+        Pageable pageable = PageRequest.of(0, safeLimit);
+        List<User> users = userRepository.searchByNameOrEmail(regex, pageable);
+        return users.stream().map(this::toDto).toList();
     }
 
     private UserDto toDto(User u) {

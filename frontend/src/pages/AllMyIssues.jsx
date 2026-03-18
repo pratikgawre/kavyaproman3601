@@ -11,6 +11,10 @@ function stripHtml(value) {
   return (value || '').toString().replace(/<[^>]*>/g, ' ')
 }
 
+function normalizeRole(role) {
+  return (role || '').trim().toLowerCase()
+}
+
 function parseCsvParam(params, key) {
   const raw = (params.get(key) || '').trim()
   if (!raw) return []
@@ -24,6 +28,8 @@ export default function AllMyIssues(){
   const { user, clearUser } = useAuth()
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
   const avatarInitials = getInitials(user?.name || displayName, user?.email)
+  const userEmail = (user?.email || '').trim().toLowerCase()
+  const isProjectManager = ['admin', 'project manager'].includes(normalizeRole(user?.role))
   const [selectedOrg, setSelectedOrg] = useState(() => { try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null } })
   useEffect(() => {
     function onOrgChanged(e){ const org = e?.detail || null; setSelectedOrg(org); try { if (org) localStorage.setItem('org', JSON.stringify(org)) } catch(err){} }
@@ -196,6 +202,12 @@ export default function AllMyIssues(){
         const data = await res.json()
         // attachmentsJson may be a JSON string; parse into attachments array
         let parsed = data.map(d => ({ ...d, attachments: d.attachmentsJson ? JSON.parse(d.attachmentsJson) : (d.attachments || []) }))
+        if (!isProjectManager && userEmail) {
+          parsed = parsed.filter((p) => {
+            const assigneeEmail = (p.assigneeEmail || p.assignee || p.creatorEmail || '').toString().toLowerCase()
+            return assigneeEmail && assigneeEmail === userEmail
+          })
+        }
         // apply difficulty filter if provided via query param
         if(filterDifficulty){
           const wanted = (filterDifficulty || '').toString().toLowerCase()
@@ -211,7 +223,7 @@ export default function AllMyIssues(){
             const type = (p.issueType || p.type || '').toString().toLowerCase()
             const status = (p.status || p.issueStatus || '').toString().toLowerCase()
             const priority = (p.priority || p.difficulty || '').toString().toLowerCase()
-            const assignee = (p.assignee || '').toString().toLowerCase()
+            const assignee = (p.assigneeName || p.assignee || p.assigneeEmail || '').toString().toLowerCase()
             const creator = (p.creatorName || p.creatorEmail || '').toString().toLowerCase()
             return (
               key.includes(wanted) ||
@@ -240,7 +252,7 @@ export default function AllMyIssues(){
         }
         if (filterParams.assignee.length) {
           parsed = parsed.filter((p) => {
-            const assignee = (p.assignee || p.creatorName || '').toString().toLowerCase()
+            const assignee = (p.assigneeName || p.assignee || p.assigneeEmail || p.creatorName || '').toString().toLowerCase()
             return filterParams.assignee.includes(assignee)
           })
         }
@@ -278,7 +290,7 @@ export default function AllMyIssues(){
       }
     }
     load()
-  },[API_BASE, location.search, user?.id])
+  },[location.search, isProjectManager, userEmail])
 
   function openEdit(idx){
     const item = issues[idx]

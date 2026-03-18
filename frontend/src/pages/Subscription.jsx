@@ -3,7 +3,7 @@ import './Subscription.css'
 import './Dashboard.css'
 import { FiSearch, FiBell, FiPlus, FiZap, FiStar, FiCheck, FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLogOut, FiMenu, FiBriefcase, FiServer, FiDownload, FiArrowRight, FiChevronDown, FiX, FiRepeat } from 'react-icons/fi'
 import { GiCrown } from 'react-icons/gi'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import API_BASE from '../config/api'
 import useIssueNotifications from '../hooks/useIssueNotifications'
@@ -41,6 +41,33 @@ export default function Subscription() {
     const plan = normalizePlan(value)
     return plan.charAt(0).toUpperCase() + plan.slice(1)
   }
+  const addMonths = (date, count) => {
+    const next = new Date(date.getTime())
+    const day = next.getDate()
+    next.setMonth(next.getMonth() + count)
+    if (next.getDate() < day) {
+      next.setDate(0)
+    }
+    return next
+  }
+  const addYears = (date, count) => {
+    const next = new Date(date.getTime())
+    const day = next.getDate()
+    next.setFullYear(next.getFullYear() + count)
+    if (next.getDate() < day) {
+      next.setDate(0)
+    }
+    return next
+  }
+  const computeExpiryDate = (purchasedAt, billingCycle, planValue) => {
+    const planKey = normalizePlan(planValue)
+    if (planKey === 'free') return null
+    if (!purchasedAt) return null
+    const start = new Date(purchasedAt)
+    if (Number.isNaN(start.getTime())) return null
+    const cycle = normalizeBilling(billingCycle)
+    return cycle === 'yearly' ? addYears(start, 1) : addMonths(start, 1)
+  }
   const [selectedOrg, setSelectedOrg] = useState(() => {
     try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null }
   })
@@ -56,9 +83,73 @@ export default function Subscription() {
   const [modalPlan, setModalPlan] = useState(null)
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('card')
   const [upiCopied, setUpiCopied] = useState(false)
+  const [showSwitchModal, setShowSwitchModal] = useState(false)
+  const [showCancelModal, setShowCancelModal] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [payments, setPayments] = useState([])
   const [paymentsLoading, setPaymentsLoading] = useState(false)
+  const invoiceListScrollable = payments.length > 3
+  const currentPlanKey = normalizePlan(currentPlan)
+  const isFreePlan = currentPlanKey === 'free'
+  const activeEntitlements = useMemo(() => {
+    const now = Date.now()
+    const map = new Map()
+    payments.forEach((payment) => {
+      const planKey = normalizePlan(payment?.planName)
+      if (planKey === 'free') return
+      const billingCycle = normalizeBilling(payment?.billingCycle)
+      const expiresAt = computeExpiryDate(payment?.createdAt, billingCycle, planKey)
+      if (!expiresAt || expiresAt.getTime() <= now) return
+      const existing = map.get(planKey)
+      if (!existing || expiresAt.getTime() > existing.expiresAt.getTime()) {
+        map.set(planKey, {
+          planKey,
+          billingCycle,
+          purchasedAt: payment?.createdAt,
+          expiresAt
+        })
+      }
+    })
+    return map
+  }, [payments])
+  const professionalEntitlement = activeEntitlements.get('professional')
+  const businessEntitlement = activeEntitlements.get('business')
+  const enterpriseEntitlement = activeEntitlements.get('enterprise')
+  const purchasedPlans = useMemo(() => {
+    const map = new Map()
+    payments.forEach((payment) => {
+      const planKey = normalizePlan(payment?.planName)
+      if (planKey === 'free') return
+      const purchasedAt = payment?.createdAt
+      if (!purchasedAt) return
+      const existing = map.get(planKey)
+      const existingTime = existing?.purchasedAt ? new Date(existing.purchasedAt).getTime() : 0
+      const nextTime = new Date(purchasedAt).getTime()
+      if (!existing || nextTime >= existingTime) {
+        const billingCycle = normalizeBilling(payment?.billingCycle)
+        const expiresAt = computeExpiryDate(purchasedAt, billingCycle, planKey)
+        map.set(planKey, {
+          planKey,
+          planLabel: formatPlanLabel(planKey),
+          billingCycle,
+          purchasedAt,
+          expiresAt
+        })
+      }
+    })
+    return Array.from(map.values())
+  }, [payments])
+  const switchOptions = useMemo(() => ([
+    {
+      planKey: 'free',
+      planLabel: 'Free',
+      billingCycle: 'monthly',
+      purchasedAt: null,
+      expiresAt: null,
+      isFree: true
+    },
+    ...purchasedPlans
+  ]), [purchasedPlans])
   const {
     notifications,
     unreadCount,
@@ -118,6 +209,12 @@ export default function Subscription() {
     const prefix = currency || 'USD'
     return `${prefix} ${amount.toFixed(2)}`
   }
+  const formatDateValue = (value) => {
+    if (!value) return 'N/A'
+    const date = value instanceof Date ? value : new Date(value)
+    if (Number.isNaN(date.getTime())) return 'N/A'
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+  }
 
   const applyCurrentSubscription = (planValue, billingValue) => {
     const normalizedPlan = normalizePlan(planValue)
@@ -128,12 +225,18 @@ export default function Subscription() {
     setPeriod(normalizedBilling)
   }
 
-  const updateCurrentSubscription = async (planValue, billingValue) => {
+  const updateCurrentSubscription = async (planValue, billingValue, purchasedAtOverride) => {
     const normalizedPlan = normalizePlan(planValue)
     const normalizedBilling = normalizeBilling(billingValue)
     const payload = {
       planName: formatPlanLabel(normalizedPlan),
       billingCycle: normalizedBilling
+    }
+    if (purchasedAtOverride) {
+      const parsed = new Date(purchasedAtOverride)
+      if (!Number.isNaN(parsed.getTime())) {
+        payload.purchasedAt = parsed.toISOString()
+      }
     }
 
     try {
@@ -277,13 +380,29 @@ export default function Subscription() {
   }
 
   async function handleStartFree() {
-    await updateCurrentSubscription('free', period)
-    navigate('/free-plan', { state: { plan: 'free' } })
+    await updateCurrentSubscription('free', currentBillingCycle || period)
+  }
+
+  async function handleSwitchToPlan(planKey, entitlement) {
+    const normalizedPlan = normalizePlan(planKey)
+    if (normalizedPlan === 'free') {
+      await updateCurrentSubscription('free', currentBillingCycle || period)
+      return
+    }
+    const billingCycle = entitlement?.billingCycle || currentBillingCycle || period
+    const purchasedAt = entitlement?.purchasedAt
+    await updateCurrentSubscription(normalizedPlan, billingCycle, purchasedAt)
+    setShowSwitchModal(false)
   }
 
   async function handleCancelSubscription() {
     const nextBilling = currentBillingCycle || 'monthly'
     await updateCurrentSubscription('free', nextBilling)
+  }
+
+  async function confirmCancelSubscription() {
+    await handleCancelSubscription()
+    setShowCancelModal(false)
   }
 
   async function handleDownloadInvoice(paymentId) {
@@ -633,6 +752,87 @@ return (
             </div>
           )}
 
+          {showSwitchModal && (
+            <div className="upgrade-modal-overlay" onClick={() => setShowSwitchModal(false)}>
+              <div className="upgrade-modal switch-modal" onClick={(e) => e.stopPropagation()}>
+                <button className="modal-close btn btn-link" onClick={() => setShowSwitchModal(false)} aria-label="Close">
+                  <FiX size={18} />
+                </button>
+                <div className="switch-modal-header">
+                  <h3>Switch Plan</h3>
+                  <div className="switch-modal-subtitle">Choose from your purchased plans or move to Free.</div>
+                </div>
+
+                {switchOptions.length === 1 ? (
+                  <div className="text-muted">No purchased plans yet.</div>
+                ) : (
+                  <div className="switch-plan-list">
+                    {switchOptions.map((plan) => {
+                      const isActive = plan.isFree || (plan.expiresAt && plan.expiresAt.getTime() > Date.now())
+                      const isCurrent = currentPlanKey === plan.planKey
+                      return (
+                        <div className={`switch-plan-row ${isActive ? 'active' : 'expired'}`} key={plan.planKey}>
+                          <div className="switch-plan-main">
+                            <div className="switch-plan-title">{plan.planLabel}</div>
+                            {plan.isFree ? (
+                              <>
+                                <div className="switch-plan-meta">Forever free â€¢ No payment required</div>
+                                <div className="switch-plan-expiry">No expiry</div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="switch-plan-meta">
+                                  {plan.billingCycle === 'yearly' ? 'Yearly' : 'Monthly'} â€¢ Purchased {formatDateValue(plan.purchasedAt)}
+                                </div>
+                                <div className="switch-plan-expiry">
+                                  Expires {formatDateValue(plan.expiresAt)}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                          <div className="switch-plan-actions">
+                            <span className={`switch-plan-status ${isActive ? 'active' : 'expired'}`}>
+                              {plan.isFree ? 'Free' : (isActive ? 'Active' : 'Expired')}
+                            </span>
+                            <button
+                              className={`btn switch-plan-cta ${isCurrent ? 'switch-plan-current' : 'switch-plan-action'}`}
+                              onClick={() => handleSwitchToPlan(plan.planKey, plan)}
+                              disabled={!isActive || isCurrent}
+                            >
+                              {isCurrent ? 'Current' : 'Switch'}
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                <div className="modal-actions">
+                  <button className="btn btn-outline-secondary" onClick={() => setShowSwitchModal(false)}>Close</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showCancelModal && (
+            <div className="upgrade-modal-overlay" onClick={() => setShowCancelModal(false)}>
+              <div className="upgrade-modal cancel-modal" onClick={(e) => e.stopPropagation()}>
+                <button className="modal-close btn btn-link" onClick={() => setShowCancelModal(false)} aria-label="Close">
+                  <FiX size={18} />
+                </button>
+                <h3>Cancel Subscription?</h3>
+                <div className="text-muted mb-3">
+                  You will be moved to the Free plan immediately. You can switch back to a paid plan anytime.
+                </div>
+                <div className="modal-actions">
+                  <button className="btn btn-outline-secondary" onClick={() => setShowCancelModal(false)}>Keep Plan</button>
+                  <button className="btn btn-danger" onClick={confirmCancelSubscription}>Yes, Cancel</button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <section className="plans-row">
             <div
               className={`plan card p-4 ${selectedPlan === 'free' ? 'popular highlighted' : ''}`}
@@ -649,7 +849,15 @@ return (
               <h4 className="plan-title">Free</h4>
               <p className="text-muted">Perfect for small teams getting started</p>
               <div className="plan-price mt-3">Free <div className="small-muted">Forever free</div></div>
-                <div className="mt-3 text-center"><button className="plan-cta btn btn-outline-secondary" onClick={handleStartFree}>Start Free <FiArrowRight className="ms-2"/></button></div>
+              <div className="mt-3 text-center">
+                <button
+                  className="plan-cta btn btn-outline-secondary"
+                  onClick={handleStartFree}
+                  disabled={isFreePlan}
+                >
+                  {isFreePlan ? 'Current Plan' : 'Switch to Free'} <FiArrowRight className="ms-2"/>
+                </button>
+              </div>
               <hr className="plan-divider" />
 
               <ul className="plan-features mt-3">
@@ -683,7 +891,23 @@ return (
               <h4 className="plan-title">Professional</h4>
               <p className="text-muted">For growing teams that need more power</p>
               <div className="plan-price mt-3">{period === 'monthly' ? '$12' : '$120'} <div className="small-muted">per user/{period === 'monthly' ? 'month' : 'year'}</div></div>
-              <div className="mt-3 text-center"><button className="plan-cta btn btn-primary" onClick={() => { setModalPlan('professional'); setShowUpgradeModal(true); }}>Upgrade <FiArrowRight className="ms-2"/></button></div>
+              {currentPlan === 'professional' ? (
+                <div className="mt-3 text-center">
+                  <button className="plan-cta btn btn-outline-secondary" disabled>Current Plan</button>
+                </div>
+              ) : professionalEntitlement ? (
+                <div className="mt-3 text-center">
+                  <button className="plan-cta btn btn-primary" onClick={() => handleSwitchToPlan('professional', professionalEntitlement)}>
+                    Switch Plan <FiArrowRight className="ms-2"/>
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-3 text-center">
+                  <button className="plan-cta btn btn-primary" onClick={() => { setModalPlan('professional'); setShowUpgradeModal(true); }}>
+                    Upgrade <FiArrowRight className="ms-2"/>
+                  </button>
+                </div>
+              )}
               <hr className="plan-divider" />
 
               <ul className="plan-features mt-3">
@@ -717,7 +941,23 @@ return (
               <h4 className="plan-title">Business</h4>
               <p className="text-muted">Advanced features for large teams</p>
               <div className="plan-price mt-3">$25 <div className="small-muted">per user/month</div></div>
-              <div className="mt-3 text-center"><button className="plan-cta btn btn-primary" onClick={() => { setModalPlan('business'); setShowUpgradeModal(true); }}>Upgrade <FiArrowRight className="ms-2"/></button></div>
+              {currentPlan === 'business' ? (
+                <div className="mt-3 text-center">
+                  <button className="plan-cta btn btn-outline-secondary" disabled>Current Plan</button>
+                </div>
+              ) : businessEntitlement ? (
+                <div className="mt-3 text-center">
+                  <button className="plan-cta btn btn-primary" onClick={() => handleSwitchToPlan('business', businessEntitlement)}>
+                    Switch Plan <FiArrowRight className="ms-2"/>
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-3 text-center">
+                  <button className="plan-cta btn btn-primary" onClick={() => { setModalPlan('business'); setShowUpgradeModal(true); }}>
+                    Upgrade <FiArrowRight className="ms-2"/>
+                  </button>
+                </div>
+              )}
               <hr className="plan-divider" />
 
               <ul className="plan-features mt-3">
@@ -755,7 +995,23 @@ return (
               <h4 className="plan-title">Enterprise</h4>
               <p className="text-muted">Custom solutions for enterprises</p>
               <div className="plan-price mt-3">Custom <div className="small-muted">Contact sales</div></div>
-              <div className="mt-3 text-center"><button className="plan-cta btn btn-outline-primary" onClick={() => window.location.href = '/contact-sales'}>Contact Sales <FiArrowRight className="ms-2"/></button></div>
+              {currentPlan === 'enterprise' ? (
+                <div className="mt-3 text-center">
+                  <button className="plan-cta btn btn-outline-secondary" disabled>Current Plan</button>
+                </div>
+              ) : enterpriseEntitlement ? (
+                <div className="mt-3 text-center">
+                  <button className="plan-cta btn btn-primary" onClick={() => handleSwitchToPlan('enterprise', enterpriseEntitlement)}>
+                    Switch Plan <FiArrowRight className="ms-2"/>
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-3 text-center">
+                  <button className="plan-cta btn btn-outline-primary" onClick={() => window.location.href = '/contact-sales'}>
+                    Contact Sales <FiArrowRight className="ms-2"/>
+                  </button>
+                </div>
+              )}
               <hr className="plan-divider" />
 
               <ul className="plan-features mt-3">
@@ -831,7 +1087,10 @@ return (
               <div className="sub-actions d-flex gap-2">
                 <button className="btn btn-outline-secondary" onClick={() => navigate('/update-payment')}>Update Payment Method</button>
                 <button className="btn btn-outline-secondary" onClick={() => navigate('/teams')}>Manage Team Members</button>
-                <button className="btn btn-danger" onClick={handleCancelSubscription}>Cancel Subscription</button>
+                <button className="btn btn-outline-primary" onClick={() => setShowSwitchModal(true)}>Switch Plan</button>
+                {!isFreePlan && (
+                  <button className="btn btn-danger" onClick={() => setShowCancelModal(true)}>Cancel Subscription</button>
+                )}
               </div>
             </div>
           </section>
@@ -841,7 +1100,7 @@ return (
               <h3>Billing History</h3>
               <div className="text-muted mb-3">Your recent invoices and payments</div>
 
-              <div className="invoice-list">
+              <div className={`invoice-list ${invoiceListScrollable ? 'scrollable' : ''}`}>
                 {paymentsLoading && (
                   <div className="text-muted">Loading billing history...</div>
                 )}

@@ -1,6 +1,7 @@
 package com.team1.backend.model;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
@@ -20,6 +21,17 @@ public class Issue {
     private String summary;
 
     private String description;
+
+    // Board fields
+    private String issueKey;
+    private String status; // todo, progress, review, done
+    private String priority; // low, medium, high, critical
+    private Integer points;
+    private String assigneeName;
+    private String assigneeEmail;
+    private String assignDate;
+    private String deadlineDate;
+    private List<String> labels;
 
     // attachments stored as JSON string (array of objects with name,type,url,publicId,resourceType,etc.)
     private String attachmentsJson;
@@ -55,6 +67,33 @@ public class Issue {
 
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
+
+    public String getIssueKey() { return issueKey; }
+    public void setIssueKey(String issueKey) { this.issueKey = issueKey; }
+
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+
+    public String getPriority() { return priority; }
+    public void setPriority(String priority) { this.priority = priority; }
+
+    public Integer getPoints() { return points; }
+    public void setPoints(Integer points) { this.points = points; }
+
+    public String getAssigneeName() { return assigneeName; }
+    public void setAssigneeName(String assigneeName) { this.assigneeName = assigneeName; }
+
+    public String getAssigneeEmail() { return assigneeEmail; }
+    public void setAssigneeEmail(String assigneeEmail) { this.assigneeEmail = assigneeEmail; }
+
+    public String getAssignDate() { return assignDate; }
+    public void setAssignDate(String assignDate) { this.assignDate = assignDate; }
+
+    public String getDeadlineDate() { return deadlineDate; }
+    public void setDeadlineDate(String deadlineDate) { this.deadlineDate = deadlineDate; }
+
+    public List<String> getLabels() { return labels; }
+    public void setLabels(List<String> labels) { this.labels = labels; }
 
     public String getAttachmentsJson() { return attachmentsJson; }
     public void setAttachmentsJson(String attachmentsJson) { this.attachmentsJson = attachmentsJson; }

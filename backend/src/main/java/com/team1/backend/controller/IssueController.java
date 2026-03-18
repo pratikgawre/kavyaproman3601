@@ -17,8 +17,8 @@ public class IssueController {
     public IssueController(IssueService service){ this.service = service; }
 
     @GetMapping
-    public List<Issue> list(@RequestHeader("X-USER-ID") String userId){
-        return service.listMine(userId);
+    public List<Issue> list(@RequestParam(required = false) String project){
+        return service.listAll(project);
     }
 
     @GetMapping("/{id}")

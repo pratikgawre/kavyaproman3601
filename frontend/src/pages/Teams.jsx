@@ -20,21 +20,44 @@ const getAvatarInitials = (name, email) => {
   if (parts.length === 1) return parts[0].charAt(0).toUpperCase()
   return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase()
 }
+const normalizeRole = (role) => (role || '').trim().toLowerCase()
+const getRoleLabel = (role) => {
+  const normalized = normalizeRole(role)
+  if (normalized === 'admin' || normalized === 'project manager') return 'Project Manager'
+  return role || ''
+}
+const isProjectManagerRole = (role) => {
+  const normalized = normalizeRole(role)
+  return normalized === 'admin' || normalized === 'project manager'
+}
+const isRemovableRole = (role) => {
+  const normalized = normalizeRole(role)
+  return normalized === 'developer' || normalized === 'tester'
+}
+
+const DEFAULT_TEAM_AVATAR = 'https://randomuser.me/api/portraits/lego/1.jpg'
+const getTeamAvatar = (image) => {
+  const trimmed = (image || '').trim()
+  return trimmed ? trimmed : DEFAULT_TEAM_AVATAR
+}
 
 const FALLBACK_MEMBERS = [
-  { id: 1, name: 'Sarah Johnson', email: 'sarah.johnson@kavyapro.com', role: 'Admin', projects: 3, activeIssues: 8, image: 'https://randomuser.me/api/portraits/women/44.jpg' },
-  { id: 2, name: 'Michael Chen', email: 'michael.chen@kavyapro.com', role: 'Developer', projects: 2, activeIssues: 6, image: 'https://randomuser.me/api/portraits/men/32.jpg' },
-  { id: 3, name: 'Emily Rodriguez', email: 'emily.rodriguez@kavyapro.com', role: 'Tester', projects: 2, activeIssues: 4, image: 'https://randomuser.me/api/portraits/women/65.jpg' }
+  { id: 1, name: 'Sarah Johnson', email: 'sarah.johnson@kavyapro.com', role: 'Admin', projects: 3, activeIssues: 8, image: '' },
+  { id: 2, name: 'Michael Chen', email: 'michael.chen@kavyapro.com', role: 'Developer', projects: 2, activeIssues: 6, image: '' },
+  { id: 3, name: 'Emily Rodriguez', email: 'emily.rodriguez@kavyapro.com', role: 'Tester', projects: 2, activeIssues: 4, image: '' }
 ];
 
-function calculateStats(data, totalIssuesCount = 0) {
-  const adminCount = data.filter((m) => m.role === 'Admin').length;
+function calculateStats(data, totalIssuesCount = 0, activeProjectCount = 0) {
+  const adminCount = data.filter((m) => {
+    const role = normalizeRole(m.role)
+    return role === 'admin' || role === 'project manager'
+  }).length;
   const totalIssues = totalIssuesCount > 0 ? totalIssuesCount : data.reduce((sum, m) => sum + (m.activeIssues || 0), 0);
   const avgWorkload = data.length > 0 ? Math.round(totalIssues / data.length) : 0;
 
   return {
     totalMembers: data.length,
-    activeProjects: 3,
+    activeProjects: activeProjectCount,
     avgWorkload,
     admins: adminCount,
     totalIssues: totalIssues
@@ -44,8 +67,11 @@ function calculateStats(data, totalIssuesCount = 0) {
 export default function Teams() {
   const navigate = useNavigate()
   const { user, clearUser } = useAuth()
-  const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
-  const avatarInitials = getAvatarInitials(user?.name, user?.email)
+  const [profileUser, setProfileUser] = useState(null)
+  const [profileLoading, setProfileLoading] = useState(false)
+  const currentUser = profileUser || user || {}
+  const displayName = currentUser?.name || (currentUser?.email ? currentUser.email.split('@')[0] : 'Guest')
+  const avatarInitials = getAvatarInitials(currentUser?.name, currentUser?.email)
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [selectedOrg, setSelectedOrg] = useState(() => { try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null } })
@@ -60,11 +86,17 @@ export default function Teams() {
   const [issues, setIssues] = useState([]);
   const [stats, setStats] = useState(calculateStats(FALLBACK_MEMBERS));
   const [usingFallbackData, setUsingFallbackData] = useState(true);
+  const [projects, setProjects] = useState([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+  const [projectsError, setProjectsError] = useState('');
+  const [selectedProjectId, setSelectedProjectId] = useState('all');
 
   const [activeTab, setActiveTab] = useState("Members");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedRole, setSelectedRole] = useState("All Roles");
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showRemoveModal, setShowRemoveModal] = useState(false);
+  const [memberToRemove, setMemberToRemove] = useState(null);
   const [showMemberModal, setShowMemberModal] = useState(false);
   const [selectedMember, setSelectedMember] = useState(null);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -83,14 +115,19 @@ export default function Teams() {
   } = useIssueNotifications({ limit: 6 })
   const [editingId, setEditingId] = useState(null);
   const [editingMember, setEditingMember] = useState(null);
+  const [nameSearchResults, setNameSearchResults] = useState([]);
+  const [nameSearchLoading, setNameSearchLoading] = useState(false);
+  const [showNameSuggestions, setShowNameSuggestions] = useState(false);
   const notificationRef = useRef(null);
   const memberListRef = useRef(null);
   const topSearchInputRef = useRef(null);
+  const nameSuggestRef = useRef(null);
 
   const [inviteFormData, setInviteFormData] = useState({
     name: '',
     email: '',
-    role: 'Developer'
+    role: 'Developer',
+    projectId: ''
   });
 
   const [emailVerificationStatus, setEmailVerificationStatus] = useState(null); // null, 'verifying', 'verified', 'not-found', 'error'
@@ -99,6 +136,65 @@ export default function Teams() {
   const API_BASE_URL = (import.meta?.env?.VITE_API_BASE || 'http://localhost:8080');
   const MEMBERS_API_URL = `${API_BASE_URL}/api/members`;
   const ISSUES_API_URL = `${API_BASE_URL}/api/issues`;
+  const PROJECTS_API_URL = `${API_BASE_URL}/api/projects`;
+  const userEmail = (currentUser?.email || '').trim().toLowerCase();
+  const managerEmail = (currentUser?.email || '').trim().toLowerCase();
+  const isProjectManager = isProjectManagerRole(currentUser?.role);
+  const visibleTab = isProjectManager ? activeTab : "Members";
+
+  useEffect(() => {
+    if (!user?.id) return
+    let isMounted = true
+    setProfileLoading(true)
+    fetch(`${API_BASE_URL}/api/user`, {
+      headers: { 'X-USER-ID': String(user.id) }
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!isMounted || !data) return
+        setProfileUser(data)
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (isMounted) setProfileLoading(false)
+      })
+    return () => { isMounted = false }
+  }, [API_BASE_URL, user?.id])
+
+  const scopeMembersForUser = (list, allowedEmails = null) => {
+    if (!isProjectManager) {
+      const normalizedSet = allowedEmails && allowedEmails.size ? allowedEmails : null;
+      if (!normalizedSet) {
+        if (!userEmail) return [];
+        return list.filter((member) => {
+          const memberEmail = (member?.email || '').trim().toLowerCase();
+          return memberEmail && memberEmail === userEmail;
+        });
+      }
+      return list.filter((member) => {
+        const memberEmail = (member?.email || '').trim().toLowerCase();
+        return memberEmail && normalizedSet.has(memberEmail);
+      });
+    }
+    return list.filter((member) => {
+      const memberEmail = (member?.email || '').trim().toLowerCase();
+      if (userEmail && memberEmail === userEmail) return true;
+      const managerEmail = (member?.managerEmail || '').trim().toLowerCase();
+      if (!managerEmail) return false;
+      return managerEmail === userEmail;
+    });
+  };
+
+  const canRemoveMember = (member) => {
+    if (!isProjectManager) return false;
+    const normalizedRole = normalizeRole(member?.role);
+    if (normalizedRole === 'admin' || normalizedRole === 'project manager') return false;
+    const memberEmail = (member?.email || '').trim().toLowerCase();
+    if (userEmail && memberEmail === userEmail) return false;
+    if (isProjectFilterActive) return true;
+    if (!isRemovableRole(member?.role)) return false;
+    return true;
+  };
   // Fetch team members and stats on component mount
   useEffect(() => {
     fetchTeamMembers();
@@ -110,14 +206,59 @@ export default function Teams() {
 
   // sync sidebar state from global controller
   useEffect(() => {
-    console.log('Members:', members.length, 'Issues:', issues.length);
-    setStats(calculateStats(members, issues.length));
-  }, [members, issues]);
+    fetchProjects();
+  }, [managerEmail, userEmail, isProjectManager]);
+
+  useEffect(() => {
+    setEditingId(null);
+    setEditingMember(null);
+  }, [selectedProjectId]);
+
+  useEffect(() => {
+    if (!showInviteModal) return;
+    const query = (inviteFormData.name || '').trim();
+    if (query.length < 2) {
+      setNameSearchResults([]);
+      setShowNameSuggestions(false);
+      return;
+    }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(async () => {
+      try {
+        setNameSearchLoading(true);
+        const response = await fetch(`${API_BASE_URL}/api/users/search?query=${encodeURIComponent(query)}&limit=6`, {
+          signal: controller.signal
+        });
+        if (!response.ok) {
+          setNameSearchResults([]);
+          setShowNameSuggestions(true);
+          return;
+        }
+        const data = await response.json();
+        const list = Array.isArray(data) ? data : [];
+        setNameSearchResults(list);
+        setShowNameSuggestions(true);
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        setNameSearchResults([]);
+        setShowNameSuggestions(true);
+      } finally {
+        setNameSearchLoading(false);
+      }
+    }, 250);
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [inviteFormData.name, showInviteModal, API_BASE_URL]);
 
   useEffect(() => {
     const handleOutsideClick = (e) => {
       if (notificationRef.current && !notificationRef.current.contains(e.target)) {
         setShowNotifications(false);
+      }
+      if (nameSuggestRef.current && !nameSuggestRef.current.contains(e.target)) {
+        setShowNameSuggestions(false);
       }
     };
 
@@ -148,10 +289,47 @@ export default function Teams() {
       setMembers(Array.isArray(data) ? data : []);
       setUsingFallbackData(false);
     } catch (err) {
-      setMembers(FALLBACK_MEMBERS);
+      const fallbackMembers = FALLBACK_MEMBERS.map((member) => ({
+        ...member,
+        managerEmail: currentUser?.email || null
+      }));
+      setMembers(fallbackMembers);
       setUsingFallbackData(true);
     } finally {
       clearTimeout(timeoutId);
+    }
+  };
+
+  const fetchProjects = async () => {
+    const queryParams = new URLSearchParams();
+    if (isProjectManager && managerEmail) {
+      queryParams.set('managerEmail', managerEmail);
+    } else if (!isProjectManager && userEmail) {
+      queryParams.set('memberEmail', userEmail);
+    }
+    const query = queryParams.toString();
+    if (!query) {
+      setProjects([]);
+      return;
+    }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    setProjectsLoading(true);
+    setProjectsError('');
+    try {
+      const response = await fetch(`${PROJECTS_API_URL}?${query}`, { signal: controller.signal });
+      if (!response.ok) {
+        throw new Error('Failed to fetch projects');
+      }
+      const data = await response.json();
+      const list = Array.isArray(data) ? data : [];
+      setProjects(list);
+    } catch (err) {
+      setProjects([]);
+      setProjectsError(err.message || 'Unable to load projects');
+    } finally {
+      clearTimeout(timeoutId);
+      setProjectsLoading(false);
     }
   };
 
@@ -172,8 +350,11 @@ export default function Teams() {
         throw new Error('Failed to fetch issues');
       }
       const data = await response.json();
-      console.log('Fetched issues data:', data, 'Length:', Array.isArray(data) ? data.length : data?.data?.length);
-      const issuesArray = Array.isArray(data) ? data : (data?.data || data?.issues || []);
+      const issuesArray = Array.isArray(data)
+        ? data
+        : (Array.isArray(data?.data)
+          ? data.data
+          : (Array.isArray(data?.issues) ? data.issues : []));
       setIssues(issuesArray);
     } catch (err) {
       console.error('Error fetching issues:', err);
@@ -197,26 +378,156 @@ export default function Teams() {
   };
 
   const handleEdit = (member) => {
+    if (!isProjectManager) return;
     setEditingId(member.id);
     setEditingMember({ ...member });
   };
 
+  const updateProjectTeamMembers = async (nextTeamMembers, projectOverride = null) => {
+    const projectTarget = projectOverride || selectedProject;
+    if (!projectTarget || !projectTarget.id) {
+      throw new Error('Project not found.');
+    }
+    const payload = {
+      ...projectTarget,
+      teamMembers: nextTeamMembers
+    };
+    const response = await fetch(`${PROJECTS_API_URL}/${projectTarget.id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || 'Failed to update project team');
+    }
+
+    const updatedProject = await response.json();
+    setProjects((current) => current.map((project) => (
+      project.id === updatedProject.id ? updatedProject : project
+    )));
+    return updatedProject;
+  };
+
   const handleSaveEdit = async (memberId) => {
+    if (!editingMember) return;
+    if (isProjectFilterActive) {
+      try {
+        const normalizedEmail = (editingMember.email || '').trim().toLowerCase();
+        if (!normalizedEmail) {
+          alert('Email is required');
+          return;
+        }
+        const updatedEntry = {
+          memberId: editingMember.memberId || editingMember.id || null,
+          name: editingMember.name || '',
+          email: normalizedEmail,
+          role: editingMember.role || 'Developer',
+          status: editingMember.status || 'Invited'
+        };
+        const currentTeam = Array.isArray(selectedProject?.teamMembers) ? selectedProject.teamMembers : [];
+        let found = false;
+        const nextTeam = currentTeam.map((member) => {
+          const memberEmail = (member?.email || '').trim().toLowerCase();
+          const memberIdValue = member?.memberId || member?.id || null;
+          const matchesEmail = normalizedEmail && memberEmail === normalizedEmail;
+          const matchesId = updatedEntry.memberId && memberIdValue && String(memberIdValue) === String(updatedEntry.memberId);
+          if (matchesEmail || matchesId) {
+            found = true;
+            return { ...member, ...updatedEntry };
+          }
+          return member;
+        });
+        if (!found) {
+          nextTeam.push(updatedEntry);
+        }
+
+        await updateProjectTeamMembers(nextTeam);
+        setEditingId(null);
+        setEditingMember(null);
+        alert('Member updated successfully');
+      } catch (err) {
+        alert('Error updating project member: ' + err.message);
+      }
+      return;
+    }
+
     try {
-      const response = await fetch(`${MEMBERS_API_URL}/${memberId}`, {
+      const normalizedEmail = (editingMember.email || '').trim().toLowerCase();
+      if (!normalizedEmail) {
+        alert('Email is required');
+        return;
+      }
+      const existingMember = members.find((member) => {
+        const memberEmail = (member?.email || '').trim().toLowerCase();
+        return memberEmail && memberEmail === normalizedEmail;
+      });
+      const memberRecordId = editingMember.memberRecordId || existingMember?.id || null;
+      const payload = {
+        name: editingMember.name || '',
+        email: normalizedEmail,
+        role: editingMember.role || 'Developer',
+        managerEmail: (editingMember.managerEmail || currentUser?.email || '').trim() || undefined,
+        image: editingMember.image || editingMember.avatar || undefined
+      };
+
+      const upsertMember = async () => {
+        const response = await fetch(MEMBERS_API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || 'Failed to update member');
+        }
+        const createdMember = await response.json();
+        setMembers((prev) => {
+          const list = Array.isArray(prev) ? prev : [];
+          const existsIndex = list.findIndex((member) => (member?.email || '').trim().toLowerCase() === normalizedEmail);
+          if (existsIndex === -1) return [...list, createdMember];
+          const next = [...list];
+          next[existsIndex] = createdMember;
+          return next;
+        });
+      };
+
+      if (!memberRecordId) {
+        await upsertMember();
+        setEditingId(null);
+        setEditingMember(null);
+        alert('Member updated successfully');
+        return;
+      }
+
+      const response = await fetch(`${MEMBERS_API_URL}/${memberRecordId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(editingMember)
+        body: JSON.stringify(payload)
       });
 
+      if (response.status === 404) {
+        await upsertMember();
+        setEditingId(null);
+        setEditingMember(null);
+        alert('Member updated successfully');
+        return;
+      }
+
       if (!response.ok) {
-        throw new Error('Failed to update member');
+        const errorText = await response.text();
+        throw new Error(errorText || 'Failed to update member');
       }
 
       const updatedMember = await response.json();
-      setMembers(members.map(m => m.id === memberId ? updatedMember : m));
+      setMembers((prev) => prev.map(m => m.id === memberRecordId ? updatedMember : m));
       setEditingId(null);
       setEditingMember(null);
       alert('Member updated successfully');
@@ -238,9 +549,11 @@ export default function Teams() {
     setEditingMember(null);
   };
 
-  const handleCardClick = (memberId) => {
-    const member = members.find(m => m.id === memberId);
-    if (!member || editingId === memberId) {
+  const handleCardClick = (member) => {
+    if (!isProjectManager) {
+      return;
+    }
+    if (!member || editingId === member?.id) {
       return;
     }
     setSelectedMember(member);
@@ -285,9 +598,10 @@ export default function Teams() {
         console.log('User found:', userData);
         setVerifiedEmailUser(userData);
         setEmailVerificationStatus('verified');
-        // Auto-fill name if not already entered
-        if (!inviteFormData.name && userData.name) {
-          setInviteFormData({ ...inviteFormData, name: userData.name });
+        // Always sync the name from DB once verified
+        const dbName = (userData?.name || '').trim();
+        if (dbName) {
+          setInviteFormData((prev) => ({ ...prev, name: dbName, email }));
         }
         alert(`Email verified! User: ${userData.name || userData.email}`);
       } else if (response.status === 404) {
@@ -323,16 +637,54 @@ export default function Teams() {
     }
 
     try {
+      const managerEmail = (currentUser?.email || '').trim();
+      if (!managerEmail) {
+        alert('Unable to identify your account. Please log out and log in again.');
+        return;
+      }
+      const normalizedEmail = inviteFormData.email.trim().toLowerCase();
+      const selectedProjectForInvite = inviteFormData.projectId
+        ? projects.find((project) => {
+          const idValue = project?.id ? String(project.id) : '';
+          const matchId = idValue && idValue === String(inviteFormData.projectId);
+          const matchKey = getProjectId(project) === inviteFormData.projectId;
+          return matchId || matchKey;
+        })
+        : null;
+      if (selectedProjectForInvite && normalizedEmail) {
+        const currentTeam = Array.isArray(selectedProjectForInvite.teamMembers)
+          ? selectedProjectForInvite.teamMembers
+          : [];
+        const alreadyInTeam = currentTeam.some((member) => {
+          const memberEmail = (member?.email || '').trim().toLowerCase();
+          return memberEmail && memberEmail === normalizedEmail;
+        });
+        if (alreadyInTeam) {
+          alert('This member already exists in the selected project team.');
+          return;
+        }
+      }
+      const payload = {
+        ...inviteFormData,
+        projectId: undefined,
+        managerEmail
+      };
       const response = await fetch(MEMBERS_API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(inviteFormData)
+        body: JSON.stringify(payload)
       });
 
+      if (response.status === 409) {
+        const conflictMessage = await response.text();
+        alert(conflictMessage || 'Member already exists in a team.');
+        return;
+      }
       if (!response.ok) {
-        throw new Error('Failed to invite member');
+        const errorText = await response.text();
+        throw new Error(errorText || 'Failed to invite member');
       }
 
       const newMember = await response.json();
@@ -345,19 +697,49 @@ export default function Teams() {
       }
       
       setMembers([...members, newMember]);
+
+      if (selectedProjectForInvite) {
+        try {
+          const currentTeam = Array.isArray(selectedProjectForInvite.teamMembers)
+            ? selectedProjectForInvite.teamMembers
+            : [];
+          const existingIndex = currentTeam.findIndex((member) => {
+            const memberEmail = (member?.email || '').trim().toLowerCase();
+            return memberEmail && memberEmail === normalizedEmail;
+          });
+          const newTeamEntry = {
+            memberId: newMember?.id || newMember?.memberId || null,
+            name: inviteFormData.name,
+            email: normalizedEmail,
+            role: inviteFormData.role || 'Developer',
+            status: 'Invited'
+          };
+          const nextTeam = existingIndex >= 0
+            ? currentTeam.map((member, index) => index === existingIndex ? { ...member, ...newTeamEntry } : member)
+            : [...currentTeam, newTeamEntry];
+          await updateProjectTeamMembers(nextTeam, selectedProjectForInvite);
+        } catch (err) {
+          console.warn('Failed to attach member to project:', err);
+          alert('Member invited, but adding to the project failed.');
+        }
+      }
+
       setShowInviteModal(false);
-      setInviteFormData({ name: '', email: '', role: 'Developer' });
+      setInviteFormData({ name: '', email: '', role: 'Developer', projectId: '' });
       setEmailVerificationStatus(null);
       setVerifiedEmailUser(null);
+      setNameSearchResults([]);
+      setShowNameSuggestions(false);
       alert('Member invited successfully and email sent');
     } catch (err) {
       if (usingFallbackData) {
         const localMember = {
           id: Date.now(),
           ...inviteFormData,
+          managerEmail: currentUser?.email || null,
           projects: 0,
           activeIssues: 0,
-          image: 'https://randomuser.me/api/portraits/lego/2.jpg'
+          image: ''
         };
         setMembers([...members, localMember]);
         setShowInviteModal(false);
@@ -397,8 +779,100 @@ export default function Teams() {
     return await response.json();
   };
 
+  function getProjectMatchKeys(project) {
+    if (!project) return new Set();
+    const keys = [
+      project.projectKey,
+      project.id,
+      project.name
+    ]
+      .map((value) => (value || '').toString().trim().toLowerCase())
+      .filter(Boolean);
+    return new Set(keys);
+  }
+
+  function getActiveIssuesForMember(memberEmail, projectKeys = null) {
+    if (!memberEmail) return 0;
+    const normalizedEmail = memberEmail.toLowerCase();
+    const issueList = Array.isArray(issues) ? issues : [];
+    return issueList.filter(issue => {
+      const assigneeEmail = (issue?.assigneeEmail || issue?.assignee || issue?.creatorEmail || '').toLowerCase();
+      if (!assigneeEmail || assigneeEmail !== normalizedEmail) {
+        return false;
+      }
+      if (projectKeys && projectKeys.size > 0) {
+        const issueProject = (issue?.project || '').toString().trim().toLowerCase();
+        if (!projectKeys.has(issueProject)) return false;
+      }
+      return true;
+    }).length;
+  }
+
+  function ensureManagerOnTop(list, activeProjectCount, completedProjectCount = 0, forceTop = true, projectKeys = null) {
+    if (!isProjectManager || !managerEmail) return list;
+    const normalizedManagerEmail = managerEmail.trim().toLowerCase();
+    const managerEntry = {
+      id: 'manager-self',
+      name: displayName || 'Project Manager',
+      email: normalizedManagerEmail,
+      role: 'Admin',
+      projects: activeProjectCount,
+      completedProjects: completedProjectCount,
+      activeIssues: getActiveIssuesForMember(normalizedManagerEmail, projectKeys),
+      image: currentUser?.avatar || ''
+    };
+    const existingIndex = list.findIndex((member) => (member?.email || '').trim().toLowerCase() === normalizedManagerEmail);
+    if (existingIndex === -1) {
+      return [managerEntry, ...list];
+    }
+    const existing = list[existingIndex];
+    const merged = {
+      ...existing,
+      ...managerEntry,
+      name: existing.name || managerEntry.name,
+      image: existing.image || managerEntry.image,
+      role: managerEntry.role
+    };
+    if (!forceTop) {
+      const updated = [...list];
+      updated[existingIndex] = merged;
+      return updated;
+    }
+    return [merged, ...list.filter((_, index) => index !== existingIndex)];
+  }
+
+  const openRemoveModal = (member) => {
+    setMemberToRemove(member);
+    setShowRemoveModal(true);
+  };
+
+  const closeRemoveModal = () => {
+    setShowRemoveModal(false);
+    setMemberToRemove(null);
+  };
+
   const handleDeleteMember = async (memberId) => {
-    if (!window.confirm('Are you sure you want to delete this member?')) {
+    if (isProjectFilterActive) {
+      if (!selectedProject) {
+        alert('Please select a project first.');
+        return;
+      }
+      try {
+        const targetEmail = (memberToRemove?.email || '').trim().toLowerCase();
+        const currentTeam = Array.isArray(selectedProject.teamMembers) ? selectedProject.teamMembers : [];
+        const nextTeam = currentTeam.filter((member) => {
+          const memberEmail = (member?.email || '').trim().toLowerCase();
+          const memberIdValue = member?.memberId || member?.id || null;
+          if (targetEmail) {
+            return memberEmail !== targetEmail;
+          }
+          return String(memberIdValue) !== String(memberId);
+        });
+        await updateProjectTeamMembers(nextTeam);
+        alert('Member removed from project successfully');
+      } catch (err) {
+        alert('Error removing member from project: ' + err.message);
+      }
       return;
     }
 
@@ -423,13 +897,199 @@ export default function Teams() {
     }
   };
 
-  // Filter members based on search and role
-  const filteredMembers = members.filter(member => {
-    const matchesSearch = member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         member.email.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesRole = selectedRole === 'All Roles' || member.role === selectedRole;
+  const getProjectId = (project) => (project?.id || project?.projectKey || project?.key || project?.code || '').toString();
+  const isProjectCompleted = (project) => {
+    if (!project) return false;
+    if (project?.isArchived) return true;
+    const total = Number(project?.totalIssues ?? 0);
+    const completed = Number(project?.completedIssues ?? 0);
+    return total > 0 && completed >= total;
+  };
+  const completedProjects = projects.filter((project) => isProjectCompleted(project));
+  const activeProjects = projects.filter((project) => !isProjectCompleted(project));
+  const selectedProject = selectedProjectId && selectedProjectId !== 'all'
+    ? activeProjects.find((project) => getProjectId(project) === selectedProjectId)
+    : null;
+  const isProjectFilterActive = !!selectedProject;
+  const projectFilterKeys = selectedProject ? getProjectMatchKeys(selectedProject) : null;
+  const allProjectKeys = projects.reduce((keys, project) => {
+    getProjectMatchKeys(project).forEach((key) => keys.add(key));
+    return keys;
+  }, new Set());
+  const managerEmailNormalized = managerEmail.trim().toLowerCase();
+  const isManagerEmail = (email) => isProjectManager && !!email && managerEmailNormalized && email === managerEmailNormalized;
+
+  const projectMemberEmails = new Set();
+  if (!isProjectManager) {
+    projects.forEach((project) => {
+      const team = Array.isArray(project?.teamMembers) ? project.teamMembers : [];
+      team.forEach((member) => {
+        const email = (member?.email || '').trim().toLowerCase();
+        if (email) projectMemberEmails.add(email);
+      });
+    });
+    if (userEmail) {
+      projectMemberEmails.add(userEmail);
+    }
+  }
+
+  const scopedMembers = scopeMembersForUser(members, projectMemberEmails);
+  const activeProjectCountByEmail = activeProjects.reduce((acc, project) => {
+    const team = Array.isArray(project?.teamMembers) ? project.teamMembers : [];
+    team.forEach((member) => {
+      const email = (member?.email || '').trim().toLowerCase();
+      if (!email) return;
+      acc.set(email, (acc.get(email) || 0) + 1);
+    });
+    return acc;
+  }, new Map());
+  const completedProjectCountByEmail = completedProjects.reduce((acc, project) => {
+    const team = Array.isArray(project?.teamMembers) ? project.teamMembers : [];
+    team.forEach((member) => {
+      const email = (member?.email || '').trim().toLowerCase();
+      if (!email) return;
+      acc.set(email, (acc.get(email) || 0) + 1);
+    });
+    return acc;
+  }, new Map());
+
+  const memberMap = new Map();
+  scopedMembers.forEach((member, index) => {
+    const email = (member?.email || '').trim().toLowerCase();
+    if (!email) return;
+    memberMap.set(email, {
+      id: member?.id || member?.memberId || email || `member-${index}`,
+      memberRecordId: member?.id || member?.memberId || null,
+      memberId: member?.memberId || member?.id || null,
+      name: member?.name || member?.email || 'Member',
+      email: member?.email || '',
+      role: isManagerEmail(email) ? 'Admin' : (member?.role || 'Developer'),
+      image: member?.image || member?.avatar || ''
+    });
+  });
+
+  projects.forEach((project, projectIndex) => {
+    const team = Array.isArray(project?.teamMembers) ? project.teamMembers : [];
+    const projectId = getProjectId(project) || `project-${projectIndex}`;
+    team.forEach((member, index) => {
+      const email = (member?.email || '').trim().toLowerCase();
+      if (!email) return;
+      const existing = memberMap.get(email);
+      if (existing) {
+        memberMap.set(email, {
+          ...existing,
+          name: existing.name || member?.name || member?.email || 'Member',
+          role: isManagerEmail(email) ? 'Admin' : (existing.role || member?.role || 'Developer'),
+          image: existing.image || member?.avatar || member?.image || '',
+          memberRecordId: existing.memberRecordId || member?.memberId || member?.id || null
+        });
+        return;
+      }
+      memberMap.set(email, {
+        id: member?.memberId || member?.id || email || `${projectId}-${index}`,
+        memberRecordId: member?.memberId || member?.id || null,
+        memberId: member?.memberId || member?.id || null,
+        name: member?.name || member?.email || 'Member',
+        email: member?.email || '',
+        role: isManagerEmail(email) ? 'Admin' : (member?.role || 'Developer'),
+        image: member?.avatar || member?.image || ''
+      });
+    });
+  });
+
+  const allMembers = Array.from(memberMap.values()).map((member) => {
+    const email = (member?.email || '').trim().toLowerCase();
+    return {
+      ...member,
+      projects: activeProjectCountByEmail.get(email) || 0,
+      completedProjects: completedProjectCountByEmail.get(email) || 0,
+      activeIssues: getActiveIssuesForMember(member?.email || '', allProjectKeys)
+    };
+  });
+
+  const selectedProjectIsCompleted = selectedProject ? isProjectCompleted(selectedProject) : false;
+  const selectedProjectActiveCount = selectedProject ? (selectedProjectIsCompleted ? 0 : 1) : 0;
+  const selectedProjectCompletedCount = selectedProject ? (selectedProjectIsCompleted ? 1 : 0) : 0;
+
+  const projectTeamMembers = selectedProject
+    ? (Array.isArray(selectedProject.teamMembers) ? selectedProject.teamMembers : []).map((member, index) => {
+      const email = (member?.email || '').trim().toLowerCase();
+      return {
+        id: member?.memberId || member?.id || `${selectedProjectId}-${index}`,
+        memberId: member?.memberId || member?.id || null,
+        name: member?.name || member?.email || 'Member',
+        email: member?.email || '',
+        role: member?.role || 'Developer',
+        projects: selectedProjectActiveCount,
+        completedProjects: selectedProjectCompletedCount,
+        activeIssues: getActiveIssuesForMember(member?.email || '', projectFilterKeys),
+        image: member?.avatar || ''
+      };
+    })
+    : allMembers;
+
+  const isSelfMember = (member) => {
+    const memberEmail = (member?.email || '').trim().toLowerCase();
+    return !!userEmail && memberEmail === userEmail;
+  };
+
+  const baseMembers = selectedProject ? projectTeamMembers : allMembers;
+  const filteredMembers = baseMembers.filter((member) => {
+    const name = (member?.name || '').toLowerCase();
+    const email = (member?.email || '').toLowerCase();
+    const matchesSearch = name.includes(searchTerm.toLowerCase()) || email.includes(searchTerm.toLowerCase());
+    const isProjectManagerRoleMatch = selectedRole === 'Admin' && normalizeRole(member.role) === 'project manager';
+    const matchesRole = selectedRole === 'All Roles' || member.role === selectedRole || isProjectManagerRoleMatch;
     return matchesSearch && matchesRole;
   });
+
+  const managerProjectKeys = selectedProject ? projectFilterKeys : allProjectKeys;
+  const managerActiveProjectCount = selectedProject ? selectedProjectActiveCount : activeProjects.length;
+  const managerCompletedProjectCount = selectedProject ? selectedProjectCompletedCount : completedProjects.length;
+
+  const prioritizedMembers = ensureManagerOnTop(
+    filteredMembers,
+    managerActiveProjectCount,
+    managerCompletedProjectCount,
+    true,
+    managerProjectKeys
+  );
+
+  const hasTeamForProjectManager = isProjectManager
+    ? baseMembers.some((member) => !isSelfMember(member))
+    : true;
+
+  // sync sidebar state from global controller
+  useEffect(() => {
+    const activeProjectCount = activeProjects.length;
+    if (selectedProject) {
+      const teamMembersForStats = ensureManagerOnTop(
+        projectTeamMembers,
+        selectedProjectActiveCount,
+        selectedProjectCompletedCount,
+        false,
+        projectFilterKeys
+      );
+      const totalIssues = teamMembersForStats.reduce(
+        (sum, member) => sum + (member.activeIssues ?? getActiveIssuesForMember(member.email, projectFilterKeys)),
+        0
+      );
+      setStats(calculateStats(teamMembersForStats, totalIssues, selectedProjectActiveCount));
+      return;
+    }
+    const membersForStats = ensureManagerOnTop(
+      allMembers,
+      activeProjectCount,
+      completedProjects.length,
+      false,
+      allProjectKeys
+    );
+    const totalIssues = membersForStats.reduce(
+      (sum, member) => sum + (member.activeIssues ?? getActiveIssuesForMember(member.email, allProjectKeys)),
+      0
+    );
+    setStats(calculateStats(membersForStats, totalIssues, activeProjectCount));
+  }, [members, issues, userEmail, isProjectManager, projects, selectedProjectId]);
 
   function handleLogout() {
     clearUser()
@@ -471,12 +1131,15 @@ export default function Teams() {
     runIssueSearch()
   }
 
-  const getActiveIssuesForMember = (memberEmail) => {
-    return issues.filter(issue => 
-      issue.creatorEmail && 
-      issue.creatorEmail.toLowerCase() === memberEmail.toLowerCase()
-    ).length;
-  };
+  function handleSidebarNavigation() {
+    setShowInviteModal(false);
+    setShowRemoveModal(false);
+    setShowMemberModal(false);
+    if (typeof window !== 'undefined' && window.innerWidth < 992) {
+      setMobileOpen(false);
+      setCollapsed(true);
+    }
+  }
 
   return (
     <div className="dashboard-root d-flex">
@@ -504,22 +1167,22 @@ export default function Teams() {
         <div className="sidebar-inner d-flex flex-column mt-3">
           <div className="nav-scroll">
             <nav className="nav flex-column">
-              <NavLink to="/dashboard" className={({isActive})=> `nav-item d-flex align-items-center mb-2 ${isActive? 'active':''}`}>
+              <NavLink to="/dashboard" onClick={handleSidebarNavigation} className={({isActive})=> `nav-item d-flex align-items-center mb-2 ${isActive? 'active':''}`}>
                 <FiGrid className="me-3 nav-icon"/> <span className="nav-text">Dashboard</span>
               </NavLink>
-              <NavLink to="/projects" className={({isActive})=> `nav-item d-flex align-items-center mb-2 ${isActive? 'active':''}`}>
+              <NavLink to="/projects" onClick={handleSidebarNavigation} className={({isActive})=> `nav-item d-flex align-items-center mb-2 ${isActive? 'active':''}`}>
                 <FiFolder className="me-3 nav-icon"/> <span className="nav-text">Projects</span>
               </NavLink>
-              <NavLink to="/teams" className={({isActive})=> `nav-item d-flex align-items-center mb-2 ${isActive? 'active':''}`}>
+              <NavLink to="/teams" onClick={handleSidebarNavigation} className={({isActive})=> `nav-item d-flex align-items-center mb-2 ${isActive? 'active':''}`}>
                 <FiUsers className="me-3 nav-icon"/> <span className="nav-text">Teams</span>
               </NavLink>
-              <NavLink to="/reports" className={({isActive})=> `nav-item d-flex align-items-center mb-2 ${isActive? 'active':''}`}>
+              <NavLink to="/reports" onClick={handleSidebarNavigation} className={({isActive})=> `nav-item d-flex align-items-center mb-2 ${isActive? 'active':''}`}>
                 <FiBarChart2 className="me-3 nav-icon"/> <span className="nav-text">Reports</span>
               </NavLink>
-              <NavLink to="/subscription" className={({isActive})=> `nav-item d-flex align-items-center mb-2 ${isActive? 'active':''}`}>
+              <NavLink to="/subscription" onClick={handleSidebarNavigation} className={({isActive})=> `nav-item d-flex align-items-center mb-2 ${isActive? 'active':''}`}>
                 <FiCreditCard className="me-3 nav-icon"/> <span className="nav-text">Subscription</span>
               </NavLink>
-              <NavLink to="/settings" className={({isActive})=> `nav-item d-flex align-items-center mb-2 ${isActive? 'active':''}`}>
+              <NavLink to="/settings" onClick={handleSidebarNavigation} className={({isActive})=> `nav-item d-flex align-items-center mb-2 ${isActive? 'active':''}`}>
                 <FiSettings className="me-3 nav-icon"/> <span className="nav-text">Settings</span>
               </NavLink>
             </nav>
@@ -528,11 +1191,11 @@ export default function Teams() {
           <div className="sidebar-footer mt-3 d-flex flex-column align-items-start">
             <div className="profile d-flex align-items-center w-100">
               <div className="avatar-icon">
-                {user?.avatar ? <img src={user.avatar} alt="avatar" /> : avatarInitials}
+                {currentUser?.avatar ? <img src={currentUser.avatar} alt="avatar" /> : avatarInitials}
               </div>
               <div className="ms-2 user-info">
                 <div className="user-name">{displayName}</div>
-                <div className="user-role">{user?.role || 'Member'}</div>
+            <div className="user-role">{getRoleLabel(currentUser?.role || 'Member')}</div>
               </div>
             </div>
             <button className="btn logout-badge mt-3" onClick={handleLogout} title="Logout">
@@ -697,14 +1360,16 @@ export default function Teams() {
                     )}
                   </div>
 
-                  <button className="btn create-issue-medium" onClick={() => navigate('/create-issue')}>
-                    <FiPlus className="me-1" /> Create Issue
-                  </button>
+                  {isProjectManager && (
+                    <button className="btn create-issue-medium" onClick={() => navigate('/create-issue')}>
+                      <FiPlus className="me-1" /> Create Issue
+                    </button>
+                  )}
                 </div>
 
                 <div>
-                  <h1>Team Management</h1>
-                  <p>Manage team members, roles, and permissions</p>
+                  <h1>{isProjectManager ? 'Team Management' : 'My Team'}</h1>
+                  <p>{isProjectManager ? 'Manage team members, roles, and permissions' : 'Team members working with you on assigned projects'}</p>
                 </div>
               </div>
 
@@ -714,14 +1379,17 @@ export default function Teams() {
           </div>
 
           {/* Invite action above stats */}
-          <div className="stats-actions">
-            <button className="btn create-issue-medium" onClick={() => setShowInviteModal(true)}>
-              <FiPlus className="me-1" /> Invite Member
-            </button>
-          </div>
+          {isProjectManager && (
+            <div className="stats-actions">
+              <button className="btn create-issue-medium" onClick={() => setShowInviteModal(true)}>
+                <FiPlus className="me-1" /> Invite Member
+              </button>
+            </div>
+          )}
 
           {/* Stats Cards - Now Clickable */}
-          <div className="stats">
+          {isProjectManager && (
+            <div className="stats">
             <div 
               className="card stat-card"
               onClick={() => handleStatClick('Total Members')}
@@ -755,14 +1423,15 @@ export default function Teams() {
 
             <div 
               className="card stat-card"
-              onClick={() => handleStatClick('Admins')}
+              onClick={() => handleStatClick('Project Managers')}
               role="button"
               tabIndex="0"
             >
-              <h4>Admins</h4>
+              <h4>Project Managers</h4>
               <h2>{stats.admins}</h2>
             </div>
-          </div>
+            </div>
+          )}
 
           {/* Search + Filter */}
           <div className="filters">
@@ -772,32 +1441,58 @@ export default function Teams() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
+            <select
+              className="project-filter"
+              value={selectedProjectId}
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+              disabled={projectsLoading || activeProjects.length === 0}
+            >
+              {activeProjects.length === 0 ? (
+                <option value="all">
+                  {projectsLoading ? 'Loading projects...' : 'No active projects'}
+                </option>
+              ) : (
+                <>
+                  <option value="all">All Projects</option>
+                  {activeProjects.map((project) => (
+                    <option key={getProjectId(project)} value={getProjectId(project)}>
+                      {project?.name || 'Untitled Project'} {project?.projectKey ? `(${project.projectKey})` : ''}
+                    </option>
+                  ))}
+                </>
+              )}
+            </select>
             <select value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}>
               <option>All Roles</option>
-              <option>Admin</option>
+              <option value="Admin">Project Manager</option>
               <option>Developer</option>
               <option>Tester</option>
             </select>
           </div>
+          {projectsError && (
+            <div className="project-filter-hint">{projectsError}</div>
+          )}
 
           {/* Tabs */}
-          <div className="tabs">
-            <button 
-              className={activeTab === "Members" ? "active-tab" : ""}
-              onClick={() => setActiveTab("Members")}
-            >
-              Members
-            </button>
-            <button 
-              className={activeTab === "Roles & Permissions" ? "active-tab" : ""}
-              onClick={() => setActiveTab("Roles & Permissions")}
-            >
-              Roles & Permissions
-            </button>
-          </div>
+          {isProjectManager && (
+            <div className="tabs">
+              <button 
+                className={activeTab === "Members" ? "active-tab" : ""}
+                onClick={() => setActiveTab("Members")}
+              >
+                Members
+              </button>
+              <button 
+                className={activeTab === "Roles & Permissions" ? "active-tab" : ""}
+                onClick={() => setActiveTab("Roles & Permissions")}
+              >
+                Roles & Permissions
+              </button>
+            </div>
+          )}
 
           {/* Roles & Permissions Tab Content */}
-          {activeTab === "Roles & Permissions" && (
+          {isProjectManager && visibleTab === "Roles & Permissions" && (
             <div className="roles-permissions-container">
               <div className="roles-grid">
                 {/* Admin Role Card */}
@@ -888,123 +1583,208 @@ export default function Teams() {
           )}
 
           {/* Member Cards */}
-          <div className="member-cards" ref={memberListRef}>
-            {filteredMembers.length > 0 ? (
-              filteredMembers.map((member) => (
-                <div 
-                  key={member.id}
-                  className="member-card"
-                  onClick={() => handleCardClick(member.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      handleCardClick(member.id);
-                    }
-                  }}
-                  role="button"
-                  tabIndex="0"
-                >
-                  <div className="member-left">
-                    <img
-                      src={member.image || 'https://randomuser.me/api/portraits/lego/1.jpg'}
-                      alt={member.name}
-                    />
-                    <div>
-                      {editingId === member.id ? (
-                        <div className="edit-form">
-                          <input
-                            type="text"
-                            value={editingMember.name}
-                            onChange={(e) => setEditingMember({...editingMember, name: e.target.value})}
-                            placeholder="Name"
-                          />
-                          <input
-                            type="email"
-                            value={editingMember.email}
-                            onChange={(e) => setEditingMember({...editingMember, email: e.target.value})}
-                            placeholder="Email"
-                          />
-                          <select
-                            value={editingMember.role}
-                            onChange={(e) => setEditingMember({...editingMember, role: e.target.value})}
+          {visibleTab === "Members" && (
+            <div className="member-cards" ref={memberListRef}>
+              {prioritizedMembers.length > 0 ? (
+                prioritizedMembers.map((member) => (
+                  <div 
+                    key={member.id}
+                    className={`member-card ${!isProjectManager ? 'member-card-readonly' : ''} ${isProjectManager && isSelfMember(member) ? 'manager-highlight' : ''}`}
+                    onClick={isProjectManager ? () => handleCardClick(member) : undefined}
+                    onKeyDown={isProjectManager ? (event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        handleCardClick(member);
+                      }
+                    } : undefined}
+                    role={isProjectManager ? "button" : undefined}
+                    tabIndex={isProjectManager ? "0" : undefined}
+                  >
+                    <div className="member-left">
+                      <img
+                        src={getTeamAvatar(member.image || member.avatar)}
+                        alt={member.name}
+                      />
+                      <div>
+                        {editingId === member.id ? (
+                          <div className="edit-form">
+                            <input
+                              type="text"
+                              value={editingMember.name}
+                              onChange={(e) => setEditingMember({...editingMember, name: e.target.value})}
+                              placeholder="Name"
+                            />
+                            <input
+                              type="email"
+                              value={editingMember.email}
+                              onChange={(e) => setEditingMember({...editingMember, email: e.target.value})}
+                              placeholder="Email"
+                            />
+                            <select
+                              value={editingMember.role}
+                              onChange={(e) => setEditingMember({...editingMember, role: e.target.value})}
+                            >
+                              <option value="Admin">Project Manager</option>
+                              <option>Developer</option>
+                              <option>Tester</option>
+                            </select>
+                          </div>
+                        ) : (
+                          <>
+                            <h3>
+                              {member.name} 
+                              <span className={`role ${member.role.toLowerCase()}`}>
+                                {getRoleLabel(member.role)}
+                              </span>
+                            </h3>
+                            <p>{member.email}</p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {isProjectManager && (
+                      <div className="member-right">
+                        {editingId === member.id ? (
+                        <div className="edit-actions">
+                          <button
+                            type="button"
+                            className="save-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSaveEdit(member.id);
+                            }}
                           >
-                            <option>Admin</option>
-                            <option>Developer</option>
-                            <option>Tester</option>
-                          </select>
+                            <FiCheck size={14} className="me-1" /> Save
+                          </button>
+                          <button
+                            type="button"
+                            className="cancel-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCancelEdit();
+                            }}
+                          >
+                            <FiX size={14} className="me-1" /> Cancel
+                          </button>
                         </div>
                       ) : (
                         <>
-                          <h3>
-                            {member.name} 
-                            <span className={`role ${member.role.toLowerCase()}`}>
-                              {member.role}
-                            </span>
-                          </h3>
-                          <p>{member.email}</p>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="member-right">
-                    {editingId === member.id ? (
-                      <div className="edit-actions">
-                        <button
-                          type="button"
-                          className="save-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSaveEdit(member.id);
-                          }}
-                        >
-                          <FiCheck size={14} className="me-1" /> Save
-                        </button>
-                        <button
-                          type="button"
-                          className="cancel-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleCancelEdit();
-                          }}
-                        >
-                          <FiX size={14} className="me-1" /> Cancel
-                        </button>
-                      </div>
-                    ) : (
-                      <>
+                        {isProjectFilterActive ? (
+                          <div
+                            className={`project-status-badge ${selectedProjectIsCompleted ? 'completed' : 'active'}`}
+                            title={selectedProjectIsCompleted ? 'This project is completed' : 'This project is active'}
+                          >
+                            {selectedProjectIsCompleted ? 'Completed Project' : 'Active Project'}
+                          </div>
+                        ) : (
+                          <>
+                            <div className="member-stat">
+                              <strong>{member.projects || 0}</strong>
+                              <p>Active Projects</p>
+                            </div>
+                            <div className="member-stat">
+                              <strong>{member.completedProjects || 0}</strong>
+                              <p>Completed Projects</p>
+                            </div>
+                          </>
+                        )}
                         <div className="member-stat">
-                          <strong>{member.projects || 0}</strong>
-                          <p>Projects</p>
-                        </div>
-                        <div className="member-stat">
-                          <strong>{getActiveIssuesForMember(member.email)}</strong>
+                          <strong>{member.activeIssues || 0}</strong>
                           <p>Active Issues</p>
                         </div>
-                        <button
-                          type="button"
-                          className="edit-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEdit(member);
-                          }}
-                        >
-                          Edit
-                        </button>
+                        {isProjectManager && (
+                          <div className="member-actions">
+                            <button
+                              type="button"
+                              className="edit-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEdit(member);
+                              }}
+                            >
+                              Edit
+                            </button>
+                            {canRemoveMember(member) && (
+                              <button
+                                type="button"
+                                className="remove-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openRemoveModal(member);
+                                }}
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </>
                     )}
-                  </div>
+                      </div>
+                    )}
                 </div>
               ))
             ) : (
               <div style={{ textAlign: 'center', padding: '40px' }}>
-                <p>No team members found</p>
+                <p>
+                  {selectedProject
+                    ? 'No team members found for this project yet.'
+                    : (isProjectManager && !hasTeamForProjectManager
+                      ? "You don't have a team yet."
+                      : 'No team members found')}
+                </p>
               </div>
             )}
           </div>
+          )}
 
         </div>
       </main>
+
+      {/* Remove Member Modal */}
+      {showRemoveModal && (
+        <div className="modal-overlay" onClick={closeRemoveModal}>
+          <div className="modal-content remove-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Remove Member</h2>
+              <button 
+                className="modal-close"
+                onClick={closeRemoveModal}
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+
+            <div className="confirm-body">
+              <p className="confirm-title">
+                Are you sure you want to remove{" "}
+                <span className="confirm-name">{memberToRemove?.name || 'this member'}</span>?
+              </p>
+              <p className="confirm-subtitle">
+                They will lose access to projects, issues, and team resources immediately.
+              </p>
+            </div>
+
+            <div className="modal-footer">
+              <button className="btn-cancel" type="button" onClick={closeRemoveModal}>
+                Cancel
+              </button>
+              <button
+                className="btn-danger"
+                type="button"
+                onClick={() => {
+                  if (!memberToRemove) return;
+                  handleDeleteMember(memberToRemove.id);
+                  closeRemoveModal();
+                }}
+              >
+                Remove Member
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Invite Modal */}
       {showInviteModal && (
@@ -1023,14 +1803,58 @@ export default function Teams() {
             <form onSubmit={handleInviteSubmit} className="invite-form">
               <div className="form-group">
                 <label htmlFor="name">Name *</label>
-                <input
-                  id="name"
-                  type="text"
-                  placeholder="Enter member name"
-                  value={inviteFormData.name}
-                  onChange={(e) => setInviteFormData({...inviteFormData, name: e.target.value})}
-                  required
-                />
+                <div className="name-suggest-wrapper" ref={nameSuggestRef}>
+                  <input
+                    id="name"
+                    type="text"
+                    placeholder="Enter member name"
+                    value={inviteFormData.name}
+                    onFocus={() => {
+                      if ((inviteFormData.name || '').trim().length >= 2) {
+                        setShowNameSuggestions(true);
+                      }
+                    }}
+                    onChange={(e) => {
+                      setInviteFormData({ ...inviteFormData, name: e.target.value });
+                      setShowNameSuggestions(true);
+                    }}
+                    required
+                  />
+                  {showNameSuggestions && (
+                    <div className="name-suggestions">
+                      {nameSearchLoading ? (
+                        <div className="name-suggestion empty">Searching users...</div>
+                      ) : nameSearchResults.length > 0 ? (
+                        nameSearchResults.map((userOption) => (
+                          <button
+                            key={userOption?.id || userOption?.email || userOption?.name}
+                            type="button"
+                            className="name-suggestion"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              const email = (userOption?.email || '').trim().toLowerCase();
+                              setInviteFormData((prev) => ({
+                                ...prev,
+                                name: userOption?.name || prev.name,
+                                email
+                              }));
+                              if (email) {
+                                setEmailVerificationStatus('verified');
+                                setVerifiedEmailUser(userOption);
+                              }
+                              setShowNameSuggestions(false);
+                            }}
+                          >
+                            <span className="name-suggestion-title">{userOption?.name || 'User'}</span>
+                            <span className="name-suggestion-sub">{userOption?.email || ''}</span>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="name-suggestion empty">No users found</div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="form-group">
@@ -1105,9 +1929,31 @@ export default function Teams() {
                   onChange={(e) => setInviteFormData({...inviteFormData, role: e.target.value})}
                   required
                 >
-                  <option>Admin</option>
+                  <option value="Admin">Project Manager</option>
                   <option>Developer</option>
                   <option>Tester</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="project">Project</label>
+                <select
+                  id="project"
+                  value={inviteFormData.projectId}
+                  onChange={(e) => setInviteFormData({ ...inviteFormData, projectId: e.target.value })}
+                >
+                  <option value="">Select project (optional)</option>
+                  {projects.length === 0 ? (
+                    <option value="" disabled>
+                      {projectsLoading ? 'Loading projects...' : 'No projects available'}
+                    </option>
+                  ) : (
+                    projects.map((project) => (
+                      <option key={project?.id || getProjectId(project)} value={project?.id || getProjectId(project)}>
+                        {project?.name || 'Untitled Project'} {project?.projectKey ? `(${project.projectKey})` : ''}
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
 
@@ -1147,14 +1993,14 @@ export default function Teams() {
             <div className="member-detail-body">
               <div className="member-detail-profile">
                 <img
-                  src={selectedMember.image || 'https://randomuser.me/api/portraits/lego/1.jpg'}
+                  src={getTeamAvatar(selectedMember.image || selectedMember.avatar)}
                   alt={selectedMember.name}
                 />
                 <div className="member-detail-info">
                   <div className="member-detail-name-row">
                     <h3>{selectedMember.name}</h3>
                     <span className={`role ${selectedMember.role.toLowerCase()}`}>
-                      {selectedMember.role}
+                      {getRoleLabel(selectedMember.role)}
                     </span>
                   </div>
                   <p className="member-detail-email">{selectedMember.email}</p>
@@ -1162,10 +2008,23 @@ export default function Teams() {
               </div>
 
               <div className="member-detail-stats">
-                <div className="member-detail-stat">
-                  <strong>{selectedMember.projects || 0}</strong>
-                  <span>Projects</span>
-                </div>
+                {isProjectFilterActive ? (
+                  <div className="member-detail-stat">
+                    <strong>{selectedProjectIsCompleted ? 'Completed' : 'Active'}</strong>
+                    <span>Project Status</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="member-detail-stat">
+                      <strong>{selectedMember.projects || 0}</strong>
+                      <span>Active Projects</span>
+                    </div>
+                    <div className="member-detail-stat">
+                      <strong>{selectedMember.completedProjects || 0}</strong>
+                      <span>Completed Projects</span>
+                    </div>
+                  </>
+                )}
                 <div className="member-detail-stat">
                   <strong>{selectedMember.activeIssues || 0}</strong>
                   <span>Active Issues</span>

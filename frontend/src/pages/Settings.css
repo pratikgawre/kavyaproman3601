@@ -407,6 +407,12 @@
   display: none;
 }
 
+.settings-page .notif-helper {
+  font-size: 12px;
+  margin-top: 4px;
+  color: #6b7280;
+}
+
 .settings-page .alert {
   padding: 12px 16px;
   border-radius: 8px;

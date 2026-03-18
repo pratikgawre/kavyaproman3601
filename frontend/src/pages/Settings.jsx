@@ -422,7 +422,7 @@ export default function Settings() {
 
         <div className="settings-content">
           {activeTab === 'profile' && <ProfileSection />}
-          {activeTab === 'notifications' && <NotificationsSection />}
+          {activeTab === 'notifications' && <NotificationsSection userId={user?.id} />}
           {activeTab === 'appearance' && <AppearanceSection />}
           {activeTab === 'security' && <SecuritySection apiBase={API_BASE} />}
         </div>

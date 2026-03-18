@@ -7,6 +7,8 @@ import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api")
 public class UserController {
@@ -47,5 +49,13 @@ public class UserController {
             return ResponseEntity.ok(userDto);
         }
         return ResponseEntity.notFound().build();
+    }
+
+    @GetMapping("/users/search")
+    public ResponseEntity<List<UserDto>> searchUsers(
+            @RequestParam String query,
+            @RequestParam(defaultValue = "8") int limit) {
+        List<UserDto> results = userService.searchUsers(query, limit);
+        return ResponseEntity.ok(results);
     }
 }

@@ -11,18 +11,23 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.team1.backend.model.Member;
 import com.team1.backend.repository.MemberRepository;
+import com.team1.backend.repository.UserRepository;
 
 @Service
 public class MemberService {
 
     private final MemberRepository memberRepository;
+    private final UserRepository userRepository;
 
-    public MemberService(MemberRepository memberRepository) {
+    public MemberService(MemberRepository memberRepository, UserRepository userRepository) {
         this.memberRepository = memberRepository;
+        this.userRepository = userRepository;
     }
 
     public List<Member> getAllMembers() {
-        return memberRepository.findAll();
+        List<Member> members = memberRepository.findAll();
+        members.forEach(this::applyUserAvatar);
+        return members;
     }
 
     public Member getMemberById(String id) {
@@ -88,6 +93,9 @@ public class MemberService {
         }
         if (updatedMember.getImage() != null) {
             member.setImage(updatedMember.getImage());
+        }
+        if (updatedMember.getManagerEmail() != null) {
+            member.setManagerEmail(updatedMember.getManagerEmail());
         }
 
         try {
