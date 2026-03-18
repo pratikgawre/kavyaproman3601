@@ -1081,6 +1081,12 @@ html[data-theme='dark'] .notification-dismiss-btn:hover{background:#111827 !impo
 .cancel-btn:hover{background:#fff7f7;border-color:rgba(220,53,69,0.06)}
 .format-btn{background:#fff;border:1px solid rgba(0,0,0,0.06);padding:6px 10px;border-radius:8px;cursor:pointer}
 .format-btn:hover{background:linear-gradient(180deg,#f7f9ff,#fff);transform:translateY(-2px)}
+.format-btn.active{
+  background:#eef2ff;
+  border-color:#6366f1;
+  color:#1e1b4b;
+  box-shadow:0 6px 16px rgba(99,102,241,0.18);
+}
 
 /* Attachments animation */
 .attachment-item{background:#f3f6fb;border:1px solid rgba(13,110,253,0.06);padding:8px 10px;border-radius:10px;font-weight:600;color:#0d6efd;animation:chipPop .18s ease both}
@@ -1138,17 +1144,30 @@ html[data-theme='dark'] .notification-dismiss-btn:hover{background:#111827 !impo
 .attachment-name.link-like:focus{outline:none;text-decoration:underline}
 
 /* Difficulty radios */
-.difficulty-group{display:flex;gap:8px;align-items:center}
+.difficulty-group{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .difficulty-radio{display:inline-flex;align-items:center}
 .difficulty-radio input[type="radio"]{display:none}
-.difficulty-radio label{display:inline-flex;align-items:center;gap:8px;cursor:pointer;padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.35);color:inherit;transition:background .18s ease,border-color .18s ease,color .18s ease,box-shadow .18s ease}
-.difficulty-radio .dot{width:12px;height:12px;border-radius:50%;display:inline-block}
+.difficulty-radio label{
+  display:inline-flex;align-items:center;gap:8px;cursor:pointer;
+  padding:8px 12px;border-radius:10px;border:1px solid #e2e8f0;
+  background:#f8fafc;color:#0f172a;font-weight:600;
+  transition:background .18s ease,border-color .18s ease,color .18s ease,box-shadow .18s ease,transform .12s ease
+}
+.difficulty-radio label:hover{background:#f1f5f9;border-color:#cbd5e1}
+.difficulty-radio label:focus-within{outline:none;box-shadow:0 0 0 3px rgba(59,130,246,0.15)}
+.difficulty-radio .dot{width:12px;height:12px;border-radius:50%;display:inline-block;box-shadow:0 0 0 3px rgba(0,0,0,0.04) inset}
 .difficulty-radio.high .dot{background:#ef4444}
-.difficulty-radio.medium .dot{background:#facc15}
+.difficulty-radio.medium .dot{background:#f59e0b}
 .difficulty-radio.low .dot{background:#10b981}
-.difficulty-radio.high input[type="radio"]:checked + label{background:rgba(239,68,68,0.16);border-color:#ef4444;color:#fecaca;box-shadow:0 6px 18px rgba(239,68,68,0.18)}
-.difficulty-radio.medium input[type="radio"]:checked + label{background:rgba(245,158,11,0.16);border-color:#f59e0b;color:#fde68a;box-shadow:0 6px 18px rgba(245,158,11,0.18)}
-.difficulty-radio.low input[type="radio"]:checked + label{background:rgba(16,185,129,0.16);border-color:#10b981;color:#a7f3d0;box-shadow:0 6px 18px rgba(16,185,129,0.18)}
+.difficulty-radio.high input[type="radio"]:checked + label{
+  background:rgba(239,68,68,0.14);border-color:#ef4444;color:#7f1d1d;box-shadow:0 8px 18px rgba(239,68,68,0.14);transform:translateY(-1px)
+}
+.difficulty-radio.medium input[type="radio"]:checked + label{
+  background:rgba(245,158,11,0.16);border-color:#f59e0b;color:#92400e;box-shadow:0 8px 18px rgba(245,158,11,0.14);transform:translateY(-1px)
+}
+.difficulty-radio.low input[type="radio"]:checked + label{
+  background:rgba(16,185,129,0.16);border-color:#10b981;color:#065f46;box-shadow:0 8px 18px rgba(16,185,129,0.14);transform:translateY(-1px)
+}
 .create-issue-container .remove-attachment{background:#fff;border:1px solid rgba(13,110,253,0.12);color:#0d6efd;margin-left:8px;display:inline-flex;align-items:center;justify-content:center;padding:6px;border-radius:50%;width:34px;height:34px;box-shadow:0 6px 14px rgba(13,110,253,0.06);transition:transform .12s ease,background .12s ease,color .12s ease}
 .create-issue-container .remove-attachment{
   background:#fff2f2; /* light red background */
@@ -1419,6 +1438,34 @@ html[data-theme='dark'] .create-issue-form label{
   color:#e2e8f0 !important;
 }
 
+html[data-theme='dark'] .difficulty-radio label{
+  background:#0b1226 !important;
+  border:1px solid rgba(148,163,184,0.22) !important;
+  color:#e2e8f0 !important;
+}
+html[data-theme='dark'] .difficulty-radio label:hover{
+  background:#111827 !important;
+  border-color:#334155 !important;
+}
+html[data-theme='dark'] .difficulty-radio.high input[type="radio"]:checked + label{
+  background:rgba(239,68,68,0.22) !important;
+  border-color:#ef4444 !important;
+  color:#fecaca !important;
+  box-shadow:0 10px 22px rgba(239,68,68,0.18) !important;
+}
+html[data-theme='dark'] .difficulty-radio.medium input[type="radio"]:checked + label{
+  background:rgba(245,158,11,0.22) !important;
+  border-color:#f59e0b !important;
+  color:#fde68a !important;
+  box-shadow:0 10px 22px rgba(245,158,11,0.18) !important;
+}
+html[data-theme='dark'] .difficulty-radio.low input[type="radio"]:checked + label{
+  background:rgba(16,185,129,0.22) !important;
+  border-color:#10b981 !important;
+  color:#a7f3d0 !important;
+  box-shadow:0 10px 22px rgba(16,185,129,0.18) !important;
+}
+
 html[data-theme='dark'] .create-issue-form .toolbar,
 html[data-theme='dark'] .format-toolbar{
   background:#0f172a !important;
@@ -1436,6 +1483,12 @@ html[data-theme='dark'] .format-btn:hover,
 html[data-theme='dark'] .upload-btn:hover{
   background:#111827 !important;
   color:#ffffff !important;
+}
+html[data-theme='dark'] .format-btn.active{
+  background:#1e293b !important;
+  border-color:#60a5fa !important;
+  color:#e2e8f0 !important;
+  box-shadow:0 8px 18px rgba(96,165,250,0.18) !important;
 }
 
 html[data-theme='dark'] .create-issue-form input,

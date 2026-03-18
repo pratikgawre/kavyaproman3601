@@ -47,8 +47,11 @@ public class CloudinaryService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "File is required");
         }
 
+        String contentType = file.getContentType();
+        String resourceType = resolveResourceType(contentType);
+
         Map<String, Object> options = new HashMap<>();
-        options.put("resource_type", "auto");
+        options.put("resource_type", resourceType);
         options.put("use_filename", true);
         options.put("unique_filename", true);
         options.put("overwrite", false);
@@ -60,15 +63,29 @@ public class CloudinaryService {
         try {
             result = cloudinary.uploader().upload(file.getBytes(), options);
         } catch (IOException e) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Upload failed");
+            log.error("Cloudinary upload failed (io) name={} type={} resourceType={}", file.getOriginalFilename(), contentType, resourceType, e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Upload failed: " + safeMessage(e));
         } catch (Exception e) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Upload failed");
+            log.error("Cloudinary upload failed name={} type={} resourceType={}", file.getOriginalFilename(), contentType, resourceType, e);
+            if (!"auto".equals(resourceType)) {
+                try {
+                    Map<String, Object> fallback = new HashMap<>(options);
+                    fallback.put("resource_type", "auto");
+                    result = cloudinary.uploader().upload(file.getBytes(), fallback);
+                    log.warn("Cloudinary upload succeeded using fallback resource_type=auto for {}", file.getOriginalFilename());
+                } catch (Exception fallbackError) {
+                    log.error("Cloudinary upload fallback failed name={} type={}", file.getOriginalFilename(), contentType, fallbackError);
+                    throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Upload failed: " + safeMessage(fallbackError));
+                }
+            } else {
+                throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Upload failed: " + safeMessage(e));
+            }
         }
 
         Object secureUrlObj = result.get("secure_url");
         String url = secureUrlObj instanceof String ? (String) secureUrlObj : (String) result.get("url");
         String publicId = (String) result.get("public_id");
-        String resourceType = (String) result.get("resource_type");
+        String resultResourceType = (String) result.get("resource_type");
         String format = (String) result.get("format");
         String originalFilename = (String) result.get("original_filename");
         long bytes = 0L;
@@ -77,6 +94,28 @@ public class CloudinaryService {
             bytes = ((Number) bytesObj).longValue();
         }
 
-        return new UploadResponse(url, publicId, resourceType, format, originalFilename, bytes);
+        return new UploadResponse(url, publicId, resultResourceType, format, originalFilename, bytes);
+    }
+
+    private String resolveResourceType(String contentType) {
+        if (contentType == null || contentType.isBlank()) {
+            return "raw";
+        }
+        String normalized = contentType.toLowerCase();
+        if (normalized.startsWith("image/")) {
+            return "image";
+        }
+        if (normalized.startsWith("video/") || normalized.startsWith("audio/")) {
+            return "video";
+        }
+        return "raw";
+    }
+
+    private String safeMessage(Exception e) {
+        String message = e.getMessage();
+        if (message == null || message.isBlank()) {
+            return "unknown error";
+        }
+        return message.length() > 200 ? message.substring(0, 200) : message;
     }
 }

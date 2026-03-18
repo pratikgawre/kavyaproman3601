@@ -1071,26 +1071,75 @@ html[data-theme='dark'] .active-tab::after {
   box-shadow: 0 0 0 3px rgba(26, 32, 44, 0.1);
 }
 
-/* Ensure header controls (search pill, bell, create button) match design on small/medium screens */
+/* Ensure header controls (search bar, bell, create button) stay visible on small/medium screens */
 @media (max-width: 992px) {
-  .team-header .top-search-row{display:flex;align-items:center;gap:8px}
-  .team-header .top-search-medium{flex:0 0 48px;max-width:48px;width:48px;padding:6px;border-radius:12px;justify-content:center;background:transparent}
-  .team-header .top-search-medium .input-group-text{background:#eaf4ff;border-radius:10px;padding:6px;display:flex;align-items:center;justify-content:center;box-shadow:none;border:0}
-  .team-header .top-search-medium input{display:none}
-  .team-header .bell-black{color:#000 !important;position:relative;margin-left:6px}
+  .team-header .top-search-row{
+    display:flex;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:10px;
+    width:100%;
+  }
+
+  .team-header .top-search-medium{
+    flex:1 1 100%;
+    max-width:none;
+    width:100%;
+    padding:6px 10px;
+    border-radius:12px;
+    justify-content:flex-start;
+    background:#f7f8fa;
+    border:1px solid rgba(0,0,0,0.06);
+  }
+
+  .team-header .top-search-medium .input-group-text{
+    background:transparent;
+    border:none;
+    color:#9aa3ad;
+    padding:0 8px;
+  }
+
+  .team-header .top-search-medium input{
+    display:block;
+  }
+
+  .team-header .bell-black{color:#000 !important;position:relative;margin-left:0}
   .team-header .bell-black::after{content:none !important;display:none !important}
-  .team-header .create-issue-medium{min-width:120px;padding:8px 10px;font-size:13px;border-radius:8px;background:#05060a !important;color:#fff !important;border:none !important;display:inline-flex;align-items:center;justify-content:center;font-weight:700}
+  .team-header .notification-wrapper{margin-right:0}
+  .team-header .create-issue-medium{
+    min-width:140px;
+    padding:8px 12px;
+    font-size:13px;
+    border-radius:8px;
+    background:#05060a !important;
+    color:#fff !important;
+    border:none !important;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    font-weight:700;
+  }
 }
 
-/* Keep Teams top header controls in one line on mobile even if shared CSS overrides later */
+/* Stack header controls on mobile so they don't get hidden under the top bar */
 @media (max-width: 768px) {
   .team-header .top-search-row{
     align-items:center !important;
-    display:flex !important;
     flex-direction:row !important;
-    flex-wrap:nowrap !important;
-    justify-content:flex-start !important;
+    flex-wrap:wrap !important;
+    gap:10px !important;
+  }
+
+  .team-header .top-search-medium{
     width:100% !important;
+    max-width:none !important;
+    min-width:0 !important;
+    cursor:text;
+  }
+
+  .team-header .top-search-medium .form-control{
+    display:block !important;
+    pointer-events:auto !important;
   }
 
   .team-header .notification-wrapper,
@@ -1098,41 +1147,12 @@ html[data-theme='dark'] .active-tab::after {
     flex:0 0 auto !important;
   }
 
-  .team-header .top-search-medium{
-    flex:0 0 44px !important;
-    max-width:44px !important;
-    min-width:44px !important;
-    width:44px !important;
-    cursor:pointer;
-    padding:6px !important;
-  }
-
-  .team-header .top-search-medium .input-group-text{
-    margin:0 auto;
-  }
-
-  .team-header .top-search-medium .form-control{
-    display:none !important;
-    pointer-events:none !important;
-  }
-
-  .team-header .top-search-row.mobile-search-open .top-search-medium{
-    flex:1 1 auto !important;
-    max-width:none !important;
-    min-width:0 !important;
-    width:auto !important;
-    padding:6px 10px !important;
-    cursor:text;
-  }
-
-  .team-header .top-search-row.mobile-search-open .top-search-medium .form-control{
+  .team-header .top-search-row.mobile-search-open .notification-wrapper{
     display:block !important;
-    pointer-events:auto !important;
   }
 
-  .team-header .top-search-row.mobile-search-open .notification-wrapper,
   .team-header .top-search-row.mobile-search-open .create-issue-medium{
-    display:none !important;
+    display:inline-flex !important;
   }
 }
 

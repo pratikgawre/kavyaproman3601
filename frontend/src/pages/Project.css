@@ -192,6 +192,7 @@
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+  min-height: 96px;
 }
 
 .project-emoji {
@@ -237,8 +238,9 @@
   display: inline-flex;
   font-size: 11px;
   font-weight: 700;
-  margin-top: 6px;
+  margin-top: auto;
   padding: 4px 10px;
+  align-self: flex-start;
 }
 
 .project-menu-btn {
@@ -1539,6 +1541,9 @@ html[data-theme='dark'] .verify-btn-verifying {
   .project-card-head {
     min-height: 84px;
   }
+  .project-card-title-wrap > div {
+    min-height: 84px;
+  }
 
   .create-project-body {
     grid-template-columns: 1fr;
@@ -1620,6 +1625,9 @@ html[data-theme='dark'] .verify-btn-verifying {
   }
 
   .project-card-head {
+    min-height: 78px;
+  }
+  .project-card-title-wrap > div {
     min-height: 78px;
   }
 

@@ -102,6 +102,8 @@ function getInitials(name) {
     .join('')
 }
 
+const normalizeRole = (role) => (role || '').trim().toLowerCase()
+
 function renderIssueIcon(type) {
   if (type === 'bug') {
     return <FiAlertCircle />
@@ -124,6 +126,7 @@ export default function Backlog() {
   const { projectId } = useParams()
   const { user, clearUser } = useAuth()
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
+  const isDeveloper = normalizeRole(user?.role) === 'developer'
   const [selectedOrg, setSelectedOrg] = useState(() => { try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null } })
   useEffect(() => {
     function onOrgChanged(e){ const org = e?.detail || null; setSelectedOrg(org); try { if (org) localStorage.setItem('org', JSON.stringify(org)) } catch(err){} }
@@ -422,9 +425,11 @@ export default function Backlog() {
               )}
             </div>
 
-            <button className="btn create-issue-medium" onClick={() => navigate('/create-issue')}>
-              <FiPlus className="me-1" /> Create Issue
-            </button>
+            {!isDeveloper && (
+              <button className="btn create-issue-medium" onClick={() => navigate('/create-issue')}>
+                <FiPlus className="me-1" /> Create Issue
+              </button>
+            )}
           </div>
         </header>
 

@@ -16,6 +16,7 @@ const getAvatarInitials = (name, email) => {
   if (parts.length === 1) return parts[0].charAt(0).toUpperCase()
   return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase()
 }
+const normalizeRole = (role) => (role || '').trim().toLowerCase()
 
 export default function Subscription() {
   const navigate = useNavigate()
@@ -23,6 +24,7 @@ export default function Subscription() {
   const { user, clearUser } = useAuth()
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
   const avatarInitials = getAvatarInitials(user?.name, user?.email)
+  const isDeveloper = normalizeRole(user?.role) === 'developer'
   const DEFAULT_PLAN = 'free'
   const normalizePlan = (value) => {
     const key = String(value || '').trim().toLowerCase()
@@ -639,9 +641,11 @@ return (
                   )}
                 </div>
 
-                <button className="btn create-issue-medium dark" onClick={() => navigate('/create-issue')}>
-                  <FiPlus className="me-1" /> Create Issue
-                </button>
+                {!isDeveloper && (
+                  <button className="btn create-issue-medium dark" onClick={() => navigate('/create-issue')}>
+                    <FiPlus className="me-1" /> Create Issue
+                  </button>
+                )}
               </div>
 
               <div className="text-center">

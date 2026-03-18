@@ -10,11 +10,19 @@ export async function uploadFile(file, { folder } = {}) {
     method: 'POST',
     body: form,
   })
-  const body = await res.json().catch(() => ({}))
+  const text = await res.text().catch(() => '')
+  let body = {}
+  try { body = text ? JSON.parse(text) : {} } catch (e) { body = {} }
   if (!res.ok) {
-    throw new Error(body.message || 'Upload failed')
+    const message =
+      body.message ||
+      body.detail ||
+      body.error ||
+      (typeof text === 'string' && text.trim() ? text.trim() : '') ||
+      'Upload failed'
+    throw new Error(message)
   }
-  return body
+  return Object.keys(body).length ? body : (text ? { url: text } : {})
 }
 
 export async function uploadFiles(files, options) {
