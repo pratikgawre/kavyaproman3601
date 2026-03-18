@@ -407,3 +407,103 @@ html[data-theme='dark'] .switch-plan-status.expired {
 	.btn.create-issue-medium{min-width:120px;padding:8px 10px;font-size:13px;border-radius:8px;background:#0b1226 !important;color:#fff !important;border:none !important;display:inline-flex;align-items:center;justify-content:center;font-weight:700}
 }
 
+/* Dark mode: ensure upgrade modal and payment options are readable. */
+html[data-theme='dark'] .upgrade-modal{
+  background:#000000 !important;
+  border:1px solid #ffffff !important;
+}
+
+html[data-theme='dark'] .upgrade-modal .modal-close{
+  color:#ffffff !important;
+}
+
+html[data-theme='dark'] .upgrade-modal .modal-features li{
+  color:#ffffff !important;
+}
+
+html[data-theme='dark'] .payment-option{
+  background:#000000;
+  border-color:#374151 !important;
+  color:#ffffff !important;
+}
+
+html[data-theme='dark'] .payment-option.selected{
+  background:#000000 !important;
+  border-color:#ffffff !important;
+  box-shadow:0 0 0 3px rgba(255,255,255,0.06);
+}
+
+html[data-theme='dark'] .upi-card{
+  background:#000000 !important;
+  border-color:#374151 !important;
+}
+
+html[data-theme='dark'] .upi-brand,
+html[data-theme='dark'] .upi-id{
+  color:#ffffff !important;
+}
+
+html[data-theme='dark'] .notification-dropdown{
+  background:#000000;
+  border-color:#1f2937;
+  box-shadow:0 18px 38px rgba(0,0,0,0.55);
+}
+
+html[data-theme='dark'] .notification-header{
+  border-bottom-color:#1f2937;
+  color:#ffffff;
+}
+
+html[data-theme='dark'] .notification-item-row{
+  background:#000000;
+  border-bottom-color:#1f2937;
+}
+
+html[data-theme='dark'] .notification-item-row.unread{
+  background:#0b0b0b;
+}
+
+html[data-theme='dark'] .notification-item-row:hover{
+  background:#111827;
+}
+
+html[data-theme='dark'] .notification-title{
+  color:#ffffff;
+}
+
+html[data-theme='dark'] .notification-time{
+  color:#cbd5e1;
+}
+
+html[data-theme='dark'] .bell-black{
+  color:#ffffff !important;
+}
+
+html[data-theme='dark'] .toggle-label{
+  color:#cbd5e1;
+}
+
+html[data-theme='dark'] .toggle-label:hover{
+  background:#0b0b0b;
+  color:#ffffff;
+}
+
+html[data-theme='dark'] .toggle-label.active{
+  color:#10b981;
+}
+
+html[data-theme='dark'] .switch{
+  background:#000000;
+  box-shadow:inset 0 0 0 1px #ffffff;
+}
+
+html[data-theme='dark'] .switch.on{
+  background:#111827;
+  box-shadow:inset 0 0 0 1px rgba(16,185,129,0.9);
+}
+
+html[data-theme='dark'] .switch .knob{
+  background:#ffffff;
+  box-shadow:0 10px 26px rgba(0,0,0,0.55);
+}
+

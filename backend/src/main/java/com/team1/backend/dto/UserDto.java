@@ -7,16 +7,18 @@ public class UserDto {
     private String avatar;
     private String role;
     private String timezone;
+    private boolean twoFactorEnabled;
 
     public UserDto() {}
 
-    public UserDto(String id, String name, String email, String avatar, String role, String timezone) {
+    public UserDto(String id, String name, String email, String avatar, String role, String timezone, boolean twoFactorEnabled) {
         this.id = id;
         this.name = name;
         this.email = email;
         this.avatar = avatar;
         this.role = role;
         this.timezone = timezone;
+        this.twoFactorEnabled = twoFactorEnabled;
     }
 
     public String getId() {
@@ -65,5 +67,13 @@ public class UserDto {
 
     public void setTimezone(String timezone) {
         this.timezone = timezone;
+    }
+
+    public boolean isTwoFactorEnabled() {
+        return twoFactorEnabled;
+    }
+
+    public void setTwoFactorEnabled(boolean twoFactorEnabled) {
+        this.twoFactorEnabled = twoFactorEnabled;
     }
 }

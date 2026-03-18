@@ -1167,7 +1167,7 @@ export default function Project() {
         <div className="sidebar-top">
           <div className="brand d-flex align-items-center">
             <div className="brand-logo">KP</div>
-            <div className="brand-name">KavyaProMan</div>
+            <div className="brand-name">KavyaProMan 360</div>
           </div>
         </div>
 
