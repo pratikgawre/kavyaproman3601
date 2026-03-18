@@ -53,16 +53,6 @@ public class IssueService {
         return createInternal(issue, userId, user);
     }
 
-    public Issue update(String userId, String id, Issue updated){
-        requireUser(userId);
-        return update(id, updated);
-    }
-
-    public void delete(String userId, String id){
-        requireUser(userId);
-        delete(id);
-    }
-
     private Issue createInternal(Issue issue, String userId, User creator){
         issue.setProject(normalizeProjectKey(issue.getProject()));
         issue.setIssueType(normalizeText(issue.getIssueType()));

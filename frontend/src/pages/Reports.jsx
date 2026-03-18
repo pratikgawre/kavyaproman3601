@@ -39,6 +39,75 @@ import useIssueNotifications from '../hooks/useIssueNotifications'
 import { getInitials } from '../utils/initials'
 
 const normalizeRole = (role) => (role || "").trim().toLowerCase();
+const normalizeStatus = (status) => {
+  const normalized = (status || "").toString().trim().toLowerCase();
+  if (normalized === "todo" || normalized === "to-do") return "todo";
+  if (normalized === "progress" || normalized === "in-progress" || normalized === "in progress") return "progress";
+  if (normalized === "review" || normalized === "in-review" || normalized === "in review") return "review";
+  if (normalized === "done" || normalized === "completed") return "done";
+  return "todo";
+};
+const normalizeProjectKey = (value) => (value || "").toString().trim().toUpperCase();
+const pointsFromDifficulty = (difficulty) => {
+  const diff = (difficulty || "").toString().trim().toLowerCase();
+  if (diff === "high") return 8;
+  if (diff === "low") return 2;
+  return 5;
+};
+const HOURS_PER_POINT = 8;
+
+function parseBackendDate(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (Array.isArray(value) && value.length >= 3) {
+    const year = Number(value[0]);
+    const monthIndex = Number(value[1]) - 1;
+    const day = Number(value[2]);
+    const hour = Number(value[3] || 0);
+    const minute = Number(value[4] || 0);
+    const second = Number(value[5] || 0);
+    const nano = Number(value[6] || 0);
+    if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || !Number.isFinite(day)) return null;
+    const ms = Number.isFinite(nano) ? Math.floor(nano / 1_000_000) : 0;
+    const d = new Date(year, monthIndex, day, hour, minute, second, ms);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof value === "object") {
+    const year = Number(value.year);
+    const monthValue = Number(value.monthValue ?? value.month);
+    const day = Number(value.dayOfMonth ?? value.day);
+    const hour = Number(value.hour ?? 0);
+    const minute = Number(value.minute ?? 0);
+    const second = Number(value.second ?? 0);
+    const nano = Number(value.nano ?? 0);
+    if (Number.isFinite(year) && Number.isFinite(monthValue) && Number.isFinite(day)) {
+      const ms = Number.isFinite(nano) ? Math.floor(nano / 1_000_000) : 0;
+      const d = new Date(year, monthValue - 1, day, hour, minute, second, ms);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+  }
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+const dateKey = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const startOfWeek = (date) => {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = (day + 6) % 7; // Monday as first day
+  d.setDate(d.getDate() - diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+};
+
+const formatShortDate = (date) =>
+  date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
 const Reports = () => {
   const location = useLocation();
@@ -56,6 +125,8 @@ const Reports = () => {
   const { user, clearUser } = useAuth()
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
   const avatarInitials = getInitials(user?.name || displayName, user?.email)
+  const userEmail = (user?.email || "").trim().toLowerCase();
+  const isProjectManager = ["admin", "project manager"].includes(normalizeRole(user?.role));
   const isDeveloper = normalizeRole(user?.role) === 'developer'
   const [selectedOrg, setSelectedOrg] = useState(() => {
     try {
