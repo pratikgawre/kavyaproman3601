@@ -708,9 +708,9 @@ html[data-theme='dark'] .org-url input::placeholder {
   top: 8px;
   padding: 7px 14px;
   border-radius: 10px;
-  border: 1px solid #e5e7eb;
-  background: #ffffff;
-  color: #ef4444;
+  border: 1px solid #000000;
+  background: #000000;
+  color: #ffffff;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -722,7 +722,8 @@ html[data-theme='dark'] .org-url input::placeholder {
 }
 
 .org-list-logout:hover {
-  background: #fff5f5;
+  background: #111827;
+  border-color: #111827;
   transform: translateY(-1px);
 }
 
