@@ -26,6 +26,60 @@ html[data-theme='dark']{
   --border:#334155;
 }
 
+/* Sidebar density (saved in localStorage via Settings -> Appearance). */
+html[data-sidebar-density='compact'] .sidebar{
+  padding:12px !important;
+}
+
+html[data-sidebar-density='compact'] .sidebar .brand-logo{
+  width:38px !important;
+  height:38px !important;
+  border-radius:9px !important;
+  font-size:14px;
+}
+
+html[data-sidebar-density='compact'] .sidebar .org-switch.mt-3{
+  margin-top:0.5rem !important;
+  padding:8px 6px !important;
+}
+
+html[data-sidebar-density='compact'] .sidebar .org-icon{
+  width:32px !important;
+  height:32px !important;
+  border-radius:8px !important;
+  font-size:14px;
+}
+
+html[data-sidebar-density='compact'] .sidebar .switch-org-btn{
+  padding:6px 8px !important;
+  font-size:13px !important;
+}
+
+html[data-sidebar-density='compact'] .sidebar .sidebar-inner.mt-3{
+  margin-top:0.5rem !important;
+}
+
+html[data-sidebar-density='compact'] .sidebar .nav .nav-item{
+  padding:8px 8px !important;
+  font-size:14px;
+}
+
+html[data-sidebar-density='compact'] .sidebar .nav .nav-item.mb-2{
+  margin-bottom:0.25rem !important;
+}
+
+html[data-sidebar-density='compact'] .sidebar .nav .nav-icon.me-3{
+  margin-right:0.75rem !important;
+}
+
+html[data-sidebar-density='compact'] .sidebar .sidebar-footer.mt-3{
+  margin-top:0.5rem !important;
+}
+
+html[data-sidebar-project-icons='hide'] .sidebar .nav .nav-icon{
+  display:none !important;
+}
+
 body{
   background:var(--bg);
   color:var(--text);

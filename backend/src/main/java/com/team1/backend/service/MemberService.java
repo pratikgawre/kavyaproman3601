@@ -6,7 +6,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import com.team1.backend.model.Member;
 import com.team1.backend.repository.MemberRepository;
@@ -61,10 +64,8 @@ public class MemberService {
     }
 
     public Member getMemberById(String id) {
-        Member member = memberRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Member not found with id: " + id));
-        applyUserAvatar(member);
-        return member;
+        return memberRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Member not found"));
     }
 
     public Member addMember(Member member) {
@@ -126,14 +127,12 @@ public class MemberService {
                 return memberRepository.save(existingMember);
             }
         }
-        if ((member.getImage() == null || member.getImage().trim().isEmpty()) && member.getEmail() != null) {
-            userRepository.findByEmailIgnoreCase(member.getEmail()).ifPresent(user -> {
-                String avatar = user.getAvatar();
-                if (avatar != null && !avatar.trim().isEmpty()) {
-                    member.setImage(avatar.trim());
-                }
-            });
+        member.setEmail(nextEmail);
+
+        if (memberRepository.existsByEmail(nextEmail)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already in use");
         }
+
         if (member.getProjects() == null) {
             member.setProjects(0);
         }
@@ -143,18 +142,32 @@ public class MemberService {
         if (member.getCreatedAt() == null) {
             member.setCreatedAt(LocalDateTime.now());
         }
-        return memberRepository.save(member);
+        try {
+            return memberRepository.save(member);
+        } catch (DataIntegrityViolationException ex) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already in use");
+        }
     }
 
     public Member updateMember(String id, Member updatedMember) {
         Member member = memberRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Member not found with id: " + id));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Member not found"));
 
         if (updatedMember.getName() != null) {
             member.setName(updatedMember.getName());
         }
         if (updatedMember.getEmail() != null) {
-            member.setEmail(updatedMember.getEmail());
+            String nextEmail = normalizeEmail(updatedMember.getEmail());
+            if (nextEmail == null || nextEmail.isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Email is required");
+            }
+            if (!nextEmail.equalsIgnoreCase(member.getEmail())) {
+                Optional<Member> existing = memberRepository.findByEmail(nextEmail);
+                if (existing.isPresent() && existing.get().getId() != null && !existing.get().getId().equals(member.getId())) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already in use");
+                }
+            }
+            member.setEmail(nextEmail);
         }
         if (updatedMember.getRole() != null) {
             member.setRole(updatedMember.getRole());
@@ -183,12 +196,16 @@ public class MemberService {
             member.setOrganizationName(normalizedOrgName.isEmpty() ? null : normalizedOrgName);
         }
 
-        return memberRepository.save(member);
+        try {
+            return memberRepository.save(member);
+        } catch (DataIntegrityViolationException ex) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already in use");
+        }
     }
 
     public void deleteMember(String id) {
-        Member member = memberRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Member not found with id: " + id));
+        memberRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Member not found"));
         memberRepository.deleteById(id);
     }
 
@@ -264,18 +281,19 @@ public class MemberService {
     }
 
     private void applyUserAvatar(Member member) {
-        if (member == null || member.getEmail() == null) {
+        if (member == null) {
             return;
         }
-        String email = member.getEmail().trim().toLowerCase();
-        if (email.isEmpty()) {
+        if (member.getImage() != null && !member.getImage().isBlank()) {
             return;
         }
-        userRepository.findByEmailIgnoreCase(email).ifPresent(user -> {
-            String avatar = user.getAvatar();
-            if (avatar != null && !avatar.trim().isEmpty()) {
-                member.setImage(avatar.trim());
-            }
-        });
+        String email = normalizeEmail(member.getEmail());
+        if (email == null || email.isBlank()) {
+            return;
+        }
+        userRepository.findByEmailIgnoreCase(email)
+                .map(user -> user.getAvatar())
+                .filter(avatar -> avatar != null && !avatar.isBlank())
+                .ifPresent(member::setImage);
     }
 }

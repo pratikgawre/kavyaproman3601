@@ -461,7 +461,7 @@ return (
         <div className="sidebar-top">
           <div className="brand d-flex align-items-center">
             <div className="brand-logo">KP</div>
-            <div className="brand-name">KavyaProMan</div>
+            <div className="brand-name">KavyaProMan 360</div>
           </div>
         </div>
 
@@ -703,9 +703,7 @@ return (
           {showUpgradeModal && (
             <div className="upgrade-modal-overlay" onClick={() => setShowUpgradeModal(false)}>
               <div className="upgrade-modal" onClick={(e) => e.stopPropagation()}>
-                <button className="modal-close btn btn-link" onClick={() => setShowUpgradeModal(false)} aria-label="Close">
-                  <FiX size={18} />
-                </button>
+                <button className="modal-close btn btn-link" onClick={() => setShowUpgradeModal(false)}>{'\u00d7'}</button>
                 <h3>Upgrade to {modalPlan ? modalPlan.charAt(0).toUpperCase() + modalPlan.slice(1) : ''} Plan</h3>
                 <div className="modal-price">{modalPlan === 'professional' ? '$19' : modalPlan === 'business' ? '$25' : modalPlan === 'enterprise' ? 'Custom' : 'Free'} <span className="small-muted">/month</span></div>
                 <ul className="modal-features">
@@ -724,7 +722,7 @@ return (
                   {selectedPaymentMethod === 'card' && (
                     <div className="card-preview">
                       <div className="card-chip" />
-                      <div className="card-number">â€¢â€¢â€¢â€¢ 4242</div>
+                      <div className="card-number">{'\u2022\u2022\u2022\u2022 4242'}</div>
                       <div className="card-meta"><div>JOHN DOE</div><div>12/26</div></div>
                     </div>
                   )}

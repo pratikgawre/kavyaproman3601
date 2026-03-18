@@ -95,7 +95,8 @@ public class UserService {
                 u.getEmail(),
                 u.getAvatar(),
                 u.getRole(),
-                u.getTimezone()
+                u.getTimezone(),
+                u.isTwoFactorEnabled()
         );
     }
 }

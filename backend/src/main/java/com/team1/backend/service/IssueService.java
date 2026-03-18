@@ -39,6 +39,13 @@ public class IssueService {
         return repo.findByIdAndCreatorEmailIgnoreCase(id, user.getEmail());
     }
 
+    public Issue create(String userId, Issue issue) {
+        User user = requireUser(userId);
+        issue.setCreatorEmail(user.getEmail());
+        issue.setCreatorName(user.getName());
+        return create(issue);
+    }
+
     public Issue create(Issue issue){
         issue.setProject(normalizeProjectKey(issue.getProject()));
         issue.setIssueType(normalizeText(issue.getIssueType()));
@@ -89,6 +96,20 @@ public class IssueService {
             saved = repo.save(saved);
         }
         return saved;
+    }
+
+    public Issue update(String userId, String id, Issue updated) {
+        User user = requireUser(userId);
+        Issue existing = repo.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Issue not found"));
+        if (existing.getCreatorEmail() != null
+                && user.getEmail() != null
+                && !existing.getCreatorEmail().equalsIgnoreCase(user.getEmail())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed");
+        }
+        updated.setCreatorEmail(existing.getCreatorEmail());
+        updated.setCreatorName(existing.getCreatorName());
+        return update(id, updated);
     }
 
     public Issue update(String id, Issue updated){
@@ -157,7 +178,27 @@ public class IssueService {
         });
     }
 
+    public void delete(String userId, String id) {
+        User user = requireUser(userId);
+        Issue existing = repo.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Issue not found"));
+        if (existing.getCreatorEmail() != null
+                && user.getEmail() != null
+                && !existing.getCreatorEmail().equalsIgnoreCase(user.getEmail())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed");
+        }
+        repo.delete(existing);
+    }
+
     public void delete(String id){ repo.deleteById(id); }
+
+    private User requireUser(String userId) {
+        if (userId == null || userId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing X-USER-ID");
+        }
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid user"));
+    }
 
     private String normalizeText(String value) {
         if (value == null) return null;
