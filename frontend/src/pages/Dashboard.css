@@ -32,7 +32,7 @@
 }
 
 /* Consistent top spacing across pages (matches Project/Board/Backlog) */
-.dashboard-root > main.content{
+.dashboard-root > main.content:not(.with-topbar){
   padding-top:12px !important;
 }
 .content::-webkit-scrollbar{width:12px}

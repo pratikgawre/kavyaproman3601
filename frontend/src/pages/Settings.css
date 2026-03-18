@@ -273,6 +273,30 @@
   color: #9ca3af;
 }
 
+.settings-page .settings-select-wrap {
+  position: relative;
+}
+
+.settings-page .settings-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 38px;
+}
+
+.settings-page .settings-select-wrap .settings-select-icon {
+  color: #6b7280;
+  pointer-events: none;
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.settings-page .settings-select:disabled + .settings-select-icon {
+  color: #9ca3af;
+}
+
 .settings-page .field-error {
   margin-top: 6px;
   color: var(--settings-danger);
@@ -657,6 +681,84 @@
 }
 
 @media (max-width: 768px) {
+  .settings-page .top-search-row {
+    align-items: center;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .settings-page .top-search-medium {
+    cursor: pointer;
+    flex: 0 0 44px;
+    max-width: 44px;
+    min-width: 44px;
+    padding: 6px;
+    width: 44px;
+  }
+
+  .settings-page .top-search-medium .input-group-text {
+    margin: 0 auto;
+  }
+
+  .settings-page .top-search-medium .form-control {
+    display: none;
+    pointer-events: none;
+  }
+
+  .settings-page .notification-wrapper {
+    flex: 0 0 auto;
+    margin-right: 0 !important;
+  }
+
+  .settings-page .create-issue-medium {
+    display: inline-flex;
+    flex: 0 0 auto;
+    font-size: 12px;
+    min-width: 108px;
+    padding: 8px 10px;
+    white-space: nowrap;
+  }
+
+  .settings-page .top-search-row.mobile-search-open .top-search-medium {
+    cursor: text;
+    flex: 1 1 auto;
+    max-width: none;
+    min-width: 0;
+    padding: 6px 10px;
+    width: auto;
+  }
+
+  .settings-page .top-search-row.mobile-search-open .top-search-medium .form-control {
+    display: block;
+    pointer-events: auto;
+  }
+
+  .settings-page .top-search-row.mobile-search-open .notification-wrapper {
+    display: none !important;
+  }
+
+  .settings-page .top-search-row.mobile-search-open .create-issue-medium {
+    display: none !important;
+  }
+
+  .settings-page .settings-tabs-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .settings-page .settings-tabs-container::-webkit-scrollbar {
+    display: none;
+  }
+
+  .settings-page .settings-tabs {
+    flex-wrap: nowrap;
+    width: max-content;
+    min-width: 100%;
+  }
+
   .settings-page .settings-card {
     padding: 20px;
   }
@@ -669,6 +771,8 @@
   .settings-page .tab-pill {
     padding: 8px 14px;
     font-size: 13px;
+    white-space: nowrap;
+    flex: 0 0 auto;
   }
 
   .settings-page .avatar-section .ms-3,
@@ -691,6 +795,18 @@
     width: 100%;
     max-width: none;
   }
+}
+
+.settings-search-close {
+  align-items: center;
+  background: transparent;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  margin-left: 6px;
+  padding: 0;
 }
 
 @media (max-width: 992px) {
@@ -729,6 +845,17 @@
 }
 
 @media (max-width: 576px) {
+  .settings-page .create-issue-medium {
+    font-size: 11px;
+    min-width: 96px;
+    padding: 7px 8px;
+  }
+
+  .settings-page .settings-tabs {
+    gap: 2px;
+    padding: 4px;
+  }
+
   .settings-page .settings-card {
     padding: 16px;
   }
@@ -738,8 +865,8 @@
   }
 
   .settings-page .tab-pill {
-    padding: 6px 12px;
-    font-size: 12px;
+    padding: 6px 10px;
+    font-size: 11px;
   }
 
   .settings-page .form-control {
@@ -817,6 +944,14 @@ html[data-theme='dark'] .settings-page .notif-description {
 }
 
 html[data-theme='dark'] .settings-page .form-control::placeholder {
+  color: #94a3b8;
+}
+
+html[data-theme='dark'] .settings-page .settings-select-wrap .settings-select-icon {
+  color: #cbd5e1;
+}
+
+html[data-theme='dark'] .settings-page .settings-select:disabled + .settings-select-icon {
   color: #94a3b8;
 }
 
