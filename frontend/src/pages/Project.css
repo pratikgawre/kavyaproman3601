@@ -778,6 +778,18 @@
   outline: none;
 }
 
+.project-member-role-display {
+  background: #f9fafb;
+  border: 1px solid #d8dee9;
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  color: #111827;
+}
+
 .project-member-field-full {
   grid-column: 1 / -1;
 }

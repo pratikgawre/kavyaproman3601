@@ -51,14 +51,14 @@ const getRoleLabel = (role) => {
   if (normalized === 'admin' || normalized === 'project manager') return 'Project Manager'
   return role || ''
 }
-const resolveProjectRole = (role) => {
+const resolveProjectRole = (role, fallback = 'Developer') => {
   const normalized = normalizeRole(role)
+  if (!normalized) return fallback
   if (normalized === 'admin' || normalized === 'project manager') return 'Admin'
   if (normalized === 'tester') return 'Tester'
   if (normalized === 'developer') return 'Developer'
-  return 'Developer'
+  return role.trim()
 }
-
 const formatDateValue = (value) => {
   if (!value) return ''
   const date = value instanceof Date ? value : new Date(value)
@@ -94,12 +94,6 @@ const CREATE_TABS = [
 ]
 
 const AVAILABLE_ICONS = ['🚀', '💼', '📱', '🎨', '⚙️', '🏗️', '🔬', '📊', '🎯', '💡', '💥', '🔥']
-
-const PROJECT_MEMBER_ROLES = [
-  { value: 'Admin', label: 'Project Manager' },
-  { value: 'Developer', label: 'Developer' },
-  { value: 'Tester', label: 'Tester' }
-]
 
 export default function Project() {
   const navigate = useNavigate()
@@ -626,7 +620,7 @@ export default function Project() {
       memberId: member?.id || member?.memberId || '',
       name: displayNameValue,
       email,
-      role: prev.role || resolveProjectRole(member?.role)
+      role: resolveProjectRole(member?.role, prev.role || 'Developer')
     }))
     setMemberSearch(displayNameValue)
     setShowMemberSuggestions(false)
@@ -654,12 +648,16 @@ export default function Project() {
 
       if (response.ok) {
         const userData = await response.json()
+        const dbName = (userData?.name || '').trim()
+        const resolvedRole = resolveProjectRole(userData.role, memberCandidate.role || 'Developer')
+        setMemberCandidate((prev) => ({
+          ...prev,
+          name: dbName || prev.name,
+          email,
+          role: resolvedRole
+        }))
         setVerifiedEmailUser(userData)
         setEmailVerificationStatus('verified')
-        const dbName = (userData?.name || '').trim()
-        if (dbName) {
-          setMemberCandidate((prev) => ({ ...prev, name: dbName, email }))
-        }
         alert(`Email verified! User: ${userData.name || userData.email}`)
       } else if (response.status === 404) {
         setEmailVerificationStatus('not-found')
@@ -918,14 +916,9 @@ export default function Project() {
                 </div>
                 <div className="project-member-field">
                   <label>Role</label>
-                  <select
-                    value={memberCandidate.role}
-                    onChange={(event) => setMemberCandidate((prev) => ({ ...prev, role: event.target.value }))}
-                  >
-                    {PROJECT_MEMBER_ROLES.map((role) => (
-                      <option key={role.value} value={role.value}>{role.label}</option>
-                    ))}
-                  </select>
+                  <div className="project-member-role-display">
+                    <span>{memberCandidate.role || 'Developer'}</span>
+                  </div>
                 </div>
               </div>
 
