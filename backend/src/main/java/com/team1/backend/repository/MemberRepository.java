@@ -8,6 +8,7 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 public interface MemberRepository extends MongoRepository<Member, String> {
     Optional<Member> findByEmail(String email);
     List<Member> findByEmailIgnoreCase(String email);
+    boolean existsByEmail(String email);
     Optional<Member> findByEmailAndManagerEmail(String email, String managerEmail);
     Optional<Member> findByEmailAndManagerEmailAndOrganizationId(String email, String managerEmail, String organizationId);
     Optional<Member> findByEmailAndManagerEmailAndOrganizationUsername(String email, String managerEmail, String organizationUsername);
