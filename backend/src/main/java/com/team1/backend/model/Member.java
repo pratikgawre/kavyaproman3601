@@ -8,7 +8,12 @@ import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 @CompoundIndexes({
-        @CompoundIndex(name = "email_manager_unique", def = "{'email': 1, 'managerEmail': 1}", unique = true)
+        @CompoundIndex(
+                name = "email_manager_org_unique",
+                def = "{'email': 1, 'managerEmail': 1, 'organizationId': 1}",
+                unique = true,
+                sparse = true
+        )
 })
 @Document(collection = "members")
 public class Member {
@@ -31,6 +36,12 @@ public class Member {
 
     // Project manager who invited/owns this member
     private String managerEmail;
+
+    private String organizationId;
+
+    private String organizationUsername;
+
+    private String organizationName;
 
     private LocalDateTime createdAt;
 
@@ -109,6 +120,30 @@ public class Member {
 
     public void setManagerEmail(String managerEmail) {
         this.managerEmail = managerEmail;
+    }
+
+    public String getOrganizationId() {
+        return organizationId;
+    }
+
+    public void setOrganizationId(String organizationId) {
+        this.organizationId = organizationId;
+    }
+
+    public String getOrganizationUsername() {
+        return organizationUsername;
+    }
+
+    public void setOrganizationUsername(String organizationUsername) {
+        this.organizationUsername = organizationUsername;
+    }
+
+    public String getOrganizationName() {
+        return organizationName;
+    }
+
+    public void setOrganizationName(String organizationName) {
+        this.organizationName = organizationName;
     }
 
     public LocalDateTime getCreatedAt() {
