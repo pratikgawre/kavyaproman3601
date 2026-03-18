@@ -39,14 +39,31 @@ public class IssueService {
         return repo.findByIdAndCreatorEmailIgnoreCase(id, user.getEmail());
     }
 
-    public Issue create(String userId, Issue issue) {
+    public Issue create(String userId, Issue issue){
         User user = requireUser(userId);
-        issue.setCreatorEmail(user.getEmail());
-        issue.setCreatorName(user.getName());
-        return create(issue);
+        if (issue == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Issue payload is required");
+        }
+        if (issue.getCreatorEmail() == null || issue.getCreatorEmail().trim().isEmpty()) {
+            issue.setCreatorEmail(user.getEmail());
+        }
+        if (issue.getCreatorName() == null || issue.getCreatorName().trim().isEmpty()) {
+            issue.setCreatorName(user.getName() != null ? user.getName() : user.getEmail());
+        }
+        return createInternal(issue, userId, user);
     }
 
-    public Issue create(Issue issue){
+    public Issue update(String userId, String id, Issue updated){
+        requireUser(userId);
+        return update(id, updated);
+    }
+
+    public void delete(String userId, String id){
+        requireUser(userId);
+        delete(id);
+    }
+
+    private Issue createInternal(Issue issue, String userId, User creator){
         issue.setProject(normalizeProjectKey(issue.getProject()));
         issue.setIssueType(normalizeText(issue.getIssueType()));
         issue.setEpicName(normalizeText(issue.getEpicName()));
@@ -95,6 +112,18 @@ public class IssueService {
             saved.setIssueKey(base + "-" + shortId);
             saved = repo.save(saved);
         }
+        if (notificationService != null && creator != null) {
+            try {
+                CreateNotificationRequest req = new CreateNotificationRequest();
+                req.setType("issue_created");
+                req.setTitle("Issue created: " + (saved.getSummary() != null ? saved.getSummary() : saved.getIssueKey()));
+                req.setHref("/all-my-issues");
+                notificationService.create(userId, req);
+            } catch (Exception ignored) {
+                // Avoid blocking issue creation on notification failures
+            }
+        }
+
         return saved;
     }
 
@@ -193,10 +222,10 @@ public class IssueService {
     public void delete(String id){ repo.deleteById(id); }
 
     private User requireUser(String userId) {
-        if (userId == null || userId.isBlank()) {
+        if (userId == null || userId.trim().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing X-USER-ID");
         }
-        return userRepository.findById(userId)
+        return userRepository.findById(userId.trim())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid user"));
     }
 

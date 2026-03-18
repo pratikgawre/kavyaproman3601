@@ -79,6 +79,7 @@ export default function Board() {
   const displayName = currentUser?.name || (currentUser?.email ? currentUser.email.split('@')[0] : 'Guest')
   const userEmail = (currentUser?.email || '').trim().toLowerCase()
   const isProjectManager = ['admin', 'project manager'].includes(normalizeRole(currentUser?.role))
+  const isDeveloper = normalizeRole(currentUser?.role) === 'developer'
   const [selectedOrg, setSelectedOrg] = useState(() => { try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null } })
   useEffect(() => {
     function onOrgChanged(e){ const org = e?.detail || null; setSelectedOrg(org); try { if (org) localStorage.setItem('org', JSON.stringify(org)) } catch(err){} }
@@ -229,6 +230,7 @@ export default function Board() {
       const displayKey = issue.issueKey || issue.key || issue.id
       const title = issue.summary || issue.title || 'Untitled issue'
       const assignee = issue.assigneeName || issue.assignee || issue.creatorName || 'Unassigned'
+      const assignedBy = issue.creatorName || issue.creatorEmail || 'Unknown'
       const points = Number.isFinite(issue.points) ? issue.points : pointsFromDifficulty(issue.difficulty)
       return {
         ...issue,
@@ -239,6 +241,7 @@ export default function Board() {
         typeLabel: issueType.toUpperCase(),
         labels,
         assignee,
+        assignedBy,
         points,
         priority: normalizePriority(issue.priority, issue.difficulty),
         status: normalizeStatus(issue.status)
@@ -589,12 +592,14 @@ export default function Board() {
               )}
             </div>
 
-            <button
-              className="btn create-issue-medium"
-              onClick={() => navigate('/create-issue', { state: { projectKey: activeProjectKey, project: activeProject } })}
-            >
-              <FiPlus className="me-1" /> Create Issue
-            </button>
+            {!isDeveloper && (
+              <button
+                className="btn create-issue-medium"
+                onClick={() => navigate('/create-issue', { state: { projectKey: activeProjectKey, project: activeProject } })}
+              >
+                <FiPlus className="me-1" /> Create Issue
+              </button>
+            )}
           </div>
         </header>
 
@@ -806,13 +811,15 @@ export default function Board() {
                         <h2>{column.title}</h2>
                         <span className="board-column-count">{column.issues.length}</span>
                       </div>
-                      <button
-                        className="board-column-add"
-                        aria-label={`Add issue to ${column.title}`}
-                        onClick={() => navigate('/create-issue', { state: { projectKey: activeProjectKey, project: activeProject } })}
-                      >
-                        <FiPlus size={18} />
-                      </button>
+                      {!isDeveloper && (
+                        <button
+                          className="board-column-add"
+                          aria-label={`Add issue to ${column.title}`}
+                          onClick={() => navigate('/create-issue', { state: { projectKey: activeProjectKey, project: activeProject } })}
+                        >
+                          <FiPlus size={18} />
+                        </button>
+                      )}
                     </header>
 
                     <div className="board-column-body">
@@ -824,6 +831,9 @@ export default function Board() {
                           </div>
 
                           <h3>{issue.title}</h3>
+                          <div className="board-issue-meta">
+                            Assigned by: <span>{issue.assignedBy}</span>
+                          </div>
 
                           <div className="board-issue-labels">
                             {issue.labels.map((label) => (
@@ -832,7 +842,10 @@ export default function Board() {
                           </div>
 
                           <div className="board-issue-footer">
-                            <span className="board-issue-avatar" title={issue.assignee}>{getInitials(issue.assignee)}</span>
+                            <div className="board-issue-assignee">
+                              <span className="board-issue-avatar" title={issue.assignee}>{getInitials(issue.assignee)}</span>
+                              <span className="board-issue-assignee-name" title={issue.assignee}>{issue.assignee}</span>
+                            </div>
                             <span className="board-issue-points">{issue.points} pts</span>
                           </div>
                         </article>

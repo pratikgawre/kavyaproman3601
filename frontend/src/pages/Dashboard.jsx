@@ -99,6 +99,7 @@ export default function Dashboard({ initialShowCreate = false }) {
   const avatarInitials = getInitials(user?.name || displayName, user?.email)
   const userEmail = (user?.email || '').trim().toLowerCase()
   const isProjectManager = ['admin', 'project manager'].includes(normalizeRole(user?.role))
+  const isDeveloper = normalizeRole(user?.role) === 'developer'
   const [selectedOrg, setSelectedOrg] = useState(() => {
     try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null }
   })
@@ -307,28 +308,147 @@ export default function Dashboard({ initialShowCreate = false }) {
       if(fileInputRef.current) fileInputRef.current.value = ''
     }
   }
-  async function downloadAttachment(file){
-    const href = file?.url || file?.data
-    if (!href) return
-    if (file.url) {
-      window.open(file.url, '_blank', 'noopener')
-      return
+  function resolveAttachmentUrl(file) {
+    const raw = file?.url || file?.fileUrl || file?.downloadUrl || file?.link || file?.href || file?.data || ''
+    if (!raw) return ''
+    if (file?.data && !/^(https?:|blob:|data:|\/\/)/i.test(raw)) {
+      const mime = file?.type || 'application/octet-stream'
+      return `data:${mime};base64,${raw}`
     }
+
+    let url = raw
+    const name = (file?.name || '').toLowerCase()
+    const format = (file?.format || '').toLowerCase()
+    const type = (file?.type || '').toLowerCase()
+    const resourceType = (file?.resourceType || '').toLowerCase()
+    const extFromName = (name.match(/\.([a-z0-9]+)$/) || [])[1] || ''
+    const extFromUrl = (() => {
+      try {
+        const clean = url.split('?')[0].split('#')[0]
+        const match = clean.match(/\.([a-z0-9]+)$/i)
+        return match ? match[1].toLowerCase() : ''
+      } catch (e) { return '' }
+    })()
+    const ext = extFromName || format || extFromUrl
+
+    const isImage = type.startsWith('image/') || ['png','jpg','jpeg','gif','webp','bmp','svg','heic','heif'].includes(ext)
+    const isVideoAudio = type.startsWith('video/') || type.startsWith('audio/') || ['mp4','webm','mov','avi','mkv','mp3','wav','m4a','ogg','flac'].includes(ext)
+
+    if (typeof url === 'string') {
+      if (resourceType === 'raw' && url.includes('/image/upload/')) {
+        url = url.replace('/image/upload/', '/raw/upload/')
+      } else if (resourceType === 'video' && url.includes('/image/upload/')) {
+        url = url.replace('/image/upload/', '/video/upload/')
+      } else if (!resourceType && url.includes('/image/upload/') && !isImage) {
+        url = url.replace('/image/upload/', isVideoAudio ? '/video/upload/' : '/raw/upload/')
+      }
+    }
+    return url
+  }
+  function inferMimeType(file, url = '') {
+    const type = (file?.type || '').toLowerCase()
+    if (type && type !== 'application/octet-stream') return type
+    const name = (file?.name || '').toLowerCase()
+    const fromName = (name.match(/\.([a-z0-9]+)$/) || [])[1] || ''
+    const fromUrl = (() => {
+      try {
+        const clean = url.split('?')[0].split('#')[0]
+        const match = clean.match(/\.([a-z0-9]+)$/i)
+        return match ? match[1].toLowerCase() : ''
+      } catch (e) { return '' }
+    })()
+    const ext = fromName || fromUrl || (file?.format || '').toLowerCase()
+    if (!ext) return ''
+    const map = {
+      pdf: 'application/pdf',
+      png: 'image/png',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      gif: 'image/gif',
+      webp: 'image/webp',
+      bmp: 'image/bmp',
+      svg: 'image/svg+xml',
+      heic: 'image/heic',
+      heif: 'image/heif',
+      mp4: 'video/mp4',
+      webm: 'video/webm',
+      mov: 'video/quicktime',
+      avi: 'video/x-msvideo',
+      mkv: 'video/x-matroska',
+      mp3: 'audio/mpeg',
+      wav: 'audio/wav',
+      m4a: 'audio/mp4',
+      ogg: 'audio/ogg',
+      flac: 'audio/flac',
+      txt: 'text/plain',
+      csv: 'text/csv',
+      json: 'application/json',
+      xml: 'application/xml',
+      md: 'text/markdown',
+      doc: 'application/msword',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      xls: 'application/vnd.ms-excel',
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      ppt: 'application/vnd.ms-powerpoint',
+      pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      zip: 'application/zip',
+      rar: 'application/vnd.rar',
+      '7z': 'application/x-7z-compressed'
+    }
+    return map[ext] || ''
+  }
+
+  function isViewableMime(mime) {
+    if (!mime) return false
+    return (
+      mime.startsWith('image/') ||
+      mime.startsWith('video/') ||
+      mime.startsWith('audio/') ||
+      mime.startsWith('text/') ||
+      mime === 'application/pdf' ||
+      mime === 'application/json' ||
+      mime === 'application/xml'
+    )
+  }
+
+  async function downloadAttachment(file){
+    const href = resolveAttachmentUrl(file)
+    if (!href) return
+    const fileName = file?.name || file?.originalFilename || 'attachment'
     try{
-      // fetch data URL and trigger download with proper filename
-      const res = await fetch(file.data)
+      const res = await fetch(href)
+      if(!res.ok) throw new Error('download failed')
       const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
+      const inferredType = inferMimeType(file, href)
+      const typedBlob = inferredType && inferredType !== blob.type
+        ? blob.slice(0, blob.size, inferredType)
+        : blob
+      const blobUrl = URL.createObjectURL(typedBlob)
       const a = document.createElement('a')
-      a.href = url
-      a.download = file.name || 'download'
+      a.href = blobUrl
+      a.download = fileName
       document.body.appendChild(a)
       a.click()
       a.remove()
-      setTimeout(()=> URL.revokeObjectURL(url), 1500)
+
+      if (isViewableMime(typedBlob.type)) {
+        const opened = window.open(blobUrl, '_blank', 'noopener,noreferrer')
+        if (!opened) {
+          // fallback: navigate in same tab if popup blocked
+          window.location.href = blobUrl
+        }
+      }
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000)
     }catch(err){
       console.error('download failed', err)
-      window.open(file.data, '_blank', 'noopener')
+      const opened = window.open(href, '_blank', 'noopener,noreferrer')
+      if (opened) return
+      const a = document.createElement('a')
+      a.href = href
+      a.download = fileName
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
     }
   }
   function handleRemoveAttachment(idx){
@@ -389,7 +509,6 @@ export default function Dashboard({ initialShowCreate = false }) {
       epicName: epicName?.trim(),
       summary: summary?.trim(),
       description: descRef.current?.innerHTML || '',
-      attachments: normalizedAttachments,
       creatorName: user?.name || '',
       creatorEmail: user?.email || '',
       assigneeName: assignee?.name || undefined,
@@ -397,8 +516,7 @@ export default function Dashboard({ initialShowCreate = false }) {
       assignDate: assignDate || undefined,
       deadlineDate: deadlineDate || undefined,
       attachmentsJson: JSON.stringify(normalizedAttachments),
-      difficulty: selectedDifficulty,
-      createdAt: new Date().toISOString()
+      difficulty: selectedDifficulty
     }
     // send to backend API
     try{
@@ -432,6 +550,32 @@ export default function Dashboard({ initialShowCreate = false }) {
     navigate('/all-my-issues')
   }
   const descRef = useRef(null)
+  const [formatState, setFormatState] = useState({ bold: false, italic: false, underline: false })
+
+  function updateFormatState() {
+    if (typeof document === 'undefined') return
+    const editor = descRef.current
+    if (!editor) return
+    const selection = document.getSelection()
+    if (!selection || selection.rangeCount === 0) return
+    const anchor = selection.anchorNode
+    const focus = selection.focusNode
+    if (editor.contains(anchor) || editor.contains(focus)) {
+      setFormatState({
+        bold: document.queryCommandState('bold'),
+        italic: document.queryCommandState('italic'),
+        underline: document.queryCommandState('underline')
+      })
+    }
+  }
+
+  useEffect(() => {
+    function handleSelectionChange() {
+      updateFormatState()
+    }
+    document.addEventListener('selectionchange', handleSelectionChange)
+    return () => document.removeEventListener('selectionchange', handleSelectionChange)
+  }, [])
   const [totalIssues, setTotalIssues] = useState(0)
   const [difficultyCounts, setDifficultyCounts] = useState({ High:0, Medium:0, Low:0 })
   const [taskCounts, setTaskCounts] = useState({ todo: 0, progress: 0, review: 0 })
@@ -1018,9 +1162,11 @@ export default function Dashboard({ initialShowCreate = false }) {
                 )}
               </div>
 
-              <button className="btn create-issue-medium" onClick={() => setShowCreate(true)}>
-                <FiPlus className="me-1" /> Create Issue
-              </button>
+          {!isDeveloper && (
+            <button className="btn create-issue-medium" onClick={() => setShowCreate(true)}>
+              <FiPlus className="me-1" /> Create Issue
+            </button>
+          )}
             </div>
 
             <h1 className="mb-0">Dashboard</h1>
@@ -1183,9 +1329,6 @@ export default function Dashboard({ initialShowCreate = false }) {
               <button type="button" className="btn modal-close create-issue-close" onClick={closeCreateModal} aria-label="Close" title="Close"><FiX size={18} /></button>
               <div className="create-issue-header d-flex align-items-center">
                 <h4>Create issue</h4>
-                <div className="ms-auto d-flex align-items-center gap-2">
-                  <button className="btn btn-sm btn-outline-secondary">Import issues</button>
-                </div>
               </div>
 
               <form className="create-issue-form">
@@ -1365,9 +1508,36 @@ export default function Dashboard({ initialShowCreate = false }) {
                 <div className="form-row">
                   <label>Description*</label>
                   <div className="toolbar format-toolbar">
-                    <button type="button" className="format-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>document.execCommand('bold')} aria-label="Bold"><strong>B</strong></button>
-                    <button type="button" className="format-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>document.execCommand('italic')} aria-label="Italic"><em>I</em></button>
-                    <button type="button" className="format-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>document.execCommand('underline')} aria-label="Underline"><u>U</u></button>
+                    <button
+                      type="button"
+                      className={`format-btn ${formatState.bold ? 'active' : ''}`}
+                      onMouseDown={e=>e.preventDefault()}
+                      onClick={() => { document.execCommand('bold'); updateFormatState() }}
+                      aria-label="Bold"
+                      aria-pressed={formatState.bold}
+                    >
+                      <strong>B</strong>
+                    </button>
+                    <button
+                      type="button"
+                      className={`format-btn ${formatState.italic ? 'active' : ''}`}
+                      onMouseDown={e=>e.preventDefault()}
+                      onClick={() => { document.execCommand('italic'); updateFormatState() }}
+                      aria-label="Italic"
+                      aria-pressed={formatState.italic}
+                    >
+                      <em>I</em>
+                    </button>
+                    <button
+                      type="button"
+                      className={`format-btn ${formatState.underline ? 'active' : ''}`}
+                      onMouseDown={e=>e.preventDefault()}
+                      onClick={() => { document.execCommand('underline'); updateFormatState() }}
+                      aria-label="Underline"
+                      aria-pressed={formatState.underline}
+                    >
+                      <u>U</u>
+                    </button>
 
                     <div className="align-group">
                       <button type="button" className="format-btn align-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>document.execCommand('justifyLeft')} title="Align left"><FiAlignLeft /></button>
@@ -1382,14 +1552,15 @@ export default function Dashboard({ initialShowCreate = false }) {
                     </button>
                     <input type="file" ref={fileInputRef} style={{display:'none'}} accept=".pdf,image/*,.doc,.docx" multiple onChange={(e)=>{ handleAddFiles(e.target.files) }} />
                   </div>
-                  <div
-                    className={`form-control description-area ${errors.description ? 'invalid' : ''}`}
-                    contentEditable={true}
-                    suppressContentEditableWarning={true}
-                    ref={descRef}
-                    onInput={()=>{ setErrors(prev=>({...prev, description:undefined})) }}
-                    onKeyDown={preventLeadingSpaceInDescription}
-                  />
+                    <div
+                      className={`form-control description-area ${errors.description ? 'invalid' : ''}`}
+                      contentEditable={true}
+                      suppressContentEditableWarning={true}
+                      ref={descRef}
+                      onInput={()=>{ setErrors(prev=>({...prev, description:undefined})); updateFormatState() }}
+                      onFocus={updateFormatState}
+                      onKeyDown={preventLeadingSpaceInDescription}
+                    />
                   {errors.description && <div className="error-text">{errors.description}</div>}
 
                   {attachments.length > 0 && (

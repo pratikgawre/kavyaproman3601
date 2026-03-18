@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 @ControllerAdvice
 public class GlobalExceptionHandler {
@@ -43,5 +44,12 @@ public ResponseEntity<Object> handleResponseStatus(ResponseStatusException ex) {
         Map<String, Object> body = new HashMap<>();
         body.put("message", "Email already in use");
         return new ResponseEntity<>(body, HttpStatus.CONFLICT);
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Object> handleMaxUpload(MaxUploadSizeExceededException ex) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("message", "File too large. Max 25MB.");
+        return new ResponseEntity<>(body, HttpStatus.PAYLOAD_TOO_LARGE);
     }
 }
