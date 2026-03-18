@@ -15,16 +15,12 @@ function OrganizationPage() {
   const [activeMenuOrgId, setActiveMenuOrgId] = useState(null);
   const [deletingOrgId, setDeletingOrgId] = useState(null);
 
-  const ownerEmail = (user?.email || '').trim().toLowerCase()
-
   useEffect(() => {
     const controller = new AbortController()
     setLoading(true)
     setError('')
 
-    const query = ownerEmail ? `?ownerEmail=${encodeURIComponent(ownerEmail)}` : ''
-
-    fetch(`${API_BASE}/api/organizations${query}`, { signal: controller.signal })
+    fetch(`${API_BASE}/api/organizations`, { signal: controller.signal })
       .then(async (res) => {
         if (!res.ok) {
           const errorText = await res.text()
@@ -45,7 +41,7 @@ function OrganizationPage() {
       })
 
     return () => controller.abort()
-  }, [API_BASE, ownerEmail])
+  }, [API_BASE])
 
   const filteredOrganizations = useMemo(() => {
     const query = searchText.trim().toLowerCase()
