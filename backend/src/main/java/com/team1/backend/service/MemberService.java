@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -127,9 +128,9 @@ public class MemberService {
                 return memberRepository.save(existingMember);
             }
         }
-        member.setEmail(nextEmail);
+        member.setEmail(normalizedEmail);
 
-        if (memberRepository.existsByEmail(nextEmail)) {
+        if (memberRepository.existsByEmail(normalizedEmail)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already in use");
         }
 
