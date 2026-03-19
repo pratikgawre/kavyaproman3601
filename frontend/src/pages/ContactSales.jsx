@@ -4,7 +4,16 @@ import { FiX, FiUser, FiMail, FiPhone, FiEdit3, FiServer, FiPaperclip } from 're
 import { useNavigate } from 'react-router-dom'
 
 const stripLeadingSpace = (value) => value.replace(/^\s+/, '')
-const sanitizeEmail = (value) => stripLeadingSpace(value).replace(/[^A-Za-z0-9@.]/g, '')
+const sanitizeEmail = (value) => stripLeadingSpace(value).replace(/[^A-Za-z@.]/g, '')
+const SALES_EMAIL_DOMAIN = 'kavyainfoweb.com'
+const isValidSalesEmail = (value = '') => {
+  const parts = value.split('@')
+  if (parts.length !== 2) return false
+  const [local, domain] = parts
+  if (!local || !domain) return false
+  if (!/^[A-Za-z.]+$/.test(local)) return false
+  return domain.toLowerCase() === SALES_EMAIL_DOMAIN
+}
 const preventLeadingSpace = (e) => {
   if (e.key === ' ' && (e.currentTarget.selectionStart ?? 0) === 0) e.preventDefault()
 }
@@ -12,7 +21,8 @@ const preventLeadingSpace = (e) => {
 export default function ContactSales(){
   const API_BASE_ROOT = import.meta.env.VITE_API_BASE || 'http://localhost:8080'
   const API_BASE = API_BASE_ROOT + '/api/contact'
-  const [name, setName] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [country, setCountry] = useState('+91')
@@ -24,7 +34,6 @@ export default function ContactSales(){
   const [verified, setVerified] = useState(false)
   const [sending, setSending] = useState(false)
   const [apiError, setApiError] = useState(null)
-  const [nameError, setNameError] = useState('')
   const [emailError, setEmailError] = useState('')
   const [attachment, setAttachment] = useState(null)
   const [fileError, setFileError] = useState('')
@@ -37,14 +46,16 @@ export default function ContactSales(){
       const e = params.get('email');
       const code = params.get('code');
       if (e && code) {
-        setEmail(sanitizeEmail(decodeURIComponent(e)));
+        const parsedEmail = sanitizeEmail(decodeURIComponent(e));
+        if (!isValidSalesEmail(parsedEmail)) return;
+        setEmail(parsedEmail);
         setVerificationSent(true);
         (async () => {
           try {
             const r = await fetch(API_BASE + '/verify', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email: sanitizeEmail(decodeURIComponent(e)), code })
+              body: JSON.stringify({ email: parsedEmail, code })
             });
             const j = await r.json().catch(() => ({}));
             if (!r.ok) {
@@ -64,27 +75,28 @@ export default function ContactSales(){
   }, []);
 
   function validateAll() {
-    if (!name || name.trim().length < 2) return 'Please enter your name';
-    if (!/^[A-Za-z]+(?:\s+[A-Za-z]+)*$/.test(name.trim())) return 'Name can only contain letters and spaces';
-    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return 'Please enter a valid email';
-    if (!/^[0-9]{10}$/.test(phone)) return 'Please enter a valid 10-digit phone number';
-    if (!message || message.trim().length < 10) return 'Please enter a message (min 10 chars)';
-    if (fileError) return fileError;
-    if (!verified) return 'Please verify your email before submitting';
-    return null;
+    const first = firstName.trim()
+    const last = lastName.trim()
+    if (!first) return 'Please enter your first name'
+    if (!last) return 'Please enter your last name'
+    if (!/^[A-Za-z]+$/.test(first)) return 'First name can only contain letters'
+    if (!/^[A-Za-z]+$/.test(last)) return 'Last name can only contain letters'
+    if (!isValidSalesEmail(email)) return 'Please use your kavyainfoweb.com email with no numbers before the @'
+    if (!/^[0-9]{10}$/.test(phone)) return 'Please enter a valid 10-digit phone number'
+    if (!message || message.trim().length < 10) return 'Please enter a message (min 10 chars)'
+    if (fileError) return fileError
+    if (!verified) return 'Please verify your email before submitting'
+    return null
   }
 
-  const sanitizeName = (value) => stripLeadingSpace(value).replace(/[^A-Za-z\s]/g, '')
+  const sanitizeAlpha = (value) => stripLeadingSpace(value).replace(/[^A-Za-z]/g, '')
 
-  const handleNameChange = (e) => {
-    const raw = e.target.value
-    const sanitized = sanitizeName(raw)
-    setName(sanitized)
-    if (raw !== sanitized) {
-      setNameError('Name can only contain letters and spaces')
-      return
-    }
-    setNameError('')
+  const handleFirstNameChange = (e) => {
+    setFirstName(sanitizeAlpha(e.target.value))
+  }
+
+  const handleLastNameChange = (e) => {
+    setLastName(sanitizeAlpha(e.target.value))
   }
 
   const handleEmailChange = (e) => {
@@ -95,7 +107,17 @@ export default function ContactSales(){
     setVerified(false)
     setVerificationCode('')
     if (raw !== sanitized) {
-      setEmailError('Email cannot contain special characters (only letters, numbers, @ and .)')
+      setEmailError('Email can only include letters, dots, and the @ symbol')
+      return
+    }
+    const emailParts = sanitized.split('@')
+    if (emailParts.length > 2) {
+      setEmailError('Email can only include one @ symbol')
+      return
+    }
+    const domainPart = emailParts[1] || ''
+    if (domainPart && domainPart.toLowerCase() !== SALES_EMAIL_DOMAIN) {
+      setEmailError('Email must end with @kavyainfoweb.com')
       return
     }
     setEmailError('')
@@ -140,7 +162,8 @@ export default function ContactSales(){
     setSending(true)
     try {
       const formData = new FormData()
-      formData.append('name', name.trim())
+      const fullName = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ')
+      formData.append('name', fullName)
       formData.append('email', email.trim())
       formData.append('countryCode', country)
       formData.append('phone', phone)
@@ -167,11 +190,16 @@ export default function ContactSales(){
         <p className="contact-sub">Get in touch with our sales team for custom solutions tailored to your business needs.</p>
 
         <form className="contact-form" onSubmit={handleSubmit}>
-          <label className="field">
-            <FiUser className="field-icon" />
-            <input placeholder="Full Name" value={name} onChange={handleNameChange} required />
-          </label>
-          {nameError && <div className="contact-error">{nameError}</div>}
+          <div className="name-row">
+            <label className="field">
+              <FiUser className="field-icon" />
+              <input placeholder="First Name" value={firstName} onChange={handleFirstNameChange} required />
+            </label>
+            <label className="field">
+              <FiUser className="field-icon" />
+              <input placeholder="Last Name" value={lastName} onChange={handleLastNameChange} required />
+            </label>
+          </div>
 
           <label className="field">
             <FiMail className="field-icon" />
@@ -181,7 +209,7 @@ export default function ContactSales(){
             )}
             <button type="button" className="submit-btn" style={{marginLeft:8, padding:'6px 10px'}} onClick={async ()=>{
               setApiError(null)
-              if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { setApiError('Enter a valid email first'); return }
+              if (!isValidSalesEmail(email)) { setApiError('Email must be on @kavyainfoweb.com with no numbers before the @'); return }
               try {
                 const r = await fetch(API_BASE + '/send-verification', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ email }) })
                 const j = await r.json()
