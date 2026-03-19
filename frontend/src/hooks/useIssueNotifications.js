@@ -171,6 +171,7 @@ export default function useIssueNotifications({ limit = DEFAULT_LIMIT } = {}) {
         body: JSON.stringify(payload)
       })
       if (!res.ok) throw new Error('create notification failed')
+      if (res.status === 204) return
       const created = await res.json()
       setItems((current) => [created, ...(Array.isArray(current) ? current : [])])
     } catch (err) {

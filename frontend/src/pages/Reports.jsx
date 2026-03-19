@@ -39,75 +39,228 @@ import useIssueNotifications from '../hooks/useIssueNotifications'
 import { getInitials } from '../utils/initials'
 
 const normalizeRole = (role) => (role || "").trim().toLowerCase();
-const normalizeStatus = (status) => {
-  const normalized = (status || "").toString().trim().toLowerCase();
-  if (normalized === "todo" || normalized === "to-do") return "todo";
-  if (normalized === "progress" || normalized === "in-progress" || normalized === "in progress") return "progress";
-  if (normalized === "review" || normalized === "in-review" || normalized === "in review") return "review";
-  if (normalized === "done" || normalized === "completed") return "done";
-  return "todo";
-};
 const normalizeProjectKey = (value) => (value || "").toString().trim().toUpperCase();
-const pointsFromDifficulty = (difficulty) => {
-  const diff = (difficulty || "").toString().trim().toLowerCase();
-  if (diff === "high") return 8;
-  if (diff === "low") return 2;
-  return 5;
+const normalizeEmail = (value) => {
+  const normalized = (value || "").toString().trim().toLowerCase();
+  return normalized || "";
 };
+const EMPTY_REPORT_DATA = Object.freeze({
+  summary: {
+    totalIssues: 0,
+    completedIssues: 0,
+    completionRate: 0,
+    totalPoints: 0,
+    estimatedHours: 0,
+    loggedHours: 0,
+  },
+  velocityData: [],
+  burndownData: [],
+  issueTypeDistributionData: [],
+  statusDistributionData: [],
+});
 const HOURS_PER_POINT = 8;
-
-function parseBackendDate(value) {
-  if (!value) return null;
-  if (value instanceof Date) return value;
-  if (Array.isArray(value) && value.length >= 3) {
-    const year = Number(value[0]);
-    const monthIndex = Number(value[1]) - 1;
-    const day = Number(value[2]);
-    const hour = Number(value[3] || 0);
-    const minute = Number(value[4] || 0);
-    const second = Number(value[5] || 0);
-    const nano = Number(value[6] || 0);
-    if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || !Number.isFinite(day)) return null;
-    const ms = Number.isFinite(nano) ? Math.floor(nano / 1_000_000) : 0;
-    const d = new Date(year, monthIndex, day, hour, minute, second, ms);
-    return Number.isNaN(d.getTime()) ? null : d;
-  }
-  if (typeof value === "object") {
-    const year = Number(value.year);
-    const monthValue = Number(value.monthValue ?? value.month);
-    const day = Number(value.dayOfMonth ?? value.day);
-    const hour = Number(value.hour ?? 0);
-    const minute = Number(value.minute ?? 0);
-    const second = Number(value.second ?? 0);
-    const nano = Number(value.nano ?? 0);
-    if (Number.isFinite(year) && Number.isFinite(monthValue) && Number.isFinite(day)) {
-      const ms = Number.isFinite(nano) ? Math.floor(nano / 1_000_000) : 0;
-      const d = new Date(year, monthValue - 1, day, hour, minute, second, ms);
-      return Number.isNaN(d.getTime()) ? null : d;
-    }
-  }
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-const dateKey = (date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const startOfWeek = (date) => {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = (day + 6) % 7; // Monday as first day
-  d.setDate(d.getDate() - diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
-};
+const VELOCITY_WEEKS = 6;
+const BURNDOWN_DAYS = 7;
 
 const formatShortDate = (date) =>
-  date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+const startOfWeek = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setHours(0, 0, 0, 0);
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + diff);
+  return date;
+};
+
+const parseIssueDate = (...values) => {
+  for (const value of values) {
+    if (!value) continue;
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) return date;
+  }
+  return null;
+};
+
+const normalizeStatus = (value) => {
+  const normalized = (value || "").toString().trim().toLowerCase();
+  if (["progress", "in-progress", "in progress"].includes(normalized)) return "progress";
+  if (["review", "in-review", "in review"].includes(normalized)) return "review";
+  if (["done", "completed"].includes(normalized)) return "done";
+  return "todo";
+};
+
+const normalizeIssueType = (value) => {
+  const normalized = (value || "").toString().trim().toLowerCase();
+  return normalized || "task";
+};
+
+const capitalize = (value) => {
+  const text = (value || "").toString().trim();
+  if (!text) return "Task";
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
+
+const issuePoints = (issue) => {
+  const explicitPoints = Number(issue?.points);
+  if (Number.isFinite(explicitPoints) && explicitPoints > 0) {
+    return explicitPoints;
+  }
+
+  const normalizedDifficulty = (issue?.difficulty || "").toString().trim().toLowerCase();
+  if (normalizedDifficulty === "high") return 8;
+  if (normalizedDifficulty === "low") return 2;
+  return 5;
+};
+
+const isIssueVisibleToUser = (issue, userEmail, isProjectManager) => {
+  if (isProjectManager || !userEmail) return true;
+
+  const candidates = [
+    issue?.assigneeEmail,
+    issue?.assignee,
+    issue?.creatorEmail,
+  ].map(normalizeEmail).filter(Boolean);
+
+  return candidates.includes(userEmail);
+};
+
+const buildReportDataFromIssues = (issues) => {
+  const issueList = Array.isArray(issues) ? issues : [];
+  const totalIssues = issueList.length;
+
+  let completedIssues = 0;
+  let totalPoints = 0;
+  let loggedHours = 0;
+
+  for (const issue of issueList) {
+    const points = issuePoints(issue);
+    const status = normalizeStatus(issue?.status);
+    totalPoints += points;
+
+    if (status === "done") {
+      completedIssues += 1;
+      loggedHours += points * HOURS_PER_POINT;
+    } else if (status === "review") {
+      loggedHours += points * HOURS_PER_POINT * 0.8;
+    } else if (status === "progress") {
+      loggedHours += points * HOURS_PER_POINT * 0.5;
+    }
+  }
+
+  const currentWeekStart = startOfWeek(new Date());
+  const velocityBuckets = new Map();
+  for (let offset = VELOCITY_WEEKS - 1; offset >= 0; offset -= 1) {
+    const bucketDate = new Date(currentWeekStart);
+    bucketDate.setDate(bucketDate.getDate() - (offset * 7));
+    velocityBuckets.set(bucketDate.toISOString(), {
+      period: formatShortDate(bucketDate),
+      points: 0,
+    });
+  }
+
+  for (const issue of issueList) {
+    if (normalizeStatus(issue?.status) !== "done") continue;
+    const completionDate = parseIssueDate(issue?.updatedAt, issue?.createdAt);
+    const bucketDate = startOfWeek(completionDate);
+    if (!bucketDate) continue;
+    const key = bucketDate.toISOString();
+    const bucket = velocityBuckets.get(key);
+    if (bucket) {
+      bucket.points += issuePoints(issue);
+    }
+  }
+
+  const burndownData = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  for (let offset = BURNDOWN_DAYS - 1; offset >= 0; offset -= 1) {
+    const day = new Date(today);
+    day.setDate(day.getDate() - offset);
+    const dayEnd = new Date(day);
+    dayEnd.setHours(23, 59, 59, 999);
+
+    let remaining = 0;
+    for (const issue of issueList) {
+      const createdAt = parseIssueDate(issue?.createdAt, issue?.updatedAt);
+      if (createdAt && createdAt > dayEnd) continue;
+
+      const points = issuePoints(issue);
+      if (normalizeStatus(issue?.status) !== "done") {
+        remaining += points;
+        continue;
+      }
+
+      const completedAt = parseIssueDate(issue?.updatedAt, issue?.createdAt);
+      if (!completedAt || completedAt > dayEnd) {
+        remaining += points;
+      }
+    }
+
+    burndownData.push({
+      day: formatShortDate(day),
+      remaining,
+    });
+  }
+
+  const issueTypeCounts = new Map();
+  for (const issue of issueList) {
+    const label = capitalize(normalizeIssueType(issue?.issueType));
+    issueTypeCounts.set(label, (issueTypeCounts.get(label) || 0) + 1);
+  }
+
+  const issueTypeDistributionData = [];
+  const preferredTypes = ["Story", "Task", "Bug", "Epic"];
+  for (const label of preferredTypes) {
+    if (!issueTypeCounts.has(label)) continue;
+    issueTypeDistributionData.push({ type: label, value: issueTypeCounts.get(label) });
+    issueTypeCounts.delete(label);
+  }
+
+  [...issueTypeCounts.entries()]
+    .sort((left, right) => {
+      if (right[1] !== left[1]) return right[1] - left[1];
+      return left[0].localeCompare(right[0]);
+    })
+    .forEach(([type, value]) => {
+      issueTypeDistributionData.push({ type, value });
+    });
+
+  const statusCounts = {
+    todo: 0,
+    progress: 0,
+    review: 0,
+    done: 0,
+  };
+
+  for (const issue of issueList) {
+    const status = normalizeStatus(issue?.status);
+    statusCounts[status] = (statusCounts[status] || 0) + 1;
+  }
+
+  return {
+    summary: {
+      totalIssues,
+      completedIssues,
+      completionRate: totalIssues > 0 ? Math.round((completedIssues * 100) / totalIssues) : 0,
+      totalPoints,
+      estimatedHours: totalPoints * HOURS_PER_POINT,
+      loggedHours: Math.round(loggedHours),
+    },
+    velocityData: [...velocityBuckets.values()],
+    burndownData,
+    issueTypeDistributionData,
+    statusDistributionData: [
+      { status: "To Do", value: statusCounts.todo || 0 },
+      { status: "In Progress", value: statusCounts.progress || 0 },
+      { status: "In Review", value: statusCounts.review || 0 },
+      { status: "Done", value: statusCounts.done || 0 },
+    ],
+  };
+};
 
 const Reports = () => {
   const location = useLocation();
@@ -186,10 +339,20 @@ const Reports = () => {
     let ignore = false;
 
     const email = (user?.email || "").trim();
-    let query = "";
+    const queryParams = new URLSearchParams();
     if (email) {
       const key = isProjectManager ? "managerEmail" : "memberEmail";
-      query = `?${key}=${encodeURIComponent(email)}`;
+      queryParams.set(key, email);
+    }
+    const organizationId = selectedOrg?.id || selectedOrg?._id || "";
+    const organizationUsername = selectedOrg?.username || selectedOrg?.slug || "";
+    const organizationName = selectedOrg?.name || "";
+    if (organizationId) {
+      queryParams.set("organizationId", organizationId);
+    } else if (organizationUsername) {
+      queryParams.set("organizationUsername", organizationUsername);
+    } else if (organizationName) {
+      queryParams.set("organizationName", organizationName);
     }
 
     Promise.resolve()
@@ -198,7 +361,10 @@ const Reports = () => {
         setProjectsLoading(true);
         setProjectsError("");
       })
-      .then(() => fetch(`${API_BASE}/api/projects${query}`, { signal: controller.signal }))
+      .then(() => {
+        const query = queryParams.toString();
+        return fetch(`${API_BASE}/api/projects${query ? `?${query}` : ""}`, { signal: controller.signal });
+      })
       .then(async (res) => {
         if (!res.ok) {
           const errorText = await res.text();
@@ -225,7 +391,16 @@ const Reports = () => {
       ignore = true;
       controller.abort();
     };
-  }, [API_BASE, isProjectManager, user?.email]);
+  }, [
+    API_BASE,
+    isProjectManager,
+    selectedOrg?.id,
+    selectedOrg?._id,
+    selectedOrg?.name,
+    selectedOrg?.slug,
+    selectedOrg?.username,
+    user?.email,
+  ]);
 
   const availableProjectKeys = useMemo(
     () => (projects || []).map(projectKeyFrom).filter(Boolean),
@@ -264,188 +439,94 @@ const Reports = () => {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  const [issues, setIssues] = useState([]);
-  const [issuesLoading, setIssuesLoading] = useState(false);
-  const [issuesError, setIssuesError] = useState("");
+  const [projectIssues, setProjectIssues] = useState([]);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState("");
 
   useEffect(() => {
-    if (!activeProjectKey) return;
+    if (!activeProjectKey) {
+      setProjectIssues([]);
+      setReportError("");
+      setReportLoading(false);
+      return undefined;
+    }
 
     const controller = new AbortController();
     let ignore = false;
+    const queryParams = new URLSearchParams({
+      project: activeProjectKey,
+    });
+    if (userEmail) queryParams.set("userEmail", userEmail);
+    if (user?.role) queryParams.set("role", user.role);
 
     Promise.resolve()
       .then(() => {
         if (ignore) return;
-        setIssuesLoading(true);
-        setIssuesError("");
+        setReportLoading(true);
+        setReportError("");
       })
-      .then(() => fetch(`${API_BASE}/api/issues?project=${encodeURIComponent(activeProjectKey)}`, { signal: controller.signal }))
+      .then(() =>
+        fetch(`${API_BASE}/api/issues?${queryParams.toString()}`, {
+          signal: controller.signal,
+          headers: user?.id ? { "X-USER-ID": String(user.id) } : undefined,
+        })
+      )
       .then(async (res) => {
         if (!res.ok) {
           const errorText = await res.text();
-          throw new Error(errorText || "Failed to load issues");
+          throw new Error(errorText || "Failed to load issue data");
         }
         return res.json();
       })
       .then((data) => {
         if (ignore) return;
-        setIssues(Array.isArray(data) ? data : []);
+        const issuesArray = Array.isArray(data)
+          ? data
+          : (Array.isArray(data?.issues) ? data.issues : (Array.isArray(data?.data) ? data.data : []));
+
+        const visibleIssues = issuesArray.filter((issue) => {
+          const projectKey = normalizeProjectKey(issue?.project);
+          return projectKey === activeProjectKey && isIssueVisibleToUser(issue, userEmail, isProjectManager);
+        });
+
+        setProjectIssues(visibleIssues);
       })
       .catch((err) => {
         if (ignore) return;
         if (err.name === "AbortError") return;
-        setIssues([]);
-        setIssuesError(err.message || "Failed to load issues");
+        setProjectIssues([]);
+        setReportError(err.message || "Failed to load issue data");
       })
       .finally(() => {
         if (ignore) return;
-        setIssuesLoading(false);
+        setReportLoading(false);
       });
 
     return () => {
       ignore = true;
       controller.abort();
     };
-  }, [API_BASE, activeProjectKey]);
+  }, [API_BASE, activeProjectKey, isProjectManager, user?.id, user?.role, userEmail]);
 
-  const visibleIssues = useMemo(() => {
-    const list = activeProjectKey ? (issues || []) : [];
-    if (isProjectManager || !userEmail) return list;
-    return list.filter((issue) => {
-      const assigneeEmail = (issue?.assigneeEmail || issue?.assignee || issue?.creatorEmail || "")
-        .toString()
-        .toLowerCase();
-      return assigneeEmail && assigneeEmail === userEmail;
-    });
-  }, [activeProjectKey, issues, isProjectManager, userEmail]);
+  const reportData = useMemo(
+    () => buildReportDataFromIssues(projectIssues),
+    [projectIssues]
+  );
 
-  const issuePoints = (issue) => {
-    const points = Number(issue?.points);
-    if (Number.isFinite(points)) return points;
-    return pointsFromDifficulty(issue?.difficulty);
-  };
-
-  const totalIssues = (visibleIssues || []).length;
-  const completedIssues = (visibleIssues || []).filter((i) => normalizeStatus(i.status) === "done").length;
-  const completionRate = totalIssues > 0 ? Math.round((completedIssues / totalIssues) * 100) : 0;
-  const totalPoints = (visibleIssues || []).reduce((sum, issue) => sum + issuePoints(issue), 0);
-  const estimatedHours = totalPoints * HOURS_PER_POINT;
-  const loggedHours = Math.round((visibleIssues || []).reduce((sum, issue) => {
-    const estimate = issuePoints(issue) * HOURS_PER_POINT;
-    const status = normalizeStatus(issue.status);
-    if (status === "done") return sum + estimate;
-    if (status === "review") return sum + estimate * 0.8;
-    if (status === "progress") return sum + estimate * 0.5;
-    return sum;
-  }, 0));
-
-  // ===== VELOCITY =====
-  const velocityData = useMemo(() => {
-    const now = new Date();
-    const currentWeekStart = startOfWeek(now);
-    const weeks = [];
-    for (let offset = 5; offset >= 0; offset -= 1) {
-      const weekStart = new Date(currentWeekStart);
-      weekStart.setDate(weekStart.getDate() - offset * 7);
-      weeks.push({
-        key: dateKey(weekStart),
-        label: formatShortDate(weekStart),
-        points: 0,
-      });
-    }
-
-    const byKey = new Map(weeks.map((w) => [w.key, w]));
-    (visibleIssues || []).forEach((issue) => {
-      if (normalizeStatus(issue.status) !== "done") return;
-      const completionDate = parseBackendDate(issue.updatedAt) || parseBackendDate(issue.createdAt);
-      if (!completionDate) return;
-      const weekStart = startOfWeek(completionDate);
-      const key = dateKey(weekStart);
-      const bucket = byKey.get(key);
-      if (!bucket) return;
-      bucket.points += issuePoints(issue);
-    });
-
-    return weeks.map((w) => ({ period: w.label, points: w.points }));
-  }, [visibleIssues]);
-
-  const burndownData = useMemo(() => {
-    const rangeDays = 7;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const days = [];
-    for (let offset = rangeDays - 1; offset >= 0; offset -= 1) {
-      const dayStart = new Date(today);
-      dayStart.setDate(dayStart.getDate() - offset);
-      const dayEnd = new Date(dayStart);
-      dayEnd.setHours(23, 59, 59, 999);
-      days.push({ label: formatShortDate(dayStart), end: dayEnd, remaining: 0 });
-    }
-
-    const all = visibleIssues || [];
-    days.forEach((day) => {
-      let remaining = 0;
-      all.forEach((issue) => {
-        const created = parseBackendDate(issue.createdAt) || parseBackendDate(issue.updatedAt);
-        if (created && created > day.end) return;
-
-        const points = issuePoints(issue);
-        const status = normalizeStatus(issue.status);
-        if (status !== "done") {
-          remaining += points;
-          return;
-        }
-
-        const completedAt = parseBackendDate(issue.updatedAt) || created;
-        if (!completedAt || completedAt > day.end) {
-          remaining += points;
-        }
-      });
-      day.remaining = remaining;
-    });
-
-    return days.map((d) => ({ day: d.label, remaining: d.remaining }));
-  }, [visibleIssues]);
-
-  const issueTypeDistributionData = useMemo(() => {
-    const counts = new Map();
-    (visibleIssues || []).forEach((issue) => {
-      const raw = (issue.issueType || issue.type || "Task").toString().trim();
-      const normalized = raw ? raw.toLowerCase() : "task";
-      const label = normalized.charAt(0).toUpperCase() + normalized.slice(1);
-      counts.set(label, (counts.get(label) || 0) + 1);
-    });
-
-    const preferred = ["Story", "Task", "Bug", "Epic"];
-    const ordered = [];
-    preferred.forEach((label) => {
-      const value = counts.get(label);
-      if (value) ordered.push([label, value]);
-      counts.delete(label);
-    });
-    const rest = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-    return [...ordered, ...rest].map(([type, value]) => ({ type, value }));
-  }, [visibleIssues]);
-
-  const statusDistributionData = useMemo(() => {
-    const buckets = {
-      todo: 0,
-      progress: 0,
-      review: 0,
-      done: 0,
-    };
-    (visibleIssues || []).forEach((issue) => {
-      const key = normalizeStatus(issue.status);
-      buckets[key] = (buckets[key] || 0) + 1;
-    });
-    return [
-      { status: "To Do", value: buckets.todo },
-      { status: "In Progress", value: buckets.progress },
-      { status: "In Review", value: buckets.review },
-      { status: "Done", value: buckets.done },
-    ];
-  }, [visibleIssues]);
+  const summary = reportData?.summary || EMPTY_REPORT_DATA.summary;
+  const totalIssues = Number(summary.totalIssues) || 0;
+  const completedIssues = Number(summary.completedIssues) || 0;
+  const completionRate = Number(summary.completionRate) || 0;
+  const estimatedHours = Number(summary.estimatedHours) || 0;
+  const loggedHours = Number(summary.loggedHours) || 0;
+  const velocityData = Array.isArray(reportData?.velocityData) ? reportData.velocityData : EMPTY_REPORT_DATA.velocityData;
+  const burndownData = Array.isArray(reportData?.burndownData) ? reportData.burndownData : EMPTY_REPORT_DATA.burndownData;
+  const issueTypeDistributionData = Array.isArray(reportData?.issueTypeDistributionData)
+    ? reportData.issueTypeDistributionData
+    : EMPTY_REPORT_DATA.issueTypeDistributionData;
+  const statusDistributionData = Array.isArray(reportData?.statusDistributionData)
+    ? reportData.statusDistributionData
+    : EMPTY_REPORT_DATA.statusDistributionData;
   // Notifications state for topbar
   const [showNotifications, setShowNotifications] = useState(false);
   const {
@@ -745,12 +826,12 @@ const Reports = () => {
           </select>
         </div>
 
-        {(projectsError || issuesError) && (
+        {(projectsError || reportError) && (
           <p className="text-danger mt-2 mb-0">
-            {projectsError || issuesError}
+            {projectsError || reportError}
           </p>
         )}
-        {(projectsLoading || issuesLoading) && (
+        {(projectsLoading || reportLoading) && (
           <p className="text-muted mt-2 mb-0">
             {projectsLoading ? "Loading projects..." : "Loading report data..."}
           </p>

@@ -776,7 +776,7 @@ export default function Board() {
 
                   <div className="filter-section">
                     <h6>Labels</h6>
-                    <div className="filter-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px' }}>
+                    <div className="filter-list board-label-grid">
                       {allLabels.map((label) => (
                         <label key={label}>
                           <input type="checkbox" checked={selectedFilters.label.includes(label)} onChange={() => toggleFilter('label', label)} /> {label}

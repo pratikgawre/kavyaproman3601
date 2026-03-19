@@ -34,6 +34,9 @@ public class NotificationController {
             @Valid @RequestBody CreateNotificationRequest req
     ) {
         NotificationDto created = notificationService.create(userId, req);
+        if (created == null) {
+            return ResponseEntity.noContent().build();
+        }
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
