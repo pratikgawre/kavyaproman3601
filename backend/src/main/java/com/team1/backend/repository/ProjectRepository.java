@@ -9,6 +9,7 @@ public interface ProjectRepository extends MongoRepository<Project, String> {
     List<Project> findByManagerEmail(String managerEmail);
     List<Project> findByTeamMembersEmail(String email);
     Optional<Project> findByProjectKeyAndManagerEmail(String projectKey, String managerEmail);
+    Optional<Project> findByProjectKeyIgnoreCase(String projectKey);
     long countByOrganizationId(String organizationId);
     List<Project> findByOrganizationId(String organizationId);
     long countByOrganizationUsernameAndOrganizationIdIsNull(String organizationUsername);

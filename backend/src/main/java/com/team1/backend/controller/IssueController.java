@@ -1,7 +1,9 @@
 package com.team1.backend.controller;
 
+import com.team1.backend.dto.AddIssueCommentRequest;
 import com.team1.backend.model.Issue;
 import com.team1.backend.service.IssueService;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -42,6 +44,15 @@ public class IssueController {
             @PathVariable String id,
             @RequestBody Issue issue){
         Issue saved = service.update(userId, id, issue);
+        return ResponseEntity.ok(saved);
+    }
+
+    @PostMapping("/{id}/comments")
+    public ResponseEntity<Issue> addComment(
+            @RequestHeader("X-USER-ID") String userId,
+            @PathVariable String id,
+            @Valid @RequestBody AddIssueCommentRequest req) {
+        Issue saved = service.addComment(userId, id, req.getMessage(), req.getAttachments());
         return ResponseEntity.ok(saved);
     }
 

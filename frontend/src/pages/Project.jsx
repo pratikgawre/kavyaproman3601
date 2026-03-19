@@ -54,7 +54,7 @@ const getRoleLabel = (role) => {
 const resolveProjectRole = (role, fallback = 'Developer') => {
   const normalized = normalizeRole(role)
   if (!normalized) return fallback
-  if (normalized === 'admin' || normalized === 'project manager') return 'Admin'
+  if (normalized === 'admin' || normalized === 'project manager') return 'Project Manager'
   if (normalized === 'tester') return 'Tester'
   if (normalized === 'developer') return 'Developer'
   return role.trim()
@@ -1196,16 +1196,16 @@ export default function Project() {
           </div>
         </div>
 
-        <div className="org-switch mt-3 d-flex align-items-center gap-2">
-          <div className="org-icon">{selectedOrg?.name ? selectedOrg.name.charAt(0) : 'K'}</div>
-          <div className="org-info">
-            <div className="org-name">{selectedOrg?.name || 'Kavya Technologies'}</div>
-            <button className="switch-org-btn mt-1" onClick={() => navigate('/organization')} aria-label="Switch Organization">
-              <span className="switch-left"><FiRepeat size={16} className="me-2" /></span>
-              <span className="switch-text">Switch Organization</span>
-              <FiArrowRight size={16} className="switch-arrow" />
-            </button>
+        <div className="org-switch mt-3 d-flex flex-column align-items-stretch gap-2">
+          <div className="org-header">
+            <div className="org-icon">{selectedOrg?.name ? selectedOrg.name.charAt(0) : 'K'}</div>
+            <div className="org-name-only">{selectedOrg?.name || 'Kavya Technologies'}</div>
           </div>
+          <button className="switch-org-btn w-100" onClick={() => navigate('/organization')} aria-label="Switch Organization">
+            <span className="switch-left"><FiRepeat size={16} className="me-2" /></span>
+            <span className="switch-text">Switch Organization</span>
+            <FiArrowRight size={16} className="switch-arrow" />
+          </button>
         </div>
 
         <div className="sidebar-inner d-flex flex-column mt-3">

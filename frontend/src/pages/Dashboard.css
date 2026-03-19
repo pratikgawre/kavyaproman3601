@@ -357,7 +357,9 @@ html[data-theme='light'][data-user-role='project-manager'] .mobile-toggle svg {
 .nav-scroll::-webkit-scrollbar-thumb{background:rgba(17,24,39,0.55);border-radius:999px}
 .nav-scroll::-webkit-scrollbar-thumb:hover{background:rgba(17,24,39,0.72)}
 .nav-scroll .nav{padding-bottom:12px}
-.org-switch{padding:10px 6px;border-radius:8px;background:linear-gradient(180deg,rgba(13,110,253,0.02),transparent)}
+.org-switch{padding:10px 6px;border-radius:8px;background:linear-gradient(180deg,rgba(13,110,253,0.02),transparent);display:flex;flex-direction:column;align-items:stretch;gap:8px}
+.org-header{display:flex;align-items:center;gap:10px;padding:2px 6px}
+.org-name-only{font-weight:700;color:#0f172a;padding:0}
 .org-icon{width:36px;height:36px;border-radius:8px;background:#6b5bff;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
 .org-info .org-name{font-weight:700}
 .sidebar-footer{padding-top:12px;padding-bottom:6px;border-top:1px solid #f3f6f9;width:100%;margin-top:auto}
