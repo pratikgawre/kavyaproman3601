@@ -8,10 +8,11 @@ public class UserDto {
     private String role;
     private String timezone;
     private boolean twoFactorEnabled;
+    private NotificationPreferencesDto notificationPreferences;
 
     public UserDto() {}
 
-    public UserDto(String id, String name, String email, String avatar, String role, String timezone, boolean twoFactorEnabled) {
+    public UserDto(String id, String name, String email, String avatar, String role, String timezone, boolean twoFactorEnabled, NotificationPreferencesDto notificationPreferences) {
         this.id = id;
         this.name = name;
         this.email = email;
@@ -19,6 +20,7 @@ public class UserDto {
         this.role = role;
         this.timezone = timezone;
         this.twoFactorEnabled = twoFactorEnabled;
+        this.notificationPreferences = notificationPreferences;
     }
 
     public String getId() {
@@ -75,5 +77,13 @@ public class UserDto {
 
     public void setTwoFactorEnabled(boolean twoFactorEnabled) {
         this.twoFactorEnabled = twoFactorEnabled;
+    }
+
+    public NotificationPreferencesDto getNotificationPreferences() {
+        return notificationPreferences;
+    }
+
+    public void setNotificationPreferences(NotificationPreferencesDto notificationPreferences) {
+        this.notificationPreferences = notificationPreferences;
     }
 }

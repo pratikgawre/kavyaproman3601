@@ -1,6 +1,7 @@
 package com.team1.backend.service;
 
 import com.team1.backend.dto.CreateNotificationRequest;
+import com.team1.backend.dto.NotificationPreferencesDto;
 import com.team1.backend.dto.NotificationDto;
 import com.team1.backend.model.Notification;
 import com.team1.backend.model.User;
@@ -29,19 +30,23 @@ public class NotificationService {
     }
 
     public List<NotificationDto> listMine(String userId, Integer limit) {
-        requireUser(userId);
+        User user = requireUser(userId);
         int size = DEFAULT_LIMIT;
         if (limit != null && limit > 0) {
             size = Math.min(limit, MAX_LIMIT);
         }
         return notificationRepository.findByUserIdOrderByCreatedAtDesc(userId, PageRequest.of(0, size))
                 .stream()
+                .filter(notification -> isEnabledForType(user, notification.getType()))
                 .map(this::toDto)
                 .toList();
     }
 
     public NotificationDto create(String userId, CreateNotificationRequest req) {
-        requireUser(userId);
+        User user = requireUser(userId);
+        if (!isEnabledForType(user, req.getType())) {
+            return null;
+        }
         Notification n = new Notification();
         n.setUserId(userId);
         n.setTitle(req.getTitle() == null ? "" : req.getTitle().trim());
@@ -93,6 +98,46 @@ public class NotificationService {
         }
         return userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid user"));
+    }
+
+    private boolean isEnabledForType(User user, String type) {
+        NotificationPreferencesDto prefs = toPreferencesDto(user);
+        String normalizedType = normalizeType(type);
+        return switch (normalizedType) {
+            case "email", "email-notification", "email-notifications" -> prefs.isEmailNotifications();
+            case "issue-assigned", "issue-assignment", "issue-assignments", "assignment" -> prefs.isIssueAssignments();
+            case "mention", "mentions" -> prefs.isMentions();
+            case "comment", "comments" -> prefs.isComments();
+            case "status-change", "status-changed", "status-changes" -> prefs.isStatusChanges();
+            case "weekly-summary" -> prefs.isWeeklySummary();
+            default -> true;
+        };
+    }
+
+    private NotificationPreferencesDto toPreferencesDto(User user) {
+        if (user == null || user.getNotificationPreferences() == null) {
+            return new NotificationPreferencesDto();
+        }
+        return new NotificationPreferencesDto(
+                user.getNotificationPreferences().isEmailNotifications(),
+                user.getNotificationPreferences().isIssueAssignments(),
+                user.getNotificationPreferences().isMentions(),
+                user.getNotificationPreferences().isComments(),
+                user.getNotificationPreferences().isStatusChanges(),
+                user.getNotificationPreferences().isWeeklySummary()
+        );
+    }
+
+    private String normalizeType(String type) {
+        String raw = type == null ? "" : type.trim().toLowerCase();
+        if (raw.isEmpty()) {
+            return "generic";
+        }
+        return raw
+                .replace('_', '-')
+                .replaceAll("\\s+", "-")
+                .replaceAll("[^a-z0-9-]", "")
+                .replaceAll("-{2,}", "-");
     }
 }
 

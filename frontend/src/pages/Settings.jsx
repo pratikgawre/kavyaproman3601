@@ -114,7 +114,8 @@ export default function Settings() {
     markAsRead: markNotificationAsRead,
     markAllAsRead,
     dismissNotification,
-    clearAllNotifications
+    clearAllNotifications,
+    refreshNotifications
   } = useIssueNotifications({ limit: 6 })
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
   const avatarInitials = getAvatarInitials(user?.name, user?.email)
@@ -437,7 +438,7 @@ export default function Settings() {
 
         <div className="settings-content">
           {activeTab === 'profile' && <ProfileSection />}
-          {activeTab === 'notifications' && <NotificationsSection userId={user?.id} />}
+          {activeTab === 'notifications' && <NotificationsSection onPreferencesSaved={refreshNotifications} />}
           {activeTab === 'appearance' && <AppearanceSection />}
           {activeTab === 'security' && <SecuritySection apiBase={API_BASE} />}
         </div>
@@ -897,27 +898,151 @@ function readNotificationPrefs(storageKey) {
   }
 }
 
-// ============ Notifications Section ============
-function NotificationsSection() {
-  const { user } = useAuth()
-  const storageKey = user?.id ? `kpm360.notificationPrefs.${user.id}` : 'kpm360.notificationPrefs'
-  const [notifications, setNotifications] = useState(() => readNotificationPrefs(storageKey))
+function mergeNotificationPrefs(rawPrefs) {
+  const next = { ...DEFAULT_NOTIFICATION_PREFS }
+  if (!rawPrefs || typeof rawPrefs !== 'object') return next
 
-  useEffect(() => {
-    setNotifications(readNotificationPrefs(storageKey))
-  }, [storageKey])
-
-  const handleToggle = (key) => {
-    setNotifications(prev => ({ ...prev, [key]: !prev[key] }))
+  for (const key of Object.keys(DEFAULT_NOTIFICATION_PREFS)) {
+    if (typeof rawPrefs[key] === 'boolean') {
+      next[key] = rawPrefs[key]
+    }
   }
 
-  const handleSavePreferences = () => {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(notifications))
-      alert('Preferences saved successfully!')
-    } catch {
-      alert('Failed to save preferences')
+  return next
+}
+
+function persistNotificationPrefs(storageKey, prefs) {
+  try {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(storageKey, JSON.stringify(mergeNotificationPrefs(prefs)))
+  } catch {
+    // Keep settings usable even if local storage is unavailable.
+  }
+}
+
+function isNotificationPrefsEndpointUnavailable(status) {
+  return [404, 405, 501].includes(Number(status))
+}
+
+// ============ Notifications Section ============
+function NotificationsSection({ onPreferencesSaved }) {
+  const { user } = useAuth()
+  const storageKey = user?.id ? `kpm360.notificationPrefs.${user.id}` : 'kpm360.notificationPrefs'
+  const [preferences, setPreferences] = useState(() => mergeNotificationPrefs(user?.notificationPreferences || readNotificationPrefs(storageKey)))
+  const [savedPreferences, setSavedPreferences] = useState(() => mergeNotificationPrefs(user?.notificationPreferences || readNotificationPrefs(storageKey)))
+  const [preferencesLoading, setPreferencesLoading] = useState(false)
+  const [preferencesSaving, setPreferencesSaving] = useState(false)
+  const [preferencesError, setPreferencesError] = useState('')
+  const [preferencesMessage, setPreferencesMessage] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    const localPrefs = mergeNotificationPrefs(user?.notificationPreferences || readNotificationPrefs(storageKey))
+    setPreferences(localPrefs)
+    setSavedPreferences(localPrefs)
+    setPreferencesError('')
+    setPreferencesMessage('')
+
+    async function loadPreferences() {
+      if (!user?.id) return
+      setPreferencesLoading(true)
+      try {
+        const headers = { 'X-USER-ID': String(user.id) }
+        const res = await fetch(`${API_BASE}/api/user/notifications/preferences`, { headers })
+        const body = await res.json().catch(() => ({}))
+
+        if (res.ok) {
+          const nextPrefs = mergeNotificationPrefs(body)
+          if (cancelled) return
+          setPreferences(nextPrefs)
+          setSavedPreferences(nextPrefs)
+          persistNotificationPrefs(storageKey, nextPrefs)
+          return
+        }
+
+        const profileRes = await fetch(`${API_BASE}/api/user`, { headers })
+        const profileBody = await profileRes.json().catch(() => ({}))
+        const hasProfilePrefs = !!(profileBody?.notificationPreferences && typeof profileBody.notificationPreferences === 'object')
+
+        if (profileRes.ok && hasProfilePrefs) {
+          const nextPrefs = mergeNotificationPrefs(profileBody.notificationPreferences)
+          if (cancelled) return
+          setPreferences(nextPrefs)
+          setSavedPreferences(nextPrefs)
+          persistNotificationPrefs(storageKey, nextPrefs)
+          return
+        }
+
+        if (isNotificationPrefsEndpointUnavailable(res.status)) {
+          if (cancelled) return
+          persistNotificationPrefs(storageKey, localPrefs)
+          setPreferencesMessage('')
+          return
+        }
+
+        throw new Error(body.message || profileBody.message || 'Failed to load notification preferences')
+      } catch (err) {
+        if (cancelled) return
+        setPreferencesError(err.message || 'Failed to load notification preferences')
+      } finally {
+        if (!cancelled) setPreferencesLoading(false)
+      }
     }
+
+    loadPreferences()
+    return () => { cancelled = true }
+  }, [storageKey, user?.id, user?.notificationPreferences])
+
+  const hasUnsavedChanges = useMemo(
+    () => JSON.stringify(preferences) !== JSON.stringify(savedPreferences),
+    [preferences, savedPreferences]
+  )
+
+  const savePreferences = async () => {
+    setPreferencesError('')
+    setPreferencesMessage('')
+    setPreferencesSaving(true)
+
+    try {
+      let savedPrefs = mergeNotificationPrefs(preferences)
+      let savedLocallyOnly = !user?.id
+
+      if (user?.id) {
+        const res = await fetch(`${API_BASE}/api/user/notifications/preferences`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-USER-ID': String(user.id)
+          },
+          body: JSON.stringify(preferences)
+        })
+        const body = await res.json().catch(() => ({}))
+        if (res.ok) {
+          savedPrefs = mergeNotificationPrefs(body)
+        } else if (isNotificationPrefsEndpointUnavailable(res.status)) {
+          savedLocallyOnly = true
+        } else {
+          throw new Error(body.message || 'Failed to save notification preferences')
+        }
+      }
+
+      persistNotificationPrefs(storageKey, savedPrefs)
+      setPreferences(savedPrefs)
+      setSavedPreferences(savedPrefs)
+      setPreferencesMessage(savedLocallyOnly ? 'Preferences saved on this device.' : 'Preferences saved successfully.')
+      onPreferencesSaved?.()
+    } catch (err) {
+      setPreferencesError(err.message || 'Failed to save notification preferences')
+    } finally {
+      setPreferencesSaving(false)
+    }
+  }
+
+  const handleToggle = (key) => {
+    const nextPrefs = { ...preferences, [key]: !preferences[key] }
+    setPreferences(nextPrefs)
+    setPreferencesError('')
+    setPreferencesMessage('')
   }
 
   const toggleOption = ({ key, label, description }) => {
@@ -928,9 +1053,17 @@ function NotificationsSection() {
             <label className="notif-label">{label}</label>
             <p className="notif-description">{description}</p>
           </div>
-          <div className={`toggle-switch ${notifications[key] ? 'active' : ''}`} onClick={() => handleToggle(key)}>
+          <button
+            type="button"
+            className={`toggle-switch ${preferences[key] ? 'active' : ''} ${(preferencesLoading || preferencesSaving) ? 'disabled' : ''}`}
+            onClick={() => handleToggle(key)}
+            disabled={preferencesLoading || preferencesSaving}
+            role="switch"
+            aria-checked={preferences[key]}
+            aria-label={label}
+          >
             <div className="toggle-slider"></div>
-          </div>
+          </button>
         </div>
       </div>
     )
@@ -944,12 +1077,23 @@ function NotificationsSection() {
         subtitle="Choose how you want to be notified"
       />
 
+      <p className="notif-helper">
+        {preferencesLoading ? 'Loading your notification preferences...' : 'Update your preferences, then click Save Changes.'}
+      </p>
+      {preferencesError && <div className="text-danger small mt-2">{preferencesError}</div>}
+      {!preferencesError && preferencesMessage && <div className="text-muted small mt-2">{preferencesMessage}</div>}
+
       <div className="notifications-list">
         {NOTIFICATION_OPTIONS.map(toggleOption)}
       </div>
 
-      <button className="btn btn-dark mt-4" onClick={handleSavePreferences}>
-        Save Preferences
+      <button
+        type="button"
+        className="btn btn-dark mt-4"
+        onClick={() => { void savePreferences() }}
+        disabled={preferencesLoading || preferencesSaving || !hasUnsavedChanges}
+      >
+        {preferencesSaving ? 'Saving...' : 'Save Changes'}
       </button>
     </div>
   )
