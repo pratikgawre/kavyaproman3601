@@ -396,6 +396,7 @@
   width: 46px;
   height: 26px;
   background: #d3d8df;
+  border: none;
   border-radius: 999px;
   cursor: pointer;
   transition: all 0.3s ease;
@@ -403,6 +404,11 @@
   align-items: center;
   padding: 2px;
   flex: 0 0 auto;
+}
+
+.settings-page .toggle-switch:focus-visible {
+  outline: 2px solid rgba(13, 110, 253, 0.35);
+  outline-offset: 2px;
 }
 
 .settings-page .toggle-switch.active {

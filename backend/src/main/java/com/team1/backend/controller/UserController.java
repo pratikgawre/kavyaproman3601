@@ -1,5 +1,6 @@
 package com.team1.backend.controller;
 
+import com.team1.backend.dto.NotificationPreferencesDto;
 import com.team1.backend.dto.UpdateUserRequest;
 import com.team1.backend.dto.UserDto;
 import com.team1.backend.service.UserService;
@@ -36,6 +37,19 @@ public class UserController {
             @Valid @RequestBody UpdateUserRequest req) {
         UserDto dto = userService.updateUser(userId, req);
         return ResponseEntity.ok(dto);
+    }
+
+    @GetMapping("/user/notifications/preferences")
+    public ResponseEntity<NotificationPreferencesDto> getNotificationPreferences(
+            @RequestHeader("X-USER-ID") String userId) {
+        return ResponseEntity.ok(userService.getNotificationPreferences(userId));
+    }
+
+    @PutMapping("/user/notifications/preferences")
+    public ResponseEntity<NotificationPreferencesDto> updateNotificationPreferences(
+            @RequestHeader("X-USER-ID") String userId,
+            @RequestBody NotificationPreferencesDto req) {
+        return ResponseEntity.ok(userService.updateNotificationPreferences(userId, req));
     }
 
     /**

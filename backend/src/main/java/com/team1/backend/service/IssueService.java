@@ -16,6 +16,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -112,11 +113,13 @@ public class IssueService {
         }
         if (notificationService != null && creator != null) {
             try {
-                CreateNotificationRequest req = new CreateNotificationRequest();
-                req.setType("issue_created");
-                req.setTitle("Issue created: " + (saved.getSummary() != null ? saved.getSummary() : saved.getIssueKey()));
-                req.setHref("/all-my-issues");
-                notificationService.create(userId, req);
+                sendNotification(
+                        userId,
+                        "issue_created",
+                        "Issue created: " + getIssueDisplayLabel(saved),
+                        "/all-my-issues"
+                );
+                notifyAssigneeAboutAssignment(creator, saved);
             } catch (Exception ignored) {
                 // Avoid blocking issue creation on notification failures
             }
@@ -511,5 +514,174 @@ public class IssueService {
             return "ISSUE";
         }
         return project.trim().toUpperCase();
+    }
+
+    private Issue applyUpdates(Issue existing, Issue updated) {
+        if (updated.getCreatorName() != null) {
+            existing.setCreatorName(normalizeText(updated.getCreatorName()));
+        }
+        if (updated.getCreatorEmail() != null) {
+            existing.setCreatorEmail(normalizeEmail(updated.getCreatorEmail()));
+        }
+        if (updated.getProject() != null) {
+            existing.setProject(normalizeProjectKey(updated.getProject()));
+        }
+        if (updated.getIssueType() != null) {
+            existing.setIssueType(normalizeText(updated.getIssueType()));
+        }
+        if (updated.getEpicName() != null) {
+            existing.setEpicName(normalizeText(updated.getEpicName()));
+        }
+        if (updated.getSummary() != null) {
+            existing.setSummary(normalizeText(updated.getSummary()));
+        }
+        if (updated.getDescription() != null) {
+            existing.setDescription(normalizeText(updated.getDescription()));
+        }
+        if (updated.getAttachmentsJson() != null) {
+            existing.setAttachmentsJson(updated.getAttachmentsJson());
+        }
+        if (updated.getDifficulty() != null) {
+            existing.setDifficulty(updated.getDifficulty());
+        }
+        if (updated.getIssueKey() != null && !updated.getIssueKey().trim().isEmpty()) {
+            existing.setIssueKey(updated.getIssueKey().trim());
+        }
+        if (updated.getStatus() != null && !updated.getStatus().trim().isEmpty()) {
+            existing.setStatus(normalizeStatus(updated.getStatus()));
+        }
+        if (updated.getPriority() != null && !updated.getPriority().trim().isEmpty()) {
+            existing.setPriority(normalizePriority(updated.getPriority()));
+        }
+        if (updated.getPoints() != null) {
+            existing.setPoints(updated.getPoints());
+        }
+        if (updated.getAssigneeName() != null) {
+            existing.setAssigneeName(normalizeText(updated.getAssigneeName()));
+        }
+        if (updated.getAssigneeEmail() != null) {
+            existing.setAssigneeEmail(normalizeEmail(updated.getAssigneeEmail()));
+        }
+        if (updated.getAssignDate() != null) {
+            existing.setAssignDate(normalizeText(updated.getAssignDate()));
+        }
+        if (updated.getDeadlineDate() != null) {
+            existing.setDeadlineDate(normalizeText(updated.getDeadlineDate()));
+        }
+        if (updated.getLabels() != null) {
+            existing.setLabels(updated.getLabels());
+        }
+        existing.setUpdatedAt(LocalDateTime.now());
+        return repo.save(existing);
+    }
+
+    private void notifyIssueUpdate(User actor, Issue saved, String previousAssigneeEmail, String previousStatus) {
+        if (notificationService == null || actor == null || saved == null) {
+            return;
+        }
+
+        String currentAssigneeEmail = normalizeEmail(saved.getAssigneeEmail());
+        if (currentAssigneeEmail != null
+                && !sameEmail(currentAssigneeEmail, previousAssigneeEmail)
+                && !sameEmail(currentAssigneeEmail, actor.getEmail())) {
+            notifyUserByEmail(
+                    currentAssigneeEmail,
+                    "issue_assigned",
+                    "You were assigned: " + getIssueDisplayLabel(saved),
+                    "/all-my-issues"
+            );
+        }
+
+        String currentStatus = normalizeStatus(saved.getStatus());
+        if (!sameText(currentStatus, previousStatus)) {
+            Set<String> recipients = new LinkedHashSet<>();
+            addRecipientEmail(recipients, saved.getCreatorEmail(), actor.getEmail());
+            addRecipientEmail(recipients, currentAssigneeEmail, actor.getEmail());
+            String title = "Status changed: " + getIssueDisplayLabel(saved) + " is now " + formatStatusLabel(currentStatus);
+            for (String recipientEmail : recipients) {
+                notifyUserByEmail(recipientEmail, "status_changed", title, "/all-my-issues");
+            }
+        }
+    }
+
+    private void notifyAssigneeAboutAssignment(User actor, Issue saved) {
+        if (saved == null || actor == null) {
+            return;
+        }
+        String assigneeEmail = normalizeEmail(saved.getAssigneeEmail());
+        if (assigneeEmail == null || sameEmail(assigneeEmail, actor.getEmail())) {
+            return;
+        }
+        notifyUserByEmail(
+                assigneeEmail,
+                "issue_assigned",
+                "You were assigned: " + getIssueDisplayLabel(saved),
+                "/all-my-issues"
+        );
+    }
+
+    private void notifyUserByEmail(String email, String type, String title, String href) {
+        String normalizedEmail = normalizeEmail(email);
+        if (normalizedEmail == null) {
+            return;
+        }
+        userRepository.findByEmailIgnoreCase(normalizedEmail)
+                .map(User::getId)
+                .ifPresent(userId -> sendNotification(userId, type, title, href));
+    }
+
+    private void sendNotification(String userId, String type, String title, String href) {
+        if (notificationService == null || userId == null || userId.isBlank()) {
+            return;
+        }
+        try {
+            CreateNotificationRequest req = new CreateNotificationRequest();
+            req.setType(type);
+            req.setTitle(title);
+            req.setHref(href);
+            notificationService.create(userId, req);
+        } catch (Exception ignored) {
+            // Keep notification failures from interrupting issue flows.
+        }
+    }
+
+    private void addRecipientEmail(Set<String> recipients, String candidateEmail, String actorEmail) {
+        String normalizedCandidate = normalizeEmail(candidateEmail);
+        if (normalizedCandidate == null || sameEmail(normalizedCandidate, actorEmail)) {
+            return;
+        }
+        recipients.add(normalizedCandidate);
+    }
+
+    private boolean sameEmail(String left, String right) {
+        return sameText(normalizeEmail(left), normalizeEmail(right));
+    }
+
+    private boolean sameText(String left, String right) {
+        if (left == null) return right == null;
+        return left.equals(right);
+    }
+
+    private String getIssueDisplayLabel(Issue issue) {
+        if (issue == null) {
+            return "Issue";
+        }
+        if (issue.getIssueKey() != null && !issue.getIssueKey().isBlank()) {
+            return issue.getIssueKey();
+        }
+        if (issue.getSummary() != null && !issue.getSummary().isBlank()) {
+            return issue.getSummary().trim();
+        }
+        return "Issue";
+    }
+
+    private String formatStatusLabel(String status) {
+        String normalized = normalizeStatus(status);
+        return switch (normalized) {
+            case "progress" -> "In Progress";
+            case "review" -> "In Review";
+            case "done" -> "Done";
+            default -> "To Do";
+        };
     }
 }
