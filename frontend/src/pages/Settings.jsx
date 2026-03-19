@@ -119,6 +119,8 @@ export default function Settings() {
   } = useIssueNotifications({ limit: 6 })
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
   const avatarInitials = getAvatarInitials(user?.name, user?.email)
+  const normalizedRole = (user?.role || '').trim().toLowerCase()
+  const isDeveloper = normalizedRole === 'developer'
   const notificationRef = useRef(null)
   const topSearchInputRef = useRef(null)
 
@@ -190,16 +192,16 @@ export default function Settings() {
           </button> */}
         </div>
 
-        <div className="org-switch mt-3 d-flex align-items-center gap-2">
-          <div className="org-icon">{selectedOrg?.name ? selectedOrg.name.charAt(0) : 'K'}</div>
-          <div className="org-info">
-            <div className="org-name">{selectedOrg?.name || 'Kavya Technologies'}</div>
-            <button className="switch-org-btn mt-1" onClick={() => navigate('/organization')} aria-label="Switch Organization">
-              <span className="switch-left"><FiRepeat size={16} className="me-2" /></span>
-              <span className="switch-text">Switch Organization</span>
-              <FiArrowRight size={16} className="switch-arrow" />
-            </button>
+        <div className="org-switch mt-3 d-flex flex-column align-items-stretch gap-2">
+          <div className="org-header">
+            <div className="org-icon">{selectedOrg?.name ? selectedOrg.name.charAt(0) : 'K'}</div>
+            <div className="org-name-only">{selectedOrg?.name || 'Kavya Technologies'}</div>
           </div>
+          <button className="switch-org-btn w-100" onClick={() => navigate('/organization')} aria-label="Switch Organization">
+            <span className="switch-left"><FiRepeat size={16} className="me-2" /></span>
+            <span className="switch-text">Switch Organization</span>
+            <FiArrowRight size={16} className="switch-arrow" />
+          </button>
         </div>
 
         <div className="sidebar-inner d-flex flex-column mt-3">
@@ -398,9 +400,11 @@ export default function Settings() {
               )}
             </div>
 
-            <button className="btn create-issue-medium" onClick={() => navigate('/create-issue')} type="button">
-              <FiPlus className="me-1" /> Create Issue
-            </button>
+            {!isDeveloper && (
+              <button className="btn create-issue-medium" onClick={() => navigate('/create-issue')} type="button">
+                <FiPlus className="me-1" /> Create Issue
+              </button>
+            )}
           </div>
 
           <h1>Settings</h1>
