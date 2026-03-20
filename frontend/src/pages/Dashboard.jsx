@@ -593,7 +593,7 @@ export default function Dashboard({ initialShowCreate = false }) {
   }, [])
   const [totalIssues, setTotalIssues] = useState(0)
   const [difficultyCounts, setDifficultyCounts] = useState({ High:0, Medium:0, Low:0 })
-  const [taskCounts, setTaskCounts] = useState({ todo: 0, progress: 0, review: 0 })
+  const [taskCounts, setTaskCounts] = useState({ todo: 0, progress: 0, review: 0, done: 0 })
   const [overdueTasks, setOverdueTasks] = useState([])
   const [recentActivities, setRecentActivities] = useState([])
   const preselectedProjectKey = useMemo(() => {
@@ -728,7 +728,7 @@ export default function Dashboard({ initialShowCreate = false }) {
         if (!user?.id) {
           setTotalIssues(0)
           setDifficultyCounts({ High:0, Medium:0, Low:0 })
-          setTaskCounts({ todo: 0, progress: 0, review: 0 })
+          setTaskCounts({ todo: 0, progress: 0, review: 0, done: 0 })
           setOverdueTasks([])
           setRecentActivities([])
           return
@@ -753,7 +753,7 @@ export default function Dashboard({ initialShowCreate = false }) {
         })
         setDifficultyCounts(counts)
 
-        const nextTaskCounts = { todo: 0, progress: 0, review: 0 }
+        const nextTaskCounts = { todo: 0, progress: 0, review: 0, done: 0 }
         const today = formatDateForInput(new Date())
         const nextOverdue = []
         scoped.forEach((it) => {
@@ -761,6 +761,7 @@ export default function Dashboard({ initialShowCreate = false }) {
           if (status === 'todo') nextTaskCounts.todo += 1
           else if (status === 'progress') nextTaskCounts.progress += 1
           else if (status === 'review') nextTaskCounts.review += 1
+          else if (status === 'done') nextTaskCounts.done += 1
 
           const deadline = (it.deadlineDate || '').toString().trim()
           if (deadline && deadline < today && status !== 'done') {
@@ -1755,7 +1756,7 @@ export default function Dashboard({ initialShowCreate = false }) {
           <div className="task-card">
             <div className="task-card-body">
               <div className="muted">My Tasks</div>
-              <h3 className="task-count">{taskCounts.progress + taskCounts.review + taskCounts.todo}</h3>
+              <h3 className="task-count">{taskCounts.progress + taskCounts.review + taskCounts.todo + taskCounts.done}</h3>
 
               <div className="task-list">
                 <div
@@ -1787,6 +1788,16 @@ export default function Dashboard({ initialShowCreate = false }) {
                 >
                   <span>To Do</span>
                   <span className="task-num">{taskCounts.todo}</span>
+                </div>
+                <div
+                  className="task-row"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openBoardByStatus('done')}
+                  onKeyDown={(e) => { if (e.key === 'Enter') openBoardByStatus('done') }}
+                >
+                  <span>Done</span>
+                  <span className="task-num">{taskCounts.done}</span>
                 </div>
               </div>
             </div>
