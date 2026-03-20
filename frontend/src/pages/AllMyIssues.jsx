@@ -21,6 +21,14 @@ function parseCsvParam(params, key) {
   return raw.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean)
 }
 
+function projectKeyFrom(projectItem) {
+  return (projectItem?.projectKey || projectItem?.id || '').toString().trim()
+}
+
+function issueProjectKeyFrom(issueItem) {
+  return (issueItem?.project || issueItem?.projectKey || issueItem?.projectId || '').toString().trim().toUpperCase()
+}
+
 export default function AllMyIssues(){
   const API_BASE = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:8080'
   const [issues, setIssues] = useState([])
@@ -29,6 +37,23 @@ export default function AllMyIssues(){
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
   const avatarInitials = getInitials(user?.name || displayName, user?.email)
   const userEmail = (user?.email || '').trim().toLowerCase()
+  const normalizedUserName = (user?.name || displayName || '').trim().toLowerCase()
+  const isAssignedToUser = (issue) => {
+    if (!issue) return false
+    const assigneeEmail = (issue.assigneeEmail || '').toString().toLowerCase()
+    if (assigneeEmail && userEmail && assigneeEmail === userEmail) return true
+    const assigneeName = (issue.assigneeName || issue.assignee || '').toString().trim().toLowerCase()
+    if (assigneeName && normalizedUserName && assigneeName === normalizedUserName) return true
+    return false
+  }
+  const isCreatedByUser = (issue) => {
+    if (!issue) return false
+    const creatorEmail = (issue.creatorEmail || '').toString().toLowerCase()
+    if (creatorEmail && userEmail && creatorEmail === userEmail) return true
+    const creatorName = (issue.creatorName || issue.creator || '').toString().trim().toLowerCase()
+    if (creatorName && normalizedUserName && creatorName === normalizedUserName) return true
+    return false
+  }
   const isProjectManager = ['admin', 'project manager'].includes(normalizeRole(user?.role))
   const isDeveloper = normalizeRole(user?.role) === 'developer'
   const [selectedOrg, setSelectedOrg] = useState(() => { try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null } })
@@ -37,6 +62,52 @@ export default function AllMyIssues(){
     window.addEventListener('org:changed', onOrgChanged)
     return () => window.removeEventListener('org:changed', onOrgChanged)
   }, [])
+  const [projects, setProjects] = useState([])
+  const [projectsLoading, setProjectsLoading] = useState(false)
+  const [projectsError, setProjectsError] = useState('')
+  useEffect(() => {
+    const controller = new AbortController()
+    setProjectsLoading(true)
+    setProjectsError('')
+    const email = (user?.email || '').trim()
+    const queryParams = new URLSearchParams()
+    if (email) {
+      if (isProjectManager) {
+        queryParams.set('managerEmail', email)
+      } else {
+        queryParams.set('memberEmail', email)
+      }
+    }
+    const organizationId = selectedOrg?.id || selectedOrg?._id || ''
+    const organizationUsername = selectedOrg?.username || selectedOrg?.slug || ''
+    const organizationName = selectedOrg?.name || ''
+    if (organizationId) queryParams.set('organizationId', organizationId)
+    if (organizationUsername) queryParams.set('organizationUsername', organizationUsername)
+    if (organizationName) queryParams.set('organizationName', organizationName)
+    const query = queryParams.toString()
+
+    fetch(`${API_BASE}/api/projects${query ? `?${query}` : ''}`, { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errorText = await res.text()
+          throw new Error(errorText || 'Failed to load projects')
+        }
+        return res.json()
+      })
+      .then((data) => {
+        setProjects(Array.isArray(data) ? data : [])
+      })
+      .catch((err) => {
+        if (err.name === 'AbortError') return
+        setProjects([])
+        setProjectsError(err.message || 'Failed to load projects')
+      })
+      .finally(() => {
+        setProjectsLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [API_BASE, isProjectManager, selectedOrg?.id, selectedOrg?._id, selectedOrg?.name, selectedOrg?.slug, selectedOrg?.username, user?.email])
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
@@ -325,11 +396,17 @@ export default function AllMyIssues(){
         const data = await res.json()
         // attachmentsJson may be a JSON string; parse into attachments array
         let parsed = data.map(d => ({ ...d, attachments: d.attachmentsJson ? JSON.parse(d.attachmentsJson) : (d.attachments || []) }))
-        if (!isProjectManager && userEmail) {
-          parsed = parsed.filter((p) => {
-            const assigneeEmail = (p.assigneeEmail || p.assignee || p.creatorEmail || '').toString().toLowerCase()
-            return assigneeEmail && assigneeEmail === userEmail
+        const orgProjectKeys = new Set((projects || []).map(projectKeyFrom).filter(Boolean).map((key) => key.toUpperCase()))
+        const shouldFilterByOrg = Boolean(selectedOrg)
+        const orgScoped = shouldFilterByOrg
+          ? parsed.filter((it) => {
+            const key = issueProjectKeyFrom(it)
+            return key && orgProjectKeys.has(key)
           })
+          : parsed
+        parsed = orgScoped
+        if (userEmail || normalizedUserName) {
+          parsed = parsed.filter((issue) => isAssignedToUser(issue) || isCreatedByUser(issue))
         }
         // apply difficulty filter if provided via query param
         if(filterDifficulty){
@@ -375,7 +452,7 @@ export default function AllMyIssues(){
         }
         if (filterParams.assignee.length) {
           parsed = parsed.filter((p) => {
-            const assignee = (p.assigneeName || p.assignee || p.assigneeEmail || p.creatorName || '').toString().toLowerCase()
+            const assignee = (p.assigneeName || p.assignee || p.assigneeEmail || '').toString().toLowerCase()
             return filterParams.assignee.includes(assignee)
           })
         }
@@ -413,7 +490,7 @@ export default function AllMyIssues(){
       }
     }
     load()
-  },[location.search, isProjectManager, userEmail])
+  },[API_BASE, location.search, projects, selectedOrg, userEmail, normalizedUserName, user?.id])
 
   function openEdit(idx){
     const item = issues[idx]

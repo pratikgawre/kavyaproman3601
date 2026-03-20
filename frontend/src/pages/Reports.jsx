@@ -61,6 +61,7 @@ const EMPTY_REPORT_DATA = Object.freeze({
 const HOURS_PER_POINT = 8;
 const VELOCITY_WEEKS = 6;
 const BURNDOWN_DAYS = 7;
+const ALL_PROJECTS_KEY = "__ALL__";
 
 const formatShortDate = (date) =>
   date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -115,16 +116,26 @@ const issuePoints = (issue) => {
   return 5;
 };
 
-const isIssueVisibleToUser = (issue, userEmail, isProjectManager) => {
-  if (isProjectManager || !userEmail) return true;
+const isIssueVisibleToUser = (issue, userEmail, role, hasTeamScope, isTesterInProject) => {
+  if (hasTeamScope || !userEmail) return true;
 
+  const normalizedRole = normalizeRole(role);
   const candidates = [
     issue?.assigneeEmail,
     issue?.assignee,
     issue?.creatorEmail,
   ].map(normalizeEmail).filter(Boolean);
+  const isAssigned = candidates.includes(userEmail);
 
-  return candidates.includes(userEmail);
+  if (normalizedRole === "tester") {
+    const reviewerEmail = normalizeEmail(issue?.reviewerEmail);
+    if (reviewerEmail && reviewerEmail === userEmail) return true;
+    if (isAssigned) return true;
+    if (isTesterInProject && normalizeStatus(issue?.status) === "review") return true;
+    return false;
+  }
+
+  return isAssigned;
 };
 
 const buildReportDataFromIssues = (issues) => {
@@ -279,8 +290,10 @@ const Reports = () => {
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
   const avatarInitials = getInitials(user?.name || displayName, user?.email)
   const userEmail = (user?.email || "").trim().toLowerCase();
-  const isProjectManager = ["admin", "project manager"].includes(normalizeRole(user?.role));
-  const isDeveloper = normalizeRole(user?.role) === 'developer'
+  const normalizedRole = normalizeRole(user?.role)
+  const isProjectManager = ["admin", "project manager"].includes(normalizedRole);
+  const isDeveloper = normalizedRole === 'developer'
+  const isTester = normalizedRole === 'tester'
   const [selectedOrg, setSelectedOrg] = useState(() => {
     try {
       return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null
@@ -325,13 +338,7 @@ const Reports = () => {
     const fromQuery = normalizeProjectKey(new URLSearchParams(location.search || "").get("project") || "");
     if (fromQuery) return fromQuery;
 
-    try {
-      const stored = typeof window !== "undefined" ? (localStorage.getItem("reports:project") || "") : "";
-      return normalizeProjectKey(stored);
-    } catch (err) {
-      void err;
-      return "";
-    }
+    return ALL_PROJECTS_KEY;
   });
 
   useEffect(() => {
@@ -406,12 +413,49 @@ const Reports = () => {
     () => (projects || []).map(projectKeyFrom).filter(Boolean),
     [projects]
   );
+  const availableProjectKeySet = useMemo(
+    () => new Set(availableProjectKeys),
+    [availableProjectKeys]
+  );
 
   const activeProjectKey = useMemo(() => {
     const normalized = normalizeProjectKey(selectedProjectKey);
+    if (normalized === ALL_PROJECTS_KEY) return ALL_PROJECTS_KEY;
     if (normalized && availableProjectKeys.includes(normalized)) return normalized;
-    return availableProjectKeys[0] || "";
+    return ALL_PROJECTS_KEY;
   }, [availableProjectKeys, selectedProjectKey]);
+
+  const projectsWithTeamMembers = useMemo(() => {
+    const set = new Set();
+    (projects || []).forEach((project) => {
+      const key = projectKeyFrom(project);
+      if (!key) return;
+      const members = Array.isArray(project?.teamMembers) ? project.teamMembers : [];
+      if (members.length > 0) set.add(key);
+    });
+    return set;
+  }, [projects]);
+  const testerProjectKeys = useMemo(() => {
+    const set = new Set();
+    if (!isTester) return set;
+    (projects || []).forEach((project) => {
+      const key = projectKeyFrom(project);
+      if (!key) return;
+      const members = Array.isArray(project?.teamMembers) ? project.teamMembers : [];
+      members.forEach((member) => {
+        const email = normalizeEmail(member?.email);
+        if (email && email === userEmail) set.add(key);
+      });
+    });
+    return set;
+  }, [isTester, projects, userEmail]);
+  const isTesterInProjectKey = (projectKey) => {
+    if (!isTester) return false;
+    const normalizedKey = normalizeProjectKey(projectKey);
+    if (!normalizedKey || normalizedKey === ALL_PROJECTS_KEY) return false;
+    if (!projectsWithTeamMembers.has(normalizedKey)) return Boolean(userEmail);
+    return testerProjectKeys.has(normalizedKey);
+  };
 
   useEffect(() => {
     if (!activeProjectKey) return;
@@ -444,7 +488,7 @@ const Reports = () => {
   const [reportError, setReportError] = useState("");
 
   useEffect(() => {
-    if (!activeProjectKey) {
+    if (!activeProjectKey || (activeProjectKey === ALL_PROJECTS_KEY && availableProjectKeySet.size === 0)) {
       setProjectIssues([]);
       setReportError("");
       setReportLoading(false);
@@ -453,9 +497,10 @@ const Reports = () => {
 
     const controller = new AbortController();
     let ignore = false;
-    const queryParams = new URLSearchParams({
-      project: activeProjectKey,
-    });
+    const queryParams = new URLSearchParams();
+    if (activeProjectKey !== ALL_PROJECTS_KEY) {
+      queryParams.set("project", activeProjectKey);
+    }
     if (userEmail) queryParams.set("userEmail", userEmail);
     if (user?.role) queryParams.set("role", user.role);
 
@@ -486,7 +531,13 @@ const Reports = () => {
 
         const visibleIssues = issuesArray.filter((issue) => {
           const projectKey = normalizeProjectKey(issue?.project);
-          return projectKey === activeProjectKey && isIssueVisibleToUser(issue, userEmail, isProjectManager);
+          const matchesProject = activeProjectKey === ALL_PROJECTS_KEY
+            ? availableProjectKeySet.has(projectKey)
+            : projectKey === activeProjectKey;
+          if (!matchesProject) return false;
+          const testerInProject = isTesterInProjectKey(projectKey);
+          const hasTeamScopeForIssue = isProjectManager || (isTester && testerInProject);
+          return isIssueVisibleToUser(issue, userEmail, user?.role, hasTeamScopeForIssue, testerInProject);
         });
 
         setProjectIssues(visibleIssues);
@@ -506,7 +557,18 @@ const Reports = () => {
       ignore = true;
       controller.abort();
     };
-  }, [API_BASE, activeProjectKey, isProjectManager, user?.id, user?.role, userEmail]);
+  }, [
+    API_BASE,
+    activeProjectKey,
+    availableProjectKeySet,
+    isProjectManager,
+    isTester,
+    projectsWithTeamMembers,
+    testerProjectKeys,
+    user?.id,
+    user?.role,
+    userEmail
+  ]);
 
   const reportData = useMemo(
     () => buildReportDataFromIssues(projectIssues),
@@ -813,6 +875,7 @@ const Reports = () => {
             onChange={(e) => setSelectedProjectKey(normalizeProjectKey(e.target.value))}
             disabled={projectsLoading || projects.length === 0}
           >
+            <option value={ALL_PROJECTS_KEY}>All Projects</option>
             {projectsLoading && <option value="">Loading projects...</option>}
             {!projectsLoading && projects.length === 0 && <option value="">No projects</option>}
             {!projectsLoading && projects.length > 0 && projects.map((p) => {
