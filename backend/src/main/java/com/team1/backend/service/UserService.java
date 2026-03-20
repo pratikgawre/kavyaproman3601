@@ -1,7 +1,9 @@
 package com.team1.backend.service;
 
+import com.team1.backend.dto.NotificationPreferencesDto;
 import com.team1.backend.dto.UpdateUserRequest;
 import com.team1.backend.dto.UserDto;
+import com.team1.backend.model.NotificationPreferences;
 import com.team1.backend.model.User;
 import com.team1.backend.repository.UserRepository;
 import org.springframework.data.domain.PageRequest;
@@ -76,6 +78,29 @@ public class UserService {
         return toDto(u);
     }
 
+    public NotificationPreferencesDto getNotificationPreferences(String id) {
+        User u = userRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+        return toNotificationPreferencesDto(u.getNotificationPreferences());
+    }
+
+    public NotificationPreferencesDto updateNotificationPreferences(String id, NotificationPreferencesDto req) {
+        User u = userRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
+
+        NotificationPreferences prefs = u.getNotificationPreferences();
+        prefs.setEmailNotifications(req.isEmailNotifications());
+        prefs.setIssueAssignments(req.isIssueAssignments());
+        prefs.setMentions(req.isMentions());
+        prefs.setComments(req.isComments());
+        prefs.setStatusChanges(req.isStatusChanges());
+        prefs.setWeeklySummary(req.isWeeklySummary());
+
+        u.setNotificationPreferences(prefs);
+        userRepository.save(u);
+        return toNotificationPreferencesDto(u.getNotificationPreferences());
+    }
+
     public List<UserDto> searchUsers(String query, int limit) {
         String trimmed = query == null ? "" : query.trim();
         if (trimmed.isEmpty()) {
@@ -96,7 +121,20 @@ public class UserService {
                 u.getAvatar(),
                 u.getRole(),
                 u.getTimezone(),
-                u.isTwoFactorEnabled()
+                u.isTwoFactorEnabled(),
+                toNotificationPreferencesDto(u.getNotificationPreferences())
+        );
+    }
+
+    private NotificationPreferencesDto toNotificationPreferencesDto(NotificationPreferences prefs) {
+        NotificationPreferences safePrefs = prefs == null ? new NotificationPreferences() : prefs;
+        return new NotificationPreferencesDto(
+                safePrefs.isEmailNotifications(),
+                safePrefs.isIssueAssignments(),
+                safePrefs.isMentions(),
+                safePrefs.isComments(),
+                safePrefs.isStatusChanges(),
+                safePrefs.isWeeklySummary()
         );
     }
 }

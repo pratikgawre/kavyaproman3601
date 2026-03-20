@@ -24,6 +24,7 @@ import {
 } from 'react-icons/fi'
 import { useAuth } from '../context/AuthContext'
 import useIssueNotifications from '../hooks/useIssueNotifications'
+import { uploadFiles } from '../utils/upload'
 
 function getInitials(name) {
   return name
@@ -69,6 +70,41 @@ const pointsFromDifficulty = (difficulty) => {
 const normalizeProjectKey = (value) => (value || '').trim().toUpperCase()
 const normalizeRole = (role) => (role || '').trim().toLowerCase()
 
+const formatCommentTime = (value) => {
+  if (!value) return ''
+  if (value instanceof Date) return value.toLocaleString()
+  if (Array.isArray(value) && value.length >= 3) {
+    const year = Number(value[0])
+    const monthIndex = Number(value[1]) - 1
+    const day = Number(value[2])
+    const hour = Number(value[3] || 0)
+    const minute = Number(value[4] || 0)
+    const second = Number(value[5] || 0)
+    const nano = Number(value[6] || 0)
+    if (Number.isFinite(year) && Number.isFinite(monthIndex) && Number.isFinite(day)) {
+      const ms = Number.isFinite(nano) ? Math.floor(nano / 1_000_000) : 0
+      const date = new Date(year, monthIndex, day, hour, minute, second, ms)
+      return Number.isNaN(date.getTime()) ? '' : date.toLocaleString()
+    }
+  }
+  if (typeof value === 'object') {
+    const year = Number(value.year)
+    const monthValue = Number(value.monthValue ?? value.month)
+    const day = Number(value.dayOfMonth ?? value.day)
+    const hour = Number(value.hour ?? 0)
+    const minute = Number(value.minute ?? 0)
+    const second = Number(value.second ?? 0)
+    const nano = Number(value.nano ?? 0)
+    if (Number.isFinite(year) && Number.isFinite(monthValue) && Number.isFinite(day)) {
+      const ms = Number.isFinite(nano) ? Math.floor(nano / 1_000_000) : 0
+      const date = new Date(year, monthValue - 1, day, hour, minute, second, ms)
+      return Number.isNaN(date.getTime()) ? '' : date.toLocaleString()
+    }
+  }
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString()
+}
+
 export default function Board() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -80,6 +116,8 @@ export default function Board() {
   const userEmail = (currentUser?.email || '').trim().toLowerCase()
   const isProjectManager = ['admin', 'project manager'].includes(normalizeRole(currentUser?.role))
   const isDeveloper = normalizeRole(currentUser?.role) === 'developer'
+  const isTester = normalizeRole(currentUser?.role) === 'tester'
+  const userId = currentUser?.id || user?.id
   const [selectedOrg, setSelectedOrg] = useState(() => { try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null } })
   useEffect(() => {
     function onOrgChanged(e){ const org = e?.detail || null; setSelectedOrg(org); try { if (org) localStorage.setItem('org', JSON.stringify(org)) } catch(err){} }
@@ -105,6 +143,14 @@ export default function Board() {
   const [issues, setIssues] = useState([])
   const [issuesLoading, setIssuesLoading] = useState(true)
   const [issuesError, setIssuesError] = useState('')
+  const [draggingIssueId, setDraggingIssueId] = useState(null)
+  const [dragOverStatus, setDragOverStatus] = useState('')
+  const [commentModalIssueId, setCommentModalIssueId] = useState(null)
+  const [commentFormIssueId, setCommentFormIssueId] = useState(null)
+  const [commentText, setCommentText] = useState('')
+  const [commentFiles, setCommentFiles] = useState([])
+  const [commentFileError, setCommentFileError] = useState('')
+  const [commentSubmitting, setCommentSubmitting] = useState(false)
   const {
     notifications,
     unreadCount,
@@ -119,15 +165,40 @@ export default function Board() {
   const topSearchInputRef = useRef(null)
   const assigneeDropdownRef = useRef(null)
   const typeDropdownRef = useRef(null)
+  const autoAssignRef = useRef(new Set())
   const API_BASE = (import.meta?.env?.VITE_API_BASE || 'http://localhost:8080')
   const projectFromState = location.state?.project
   const projectKeyRaw = (projectFromState?.projectKey || projectFromState?.id || projectId || '').trim()
   const activeProjectKey = normalizeProjectKey(projectKeyRaw)
   const [projectDetails, setProjectDetails] = useState(null)
-  const activeProject = projectFromState || projectDetails || {
-    id: activeProjectKey || projectKeyRaw,
-    name: projectKeyRaw || activeProjectKey || 'Project'
-  }
+  const activeProject = projectDetails
+    ? { ...(projectFromState || {}), ...projectDetails }
+    : (projectFromState || {
+      id: activeProjectKey || projectKeyRaw,
+      name: projectKeyRaw || activeProjectKey || 'Project'
+    })
+  const projectTeamMembers = Array.isArray(activeProject?.teamMembers) ? activeProject.teamMembers : []
+  const testerMembershipKnown = projectTeamMembers.length > 0
+  const isTesterInProject = isTester
+    ? (!testerMembershipKnown
+      ? true
+      : projectTeamMembers.some((member) => (member?.email || '').trim().toLowerCase() === userEmail))
+    : false
+  const projectTesters = useMemo(() => (
+    projectTeamMembers
+      .map((member) => ({
+        name: (member?.name || member?.email || 'Tester').trim(),
+        email: (member?.email || '').trim().toLowerCase(),
+        role: (member?.role || '').trim().toLowerCase()
+      }))
+      .filter((member) => member.email && member.role === 'tester')
+  ), [projectTeamMembers])
+  const reviewerOptions = useMemo(() => {
+    if (!isTester) return projectTesters
+    if (!userEmail) return []
+    return projectTesters.filter((tester) => tester.email === userEmail)
+  }, [isTester, userEmail, projectTesters])
+  const soleTester = projectTesters.length === 1 ? projectTesters[0] : null
   const activeFilterCount =
     selectedFilters.status.length +
     selectedFilters.type.length +
@@ -138,6 +209,51 @@ export default function Board() {
     const raw = new URLSearchParams(location.search).get('issue') || ''
     return raw.trim().toLowerCase()
   }, [location.search])
+
+  const MAX_COMMENT_FILE_BYTES = 5 * 1024 * 1024
+  const COMMENT_ALLOWED_MIME_PREFIXES = ['image/']
+  const COMMENT_ALLOWED_MIME_TYPES = new Set([
+    'application/pdf',
+    'text/plain',
+    'text/csv',
+    'application/json',
+    'application/xml',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+  ])
+  const COMMENT_ALLOWED_EXTENSIONS = new Set([
+    'pdf', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'heic', 'heif',
+    'txt', 'csv', 'json', 'xml', 'md',
+    'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'
+  ])
+
+  const isAllowedCommentFile = (file) => {
+    if (!file) return { ok: false, reason: 'Invalid file' }
+    if (file.size > MAX_COMMENT_FILE_BYTES) return { ok: false, reason: 'File size must be 5MB or less' }
+    const type = (file.type || '').toLowerCase()
+    if (COMMENT_ALLOWED_MIME_PREFIXES.some((prefix) => type.startsWith(prefix))) return { ok: true }
+    if (COMMENT_ALLOWED_MIME_TYPES.has(type)) return { ok: true }
+    const name = (file.name || '').toLowerCase()
+    const ext = (name.match(/\.([a-z0-9]+)$/) || [])[1] || ''
+    if (ext && COMMENT_ALLOWED_EXTENSIONS.has(ext)) return { ok: true }
+    return { ok: false, reason: 'Unsupported file type' }
+  }
+
+  const validateCommentFiles = (files) => {
+    const arr = Array.from(files || [])
+    const valid = []
+    const invalid = []
+    arr.forEach((file) => {
+      const result = isAllowedCommentFile(file)
+      if (result.ok) valid.push(file)
+      else invalid.push({ file, reason: result.reason })
+    })
+    return { valid, invalid }
+  }
 
   useEffect(() => {
     if (!user?.id) return
@@ -157,7 +273,8 @@ export default function Board() {
   }, [API_BASE, user?.id])
 
   useEffect(() => {
-    if (!activeProjectKey || projectFromState) return
+    const hasTeamMembers = Array.isArray(projectFromState?.teamMembers) && projectFromState.teamMembers.length > 0
+    if (!activeProjectKey || hasTeamMembers) return
     const controller = new AbortController()
     fetch(`${API_BASE}/api/projects`, { signal: controller.signal })
       .then(async (res) => {
@@ -218,9 +335,15 @@ export default function Board() {
     if (isProjectManager || !userEmail) return issues
     return (issues || []).filter((issue) => {
       const assigneeEmail = (issue?.assigneeEmail || issue?.assignee || issue?.creatorEmail || '').toLowerCase()
-      return assigneeEmail && assigneeEmail === userEmail
+      const isAssigned = assigneeEmail && assigneeEmail === userEmail
+      if (isTester) {
+        const reviewerEmail = (issue?.reviewerEmail || '').toLowerCase()
+        const isReviewer = reviewerEmail && reviewerEmail === userEmail
+        return isAssigned || isReviewer || (isTesterInProject && normalizeStatus(issue?.status) === 'review')
+      }
+      return isAssigned
     })
-  }, [issues, isProjectManager, userEmail])
+  }, [issues, isProjectManager, isTester, isTesterInProject, userEmail])
 
   const mappedIssues = useMemo(() => (
     (visibleIssues || []).map((issue) => {
@@ -249,6 +372,34 @@ export default function Board() {
     })
   ), [issues])
 
+  useEffect(() => {
+    if (!isTester || !isTesterInProject || !soleTester?.email) return
+    mappedIssues.forEach((issue) => {
+      if (normalizeStatus(issue?.status) !== 'review') return
+      if ((issue?.reviewerEmail || '').toString().trim()) return
+      const issueId = issue.id || issue.dbId
+      if (!issueId) return
+      const key = String(issueId)
+      if (autoAssignRef.current.has(key)) return
+      autoAssignRef.current.add(key)
+      handleAssignReviewer(issue, soleTester.email)
+    })
+  }, [isTester, isTesterInProject, soleTester?.email, mappedIssues])
+
+  const issueIdentity = (issue) => (
+    (issue?.id || issue?.dbId || issue?.issueKey || issue?.key || issue?.displayKey || '').toString()
+  )
+
+  const commentModalIssue = useMemo(() => {
+    if (!commentModalIssueId) return null
+    return mappedIssues.find((issue) => issueIdentity(issue) === commentModalIssueId) || null
+  }, [commentModalIssueId, mappedIssues])
+
+  const commentFormIssue = useMemo(() => {
+    if (!commentFormIssueId) return null
+    return mappedIssues.find((issue) => issueIdentity(issue) === commentFormIssueId) || null
+  }, [commentFormIssueId, mappedIssues])
+
   const boardColumns = useMemo(() => (
     STATUS_COLUMNS.map((column) => ({
       ...column,
@@ -266,6 +417,22 @@ export default function Board() {
   const allLabels = useMemo(() => (
     [...new Set(mappedIssues.flatMap((issue) => issue.labels || []))]
   ), [mappedIssues])
+
+  const canDeveloperMoveStatus = (fromStatus, toStatus) => {
+    const from = normalizeStatus(fromStatus)
+    const to = normalizeStatus(toStatus)
+    if (from === to) return false
+    if (from === 'todo' && to === 'progress') return true
+    if (from === 'progress' && (to === 'todo' || to === 'review')) return true
+    return false
+  }
+
+  const canDeveloperDragIssue = (issueStatus) => {
+    const status = normalizeStatus(issueStatus)
+    if (status === 'todo') return true
+    if (status === 'progress') return true
+    return false
+  }
 
   const filteredColumns = useMemo(() => {
     const hasStatusFilter = selectedFilters.status.length > 0
@@ -339,6 +506,343 @@ export default function Board() {
 
   function clearAllFilters() {
     setSelectedFilters(createEmptyFilters())
+  }
+
+  const isTesterAssignedToIssue = (issue) => {
+    const status = normalizeStatus(issue?.status)
+    if (status !== 'review') return true
+    const reviewer = (issue?.reviewerEmail || '').toString().trim().toLowerCase()
+    if (!reviewer) {
+      return isTesterInProject && projectTesters.length <= 1 && Boolean(userEmail)
+    }
+    return reviewer === userEmail
+  }
+
+  const canManagerMoveStatus = (fromStatus, toStatus) => {
+    const from = normalizeStatus(fromStatus)
+    const to = normalizeStatus(toStatus)
+    if (from === to) return false
+    return to === 'done' || to === 'todo'
+  }
+
+  const canTesterMoveStatus = (issue, toStatus) => {
+    if (!issue) return false
+    const from = normalizeStatus(issue.status)
+    const to = normalizeStatus(toStatus)
+    if (from === to) return false
+    if (from !== 'review') return false
+    if (to !== 'done' && to !== 'todo') return false
+    return isTesterAssignedToIssue(issue)
+  }
+
+  const canUserMoveStatus = (issue, targetStatus) => {
+    if (!issue) return false
+    if (isDeveloper) {
+      return canDeveloperMoveStatus(issue.status, targetStatus)
+    }
+    if (isProjectManager) {
+      return canManagerMoveStatus(issue.status, targetStatus)
+    }
+    if (isTester) {
+      return canTesterMoveStatus(issue, targetStatus)
+    }
+    return false
+  }
+
+  const canUserDragIssue = (issue) => {
+    if (!issue) return false
+    const status = normalizeStatus(issue.status)
+    if (isDeveloper) {
+      return canDeveloperDragIssue(status)
+    }
+    if (isProjectManager) {
+      return true
+    }
+    if (isTester) {
+      return status === 'review' && isTesterAssignedToIssue(issue)
+    }
+    return false
+  }
+
+  const getTesterLabel = (issue) => {
+    if (!issue) return 'Not assigned'
+    const direct = (issue.reviewerName || issue.reviewerEmail || '').toString().trim()
+    if (direct) return direct
+    const nested = (issue.reviewer?.name || issue.reviewer?.email || '').toString().trim()
+    return nested || 'Not assigned'
+  }
+
+  const canAddComment = isProjectManager || isDeveloper || isTester
+
+  const openComments = (issue) => {
+    const id = issueIdentity(issue)
+    if (!id) return
+    setCommentModalIssueId(id)
+  }
+
+  const closeComments = () => {
+    setCommentModalIssueId(null)
+  }
+
+  const openCommentForm = (issue) => {
+    const id = issueIdentity(issue)
+    if (!id) return
+    setCommentFormIssueId(id)
+    setCommentText('')
+    setCommentFiles([])
+    setCommentFileError('')
+  }
+
+  const closeCommentForm = () => {
+    if (commentSubmitting) return
+    setCommentFormIssueId(null)
+    setCommentText('')
+    setCommentFiles([])
+    setCommentFileError('')
+  }
+
+  const resolveAttachmentUrl = (attachment) => {
+    if (!attachment) return ''
+    const raw = attachment.url || attachment.fileUrl || attachment.downloadUrl || attachment.link || attachment.href || ''
+    if (!raw) return ''
+    let url = raw
+    const resourceType = (attachment.resourceType || '').toString().trim().toLowerCase()
+    if (resourceType && url.includes('/image/upload/')) {
+      if (resourceType === 'raw') url = url.replace('/image/upload/', '/raw/upload/')
+      if (resourceType === 'video') url = url.replace('/image/upload/', '/video/upload/')
+    }
+    return url
+  }
+
+  const buildCommentAttachments = (files, uploads) => (
+    (files || []).map((file, index) => {
+      const upload = uploads[index] || {}
+      return {
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        url: upload.url,
+        publicId: upload.publicId,
+        resourceType: upload.resourceType,
+        format: upload.format,
+        bytes: upload.bytes
+      }
+    })
+  )
+
+  const updateIssueReviewer = async (issueId, reviewerEmail, reviewerName) => {
+    if (!userId) {
+      throw new Error('Missing user session. Please log in again.')
+    }
+    const res = await fetch(`${API_BASE}/api/issues/${issueId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-USER-ID': String(userId)
+      },
+      body: JSON.stringify({ reviewerEmail, reviewerName })
+    })
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => '')
+      throw new Error(errorText || 'Failed to assign tester')
+    }
+    return res.json()
+  }
+
+  const updateIssueStatus = async (issueId, status) => {
+    if (!userId) {
+      throw new Error('Missing user session. Please log in again.')
+    }
+    const res = await fetch(`${API_BASE}/api/issues/${issueId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-USER-ID': String(userId)
+      },
+      body: JSON.stringify({ status })
+    })
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => '')
+      throw new Error(errorText || 'Failed to move issue')
+    }
+    return res.json()
+  }
+
+  const handleAssignReviewer = async (issue, reviewerEmail) => {
+    if (!issue) return
+    if (isTester && reviewerEmail && reviewerEmail.toLowerCase() !== userEmail) {
+      alert('You can only select yourself as tester.')
+      return
+    }
+    const issueId = issue.id || issue.dbId
+    if (!issueId) return
+    const tester = projectTesters.find((member) => member.email === reviewerEmail)
+    if (!tester) return
+    const previousReviewer = {
+      reviewerEmail: issue.reviewerEmail || '',
+      reviewerName: issue.reviewerName || ''
+    }
+    setIssues((prev) => prev.map((item) => (
+      item.id === issueId
+        ? { ...item, reviewerEmail: tester.email, reviewerName: tester.name }
+        : item
+    )))
+    try {
+      const saved = await updateIssueReviewer(issueId, tester.email, tester.name)
+      if (saved?.id) {
+        setIssues((prev) => prev.map((item) => (item.id === saved.id ? { ...item, ...saved } : item)))
+      }
+    } catch (err) {
+      setIssues((prev) => prev.map((item) => (
+        item.id === issueId
+          ? { ...item, reviewerEmail: previousReviewer.reviewerEmail, reviewerName: previousReviewer.reviewerName }
+          : item
+      )))
+      alert(err?.message || 'Failed to assign tester')
+    }
+  }
+
+  const handleMoveIssueStatus = async (issue, targetStatus) => {
+    if (!issue) return
+    const issueId = issue.id || issue.dbId
+    if (!issueId) return
+    const currentStatus = normalizeStatus(issue.status)
+    const nextStatus = normalizeStatus(targetStatus)
+    if (currentStatus === nextStatus) return
+    if (!canUserMoveStatus(issue, nextStatus)) {
+      if (isTester && currentStatus === 'review' && !isTesterAssignedToIssue(issue)) {
+        alert('Select yourself as tester before moving this issue.')
+      }
+      return
+    }
+
+    setIssues((prev) => prev.map((item) => (item.id === issueId ? { ...item, status: nextStatus } : item)))
+    try {
+      const saved = await updateIssueStatus(issueId, nextStatus)
+      if (saved?.id) {
+        setIssues((prev) => prev.map((item) => (item.id === saved.id ? { ...item, ...saved } : item)))
+      }
+    } catch (err) {
+      setIssues((prev) => prev.map((item) => (item.id === issueId ? { ...item, status: currentStatus } : item)))
+      alert(err?.message || 'Failed to move issue')
+    }
+  }
+
+  const handleIssueDragStart = (event, issue) => {
+    if (!issue) return
+    if (!canUserDragIssue(issue)) return
+    const status = normalizeStatus(issue.status)
+    const issueId = issueIdentity(issue)
+    if (!issueId) return
+    setDraggingIssueId(issueId)
+    setDragOverStatus('')
+    event.dataTransfer?.setData('text/plain', issueId)
+    event.dataTransfer?.setData('application/x-issue-status', status)
+    event.dataTransfer?.setDragImage?.(event.currentTarget, 20, 20)
+    event.dataTransfer.dropEffect = 'move'
+  }
+
+  const handleIssueDragEnd = () => {
+    setDraggingIssueId(null)
+    setDragOverStatus('')
+  }
+
+  const handleColumnDragOver = (event, columnStatus) => {
+    if (!draggingIssueId) return
+    const issue = mappedIssues.find((item) => issueIdentity(item) === draggingIssueId)
+    if (!issue) return
+    if (!canUserMoveStatus(issue, columnStatus)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    setDragOverStatus(columnStatus)
+  }
+
+  const handleColumnDragLeave = () => {
+    setDragOverStatus('')
+  }
+
+  const handleColumnDrop = (event, columnStatus) => {
+    const issueId = event.dataTransfer?.getData('text/plain') || draggingIssueId
+    if (!issueId) return
+    event.preventDefault()
+    setDragOverStatus('')
+    const issue = mappedIssues.find((item) => issueIdentity(item) === issueId)
+    if (!issue) return
+    if (!canUserMoveStatus(issue, columnStatus)) return
+    handleMoveIssueStatus(issue, columnStatus)
+  }
+
+  const handleAddComment = async (issue, message, attachments = []) => {
+    if (!issue) return
+    if (!userId) {
+      alert('Missing user session. Please log in again.')
+      return
+    }
+    if (isTester && !isTesterAssignedToIssue(issue)) {
+      alert('Select yourself as tester to comment.')
+      return
+    }
+    const trimmed = (message || '').trim()
+    if (!trimmed) return
+    const issueId = issue.id || issue.dbId
+    if (!issueId) return
+    try {
+      const res = await fetch(`${API_BASE}/api/issues/${issueId}/comments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-USER-ID': String(userId)
+        },
+        body: JSON.stringify({ message: trimmed, attachments })
+      })
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => '')
+        throw new Error(errorText || 'Failed to add comment')
+      }
+      const saved = await res.json()
+      if (saved?.id) {
+        setIssues((prev) => prev.map((item) => (item.id === saved.id ? { ...item, ...saved } : item)))
+      }
+    } catch (err) {
+      alert(err?.message || 'Failed to add comment')
+      throw err
+    }
+  }
+
+  const submitCommentForm = async () => {
+    if (!commentFormIssue) return
+    if (!commentText.trim()) {
+      alert('Please enter a comment')
+      return
+    }
+    if (commentFileError) {
+      alert(commentFileError)
+      return
+    }
+    try {
+      setCommentSubmitting(true)
+      let attachments = []
+      if (commentFiles.length > 0) {
+        const uploads = await uploadFiles(commentFiles, { folder: 'issue-comments' })
+        attachments = buildCommentAttachments(commentFiles, uploads)
+      }
+      await handleAddComment(commentFormIssue, commentText, attachments)
+      closeCommentForm()
+    } catch (err) {
+      // error already surfaced
+    } finally {
+      setCommentSubmitting(false)
+    }
+  }
+
+  const removeCommentFile = (index) => {
+    setCommentFiles((prev) => {
+      const next = prev.filter((_, idx) => idx !== index)
+      if (next.length === 0) {
+        setCommentFileError('')
+      }
+      return next
+    })
   }
 
   function toggleNotifications() {
@@ -776,7 +1280,7 @@ export default function Board() {
 
                   <div className="filter-section">
                     <h6>Labels</h6>
-                    <div className="filter-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px' }}>
+                    <div className="filter-list board-label-grid">
                       {allLabels.map((label) => (
                         <label key={label}>
                           <input type="checkbox" checked={selectedFilters.label.includes(label)} onChange={() => toggleFilter('label', label)} /> {label}
@@ -805,7 +1309,13 @@ export default function Board() {
             ) : (
               <div className="board-columns-track">
                 {filteredColumns.map((column) => (
-                  <section key={column.key} className={`board-column board-column-${column.tone}`}>
+                  <section
+                    key={column.key}
+                    className={`board-column board-column-${column.tone} ${dragOverStatus === column.key ? 'board-drop-target' : ''}`}
+                    onDragOver={(event) => handleColumnDragOver(event, column.key)}
+                    onDragLeave={handleColumnDragLeave}
+                    onDrop={(event) => handleColumnDrop(event, column.key)}
+                  >
                     <header className="board-column-head">
                       <div className="board-column-title-wrap">
                         <h2>{column.title}</h2>
@@ -824,7 +1334,13 @@ export default function Board() {
 
                     <div className="board-column-body">
                       {column.issues.map((issue) => (
-                        <article key={issue.dbId || issue.displayKey} className={`board-issue-card board-priority-${issue.priority}`}>
+                        <article
+                          key={issue.dbId || issue.displayKey}
+                          className={`board-issue-card board-priority-${issue.priority} ${draggingIssueId === issueIdentity(issue) ? 'is-dragging' : ''}`}
+                          draggable={canUserDragIssue(issue)}
+                          onDragStart={(event) => handleIssueDragStart(event, issue)}
+                          onDragEnd={handleIssueDragEnd}
+                        >
                           <div className="board-issue-key-row">
                             <span className={`board-issue-type board-issue-${issue.type}`}>{issue.typeLabel}</span>
                             <span className="board-issue-key">{issue.displayKey}</span>
@@ -834,6 +1350,34 @@ export default function Board() {
                           <div className="board-issue-meta">
                             Assigned by: <span>{issue.assignedBy}</span>
                           </div>
+                          <div className="board-issue-meta">
+                            Tester: <span>{getTesterLabel(issue)}</span>
+                          </div>
+
+                          {issue.status === 'review' && (
+                            <div className="board-reviewer-row">
+                              {issue.reviewerEmail ? (
+                                <span className="board-reviewer-label">
+                                  Tester assigned: {issue.reviewerName || issue.reviewerEmail}
+                                </span>
+                              ) : (isTester && isTesterInProject && reviewerOptions.length >= 1) ? (
+                                <select
+                                  className="board-reviewer-select"
+                                  value={issue.reviewerEmail || (projectTesters.length === 1 ? projectTesters[0].email : '')}
+                                  onChange={(event) => handleAssignReviewer(issue, event.target.value)}
+                                >
+                                  <option value="" disabled>Select tester</option>
+                                  {reviewerOptions.map((tester) => (
+                                    <option key={tester.email} value={tester.email}>
+                                      {tester.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <span className="board-reviewer-label">Tester: Not assigned</span>
+                              )}
+                            </div>
+                          )}
 
                           <div className="board-issue-labels">
                             {issue.labels.map((label) => (
@@ -846,7 +1390,52 @@ export default function Board() {
                               <span className="board-issue-avatar" title={issue.assignee}>{getInitials(issue.assignee)}</span>
                               <span className="board-issue-assignee-name" title={issue.assignee}>{issue.assignee}</span>
                             </div>
-                            <span className="board-issue-points">{issue.points} pts</span>
+                            <div className="board-issue-actions">
+                              {(Array.isArray(issue.comments) && issue.comments.length > 0) && (
+                                <button
+                                  type="button"
+                                  className="board-issue-comments-btn"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    openComments(issue)
+                                  }}
+                                >
+                                  {issue.comments.length} comments
+                                </button>
+                              )}
+                              {(!issue.comments || issue.comments.length === 0) && canAddComment && (
+                                <button
+                                  type="button"
+                                  className="board-issue-comments-btn"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    openComments(issue)
+                                  }}
+                                >
+                                  Comments
+                                </button>
+                              )}
+                              {canAddComment && (
+                                <button
+                                  type="button"
+                                  className="board-issue-comment-btn"
+                                  disabled={isTester && !isTesterAssignedToIssue(issue)}
+                                  title={
+                                    isTester && !isTesterAssignedToIssue(issue)
+                                      ? 'Select yourself as tester to comment'
+                                      : 'Add comment'
+                                  }
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    if (isTester && !isTesterAssignedToIssue(issue)) return
+                                    openCommentForm(issue)
+                                  }}
+                                >
+                                  Comment
+                                </button>
+                              )}
+                              <span className="board-issue-points">{issue.points} pts</span>
+                            </div>
                           </div>
                         </article>
                       ))}
@@ -858,6 +1447,132 @@ export default function Board() {
           </div>
         </section>
       </main>
+
+      {commentModalIssue && (
+        <div className="board-comment-overlay" onClick={closeComments}>
+          <div className="board-comment-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="board-comment-header">
+              <div>
+                <h3>Comments</h3>
+                <p className="board-comment-subtitle">
+                  {commentModalIssue.displayKey || commentModalIssue.issueKey || commentModalIssue.id} · {commentModalIssue.title}
+                </p>
+              </div>
+              <button type="button" className="board-comment-close" onClick={closeComments}>
+                <FiX />
+              </button>
+            </div>
+
+            <div className="board-comment-body">
+              {(commentModalIssue.comments || []).length === 0 ? (
+                <div className="board-comment-empty">No comments yet.</div>
+              ) : (
+                (commentModalIssue.comments || []).map((comment) => (
+                  <div key={comment.id || comment.createdAt} className="board-comment-item">
+                    <div className="board-comment-meta">
+                      <span className="board-comment-author">{comment.authorName || comment.authorEmail || 'Member'}</span>
+                      <span className="board-comment-time">
+                        {formatCommentTime(comment.createdAt)}
+                      </span>
+                    </div>
+                    <div className="board-comment-message">{comment.message}</div>
+                    {Array.isArray(comment.attachments) && comment.attachments.length > 0 && (
+                      <div className="board-comment-attachments">
+                        {comment.attachments.map((attachment, index) => {
+                          const url = resolveAttachmentUrl(attachment)
+                          const name = attachment?.name || attachment?.originalFilename || `Attachment ${index + 1}`
+                          return url ? (
+                            <button
+                              type="button"
+                              key={`${name}-${index}`}
+                              className="board-comment-attachment"
+                              onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
+                            >
+                              {name}
+                            </button>
+                          ) : (
+                            <span key={`${name}-${index}`} className="board-comment-attachment disabled">{name}</span>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {commentFormIssue && (
+        <div className="board-comment-overlay" onClick={closeCommentForm}>
+          <div className="board-comment-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="board-comment-header">
+              <div>
+                <h3>Add Comment</h3>
+                <p className="board-comment-subtitle">
+                  {commentFormIssue.displayKey || commentFormIssue.issueKey || commentFormIssue.id} · {commentFormIssue.title}
+                </p>
+              </div>
+              <button type="button" className="board-comment-close" onClick={closeCommentForm}>
+                <FiX />
+              </button>
+            </div>
+
+            <div className="board-comment-body">
+              <label className="board-comment-label">Comment</label>
+              <textarea
+                className="board-comment-input"
+                rows={4}
+                value={commentText}
+                onChange={(event) => setCommentText(event.target.value)}
+                placeholder="Add your comment..."
+              />
+
+              <label className="board-comment-label">Attachments</label>
+              <input
+                type="file"
+                multiple
+                className="board-comment-file"
+                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.json,.xml,.md"
+                onChange={(event) => {
+                  const { valid, invalid } = validateCommentFiles(event.target.files || [])
+                  if (invalid.length > 0) {
+                    const names = invalid.map((item) => item.file?.name || 'File').join(', ')
+                    const reason = invalid[0]?.reason || 'Invalid file'
+                    setCommentFileError(`${reason}: ${names}`)
+                  } else {
+                    setCommentFileError('')
+                  }
+                  setCommentFiles(valid)
+                }}
+              />
+              <div className="board-comment-help">Allowed: images, PDF, text, CSV, JSON, XML, and Office docs. Max 5MB each.</div>
+              {commentFileError && <div className="board-comment-file-error">{commentFileError}</div>}
+
+              {commentFiles.length > 0 && (
+                <div className="board-comment-files">
+                  {commentFiles.map((file, index) => (
+                    <div key={`${file.name}-${index}`} className="board-comment-file-item">
+                      <span>{file.name}</span>
+                      <button type="button" onClick={() => removeCommentFile(index)}>Remove</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="board-comment-footer">
+              <button type="button" className="board-comment-cancel" onClick={closeCommentForm} disabled={commentSubmitting}>
+                Cancel
+              </button>
+              <button type="button" className="board-comment-submit" onClick={submitCommentForm} disabled={commentSubmitting}>
+                {commentSubmitting ? 'Saving...' : 'Save Comment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

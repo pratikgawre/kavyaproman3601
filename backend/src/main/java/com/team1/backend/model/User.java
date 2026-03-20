@@ -24,6 +24,8 @@ public class User {
 
     private String timezone = "UTC";
 
+    private NotificationPreferences notificationPreferences = new NotificationPreferences();
+
     private boolean verified = false;
 
     private String verificationCode;
@@ -109,6 +111,17 @@ public class User {
 
     public void setTimezone(String timezone) {
         this.timezone = timezone;
+    }
+
+    public NotificationPreferences getNotificationPreferences() {
+        if (notificationPreferences == null) {
+            notificationPreferences = new NotificationPreferences();
+        }
+        return notificationPreferences;
+    }
+
+    public void setNotificationPreferences(NotificationPreferences notificationPreferences) {
+        this.notificationPreferences = notificationPreferences == null ? new NotificationPreferences() : notificationPreferences;
     }
 
     public boolean isVerified() {

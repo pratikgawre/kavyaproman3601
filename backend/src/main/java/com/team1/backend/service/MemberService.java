@@ -92,6 +92,11 @@ public class MemberService {
             member.setOrganizationName(normalizedOrgName.isEmpty() ? null : normalizedOrgName);
         }
         if (normalizedEmail != null && incomingManagerEmail != null) {
+            Member legacyMember = findAndAdoptLegacyMember(member, normalizedEmail, incomingManagerEmail);
+            if (legacyMember != null) {
+                return legacyMember;
+            }
+
             String orgId = normalizeText(member.getOrganizationId());
             String orgUsername = normalizeOrgUsername(member.getOrganizationUsername());
             String orgName = normalizeText(member.getOrganizationName());
@@ -130,8 +135,12 @@ public class MemberService {
         }
         member.setEmail(normalizedEmail);
 
-        if (memberRepository.existsByEmail(normalizedEmail)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already in use");
+        // Only enforce global email uniqueness when we don't have a manager scope.
+        // When a manager is present, allow the same email to be invited by other managers/orgs.
+        if (incomingManagerEmail == null || incomingManagerEmail.isBlank()) {
+            if (memberRepository.existsByEmail(normalizedEmail)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already in use");
+            }
         }
 
         if (member.getProjects() == null) {
@@ -146,6 +155,12 @@ public class MemberService {
         try {
             return memberRepository.save(member);
         } catch (DataIntegrityViolationException ex) {
+            if (normalizedEmail != null && incomingManagerEmail != null) {
+                Member legacyMember = findAndAdoptLegacyMember(member, normalizedEmail, incomingManagerEmail);
+                if (legacyMember != null) {
+                    return legacyMember;
+                }
+            }
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Email already in use");
         }
     }
@@ -279,6 +294,85 @@ public class MemberService {
         if (username == null) return null;
         String trimmed = username.trim().toLowerCase();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private Member findAndAdoptLegacyMember(Member incoming, String normalizedEmail, String incomingManagerEmail) {
+        List<Member> matches = memberRepository.findByEmailIgnoreCase(normalizedEmail);
+        if (matches == null || matches.isEmpty()) {
+            return null;
+        }
+
+        String incomingOrgKey = resolveOrgKey(
+                normalizeText(incoming.getOrganizationId()),
+                normalizeOrgUsername(incoming.getOrganizationUsername()),
+                normalizeText(incoming.getOrganizationName())
+        );
+
+        for (Member existing : matches) {
+            if (existing == null) continue;
+            String existingManager = normalizeEmail(existing.getManagerEmail());
+            if (existingManager != null && !existingManager.isEmpty() && !existingManager.equals(incomingManagerEmail)) {
+                continue;
+            }
+
+            String existingOrgKey = resolveOrgKey(
+                    normalizeText(existing.getOrganizationId()),
+                    normalizeOrgUsername(existing.getOrganizationUsername()),
+                    normalizeText(existing.getOrganizationName())
+            );
+            boolean orgCompatible = incomingOrgKey == null || existingOrgKey == null || incomingOrgKey.equals(existingOrgKey);
+            if (!orgCompatible) {
+                continue;
+            }
+
+            if (incoming.getName() != null) {
+                existing.setName(incoming.getName());
+            }
+            if (incoming.getRole() != null) {
+                existing.setRole(incoming.getRole());
+            }
+            if (incoming.getImage() != null && !incoming.getImage().trim().isEmpty()) {
+                existing.setImage(incoming.getImage().trim());
+            }
+            existing.setEmail(normalizedEmail);
+            existing.setManagerEmail(incomingManagerEmail);
+            if (incoming.getOrganizationId() != null) {
+                existing.setOrganizationId(incoming.getOrganizationId().trim());
+            }
+            if (incoming.getOrganizationUsername() != null) {
+                String normalizedOrgUsername = incoming.getOrganizationUsername().trim().toLowerCase();
+                existing.setOrganizationUsername(normalizedOrgUsername.isEmpty() ? null : normalizedOrgUsername);
+            }
+            if (incoming.getOrganizationName() != null) {
+                String normalizedOrgName = incoming.getOrganizationName().trim();
+                existing.setOrganizationName(normalizedOrgName.isEmpty() ? null : normalizedOrgName);
+            }
+            if (existing.getProjects() == null) {
+                existing.setProjects(0);
+            }
+            if (existing.getActiveIssues() == null) {
+                existing.setActiveIssues(0);
+            }
+            if (existing.getCreatedAt() == null) {
+                existing.setCreatedAt(LocalDateTime.now());
+            }
+            applyUserAvatar(existing);
+            return memberRepository.save(existing);
+        }
+        return null;
+    }
+
+    private String resolveOrgKey(String organizationId, String organizationUsername, String organizationName) {
+        if (organizationId != null && !organizationId.isEmpty()) {
+            return "id:" + organizationId;
+        }
+        if (organizationUsername != null && !organizationUsername.isEmpty()) {
+            return "username:" + organizationUsername.toLowerCase();
+        }
+        if (organizationName != null && !organizationName.isEmpty()) {
+            return "name:" + organizationName.toLowerCase();
+        }
+        return null;
     }
 
     private void applyUserAvatar(Member member) {

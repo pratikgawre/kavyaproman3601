@@ -40,9 +40,15 @@ public class MemberIndexMigration implements ApplicationRunner {
             return false;
         }
         List<IndexField> fields = index.getIndexFields();
-        if (fields == null || fields.size() != 1) {
+        if (fields == null || fields.isEmpty()) {
             return false;
         }
-        return "email".equals(fields.get(0).getKey());
+        boolean hasEmail = fields.stream().anyMatch(field -> "email".equals(field.getKey()));
+        if (!hasEmail) {
+            return false;
+        }
+        boolean hasManager = fields.stream().anyMatch(field -> "managerEmail".equals(field.getKey()));
+        boolean hasOrgId = fields.stream().anyMatch(field -> "organizationId".equals(field.getKey()));
+        return !(hasEmail && hasManager && hasOrgId);
     }
 }
