@@ -38,11 +38,21 @@ function statusLabelFromStatus(status) {
   return 'to do'
 }
 
-function normalizeSprintStatus(status) {
-  const normalized = (status || '').toString().trim().toLowerCase()
-  if (normalized === 'active' || normalized === 'started' || normalized === 'in progress' || normalized === 'in-progress') return 'active'
-  if (normalized === 'completed' || normalized === 'complete' || normalized === 'done') return 'completed'
-  return 'planned'
+function normalizeProjectMatchValue(value) {
+  return (value || '').toString().trim().toLowerCase()
+}
+
+function getProjectMatchKeys(projectItem) {
+  if (!projectItem) return new Set()
+  return new Set(
+    [
+      projectItem?.projectKey,
+      projectItem?.id,
+      projectItem?.name
+    ]
+      .map(normalizeProjectMatchValue)
+      .filter(Boolean)
+  )
 }
 
 function parseBackendDate(value) {
@@ -104,31 +114,14 @@ export default function Dashboard({ initialShowCreate = false }) {
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
   const avatarInitials = getInitials(user?.name || displayName, user?.email)
   const userEmail = (user?.email || '').trim().toLowerCase()
-  const normalizedUserName = (user?.name || displayName || '').trim().toLowerCase()
-  const isAssignedToUser = (issue) => {
-    if (!issue) return false
-    const assigneeEmail = (issue.assigneeEmail || '').toString().toLowerCase()
-    if (assigneeEmail && userEmail && assigneeEmail === userEmail) return true
-    const assigneeName = (issue.assigneeName || issue.assignee || '').toString().trim().toLowerCase()
-    if (assigneeName && normalizedUserName && assigneeName === normalizedUserName) return true
-    return false
-  }
-  const isCreatedByUser = (issue) => {
-    if (!issue) return false
-    const creatorEmail = (issue.creatorEmail || '').toString().toLowerCase()
-    if (creatorEmail && userEmail && creatorEmail === userEmail) return true
-    const creatorName = (issue.creatorName || issue.creator || '').toString().trim().toLowerCase()
-    if (creatorName && normalizedUserName && creatorName === normalizedUserName) return true
-    return false
-  }
-  const normalizedRole = normalizeRole(user?.role)
-  const isProjectManager = ['admin', 'project manager'].includes(normalizedRole)
-  const isDeveloper = normalizedRole === 'developer'
-  const isTester = normalizedRole === 'tester'
-  const showSelectedOrgName = true
+  const isProjectManager = ['admin', 'project manager'].includes(normalizeRole(user?.role))
+  const isDeveloper = normalizeRole(user?.role) === 'developer'
   const [selectedOrg, setSelectedOrg] = useState(() => {
     try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null }
   })
+  const organizationId = selectedOrg?.id || selectedOrg?._id || ''
+  const organizationUsername = selectedOrg?.username || selectedOrg?.slug || ''
+  const organizationName = selectedOrg?.name || ''
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
@@ -191,21 +184,24 @@ export default function Dashboard({ initialShowCreate = false }) {
     const email = (user?.email || '').trim()
     const queryParams = new URLSearchParams()
     if (email) {
-      if (isProjectManager) {
-        queryParams.set('managerEmail', email)
-      } else {
-        queryParams.set('memberEmail', email)
-      }
+      queryParams.set(isProjectManager ? 'managerEmail' : 'memberEmail', email)
     }
-    const organizationId = selectedOrg?.id || selectedOrg?._id || ''
-    const organizationUsername = selectedOrg?.username || selectedOrg?.slug || ''
-    const organizationName = selectedOrg?.name || ''
-    if (organizationId) queryParams.set('organizationId', organizationId)
-    if (organizationUsername) queryParams.set('organizationUsername', organizationUsername)
-    if (organizationName) queryParams.set('organizationName', organizationName)
+    if (organizationId) {
+      queryParams.set('organizationId', organizationId)
+    } else if (organizationUsername) {
+      queryParams.set('organizationUsername', organizationUsername)
+    } else if (organizationName) {
+      queryParams.set('organizationName', organizationName)
+    }
     const query = queryParams.toString()
 
-    fetch(`${API_BASE}/api/projects${query ? `?${query}` : ''}`, { signal: controller.signal })
+    if (!query) {
+      setProjects([])
+      setProjectsLoading(false)
+      return () => controller.abort()
+    }
+
+    fetch(`${API_BASE}/api/projects?${query}`, { signal: controller.signal })
       .then(async (res) => {
         if (!res.ok) {
           const errorText = await res.text()
@@ -226,7 +222,7 @@ export default function Dashboard({ initialShowCreate = false }) {
       })
 
     return () => controller.abort()
-  }, [API_BASE, isProjectManager, selectedOrg?.id, selectedOrg?._id, selectedOrg?.name, selectedOrg?.slug, selectedOrg?.username, user?.email])
+  }, [API_BASE, isProjectManager, organizationId, organizationName, organizationUsername, user?.email])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -700,26 +696,13 @@ export default function Dashboard({ initialShowCreate = false }) {
       (member.email || '').toLowerCase().includes(term)
     ))
   }, [assigneeSearch, projectTeamMembers])
-  const matchesSelectedOrg = (projectItem) => {
-    if (!selectedOrg) return true
-    const orgId = (selectedOrg?.id || selectedOrg?._id || '').toString().trim()
-    const orgUsername = (selectedOrg?.username || selectedOrg?.slug || '').toString().trim().toLowerCase()
-    const orgName = (selectedOrg?.name || '').toString().trim().toLowerCase()
-    if (!orgId && !orgUsername && !orgName) return true
-    const projectOrgId = (projectItem?.organizationId || '').toString().trim()
-    const projectOrgUsername = (projectItem?.organizationUsername || '').toString().trim().toLowerCase()
-    const projectOrgName = (projectItem?.organizationName || '').toString().trim().toLowerCase()
-    return (
-      (orgId && projectOrgId && projectOrgId === orgId) ||
-      (orgUsername && projectOrgUsername && projectOrgUsername === orgUsername) ||
-      (orgName && projectOrgName && projectOrgName === orgName)
-    )
+  const activeSprint = {
+    name: 'Sprint 2 - Board Implementation',
+    start: '2026-03-01',
+    end: '2026-03-14'
   }
   const activeProjects = useMemo(() => (
-    (projects || [])
-      .filter((projectItem) => !projectItem?.isArchived)
-      .filter((projectItem) => matchesSelectedOrg(projectItem))
-      .map((projectItem) => {
+    (projects || []).map((projectItem) => {
       const key = projectKeyFrom(projectItem)
       const total = Number(projectItem?.totalIssues || 0)
       const completed = Number(projectItem?.completedIssues || 0)
@@ -735,29 +718,14 @@ export default function Dashboard({ initialShowCreate = false }) {
         progressPct
       }
     })
-  ), [projects, selectedOrg])
-  const projectRecencyTime = (projectItem) => {
-    const date = parseBackendDate(projectItem?.updatedAt || projectItem?.createdAt || projectItem?.createdOn)
-    return date ? date.getTime() : 0
-  }
-  const recentActiveProjects = useMemo(() => {
-    const sorted = [...activeProjects].sort((a, b) => projectRecencyTime(b) - projectRecencyTime(a))
-    return sorted.slice(0, 3)
-  }, [activeProjects])
-  const activeProjectKeys = useMemo(() => (
-    new Set(activeProjects.map((projectItem) => projectKeyFrom(projectItem)).filter(Boolean).map((key) => key.toUpperCase()))
-  ), [activeProjects])
-  const normalizedSprints = useMemo(() => (
-    (sprints || []).map((sprint) => ({
-      ...sprint,
-      status: normalizeSprintStatus(sprint.status)
-    }))
-  ), [sprints])
-  const relevantSprints = useMemo(() => {
-    if (!activeProjectKeys.size) return normalizedSprints
-    return normalizedSprints.filter((sprint) => {
-      const key = (sprint?.projectKey || '').toString().trim().toUpperCase()
-      return key && activeProjectKeys.has(key)
+  ), [projects])
+  const sprintProgress = useMemo(() => {
+    let total = 0
+    let done = 0
+    BOARD_COLUMNS.forEach((column) => {
+      const count = Array.isArray(column.issues) ? column.issues.length : 0
+      total += count
+      if (column.key === 'done') done += count
     })
   }, [activeProjectKeys, normalizedSprints])
   const sprintRecencyTime = (sprint) => {
@@ -824,16 +792,23 @@ export default function Dashboard({ initialShowCreate = false }) {
           setDashboardIssues([])
           return
         }
+        if (projectsLoading && !projects.length) return
         const res = await fetch(`${API_BASE}/api/issues`, { headers: { 'X-USER-ID': String(user.id) } })
         if(!res.ok) throw new Error('failed to fetch')
         const data = await res.json()
         const parsed = Array.isArray(data) ? data.map(d => ({ ...d })) : []
-        const orgProjectKeys = new Set((projects || []).map(projectKeyFrom).filter(Boolean).map((key) => key.toUpperCase()))
-        const shouldFilterByOrg = Boolean(selectedOrg)
-        const orgScoped = shouldFilterByOrg
-          ? parsed.filter((it) => {
-            const key = issueProjectKeyFrom(it)
-            return key && orgProjectKeys.has(key)
+        const projectScopeKeys = (Array.isArray(projects) ? projects : []).reduce((keys, projectItem) => {
+          getProjectMatchKeys(projectItem).forEach((key) => keys.add(key))
+          return keys
+        }, new Set())
+        const projectScopedIssues = projectScopeKeys.size > 0
+          ? parsed.filter((it) => projectScopeKeys.has(normalizeProjectMatchValue(it?.project)))
+          : []
+        const scoped = isProjectManager || !userEmail
+          ? projectScopedIssues
+          : projectScopedIssues.filter((it) => {
+            const assigneeEmail = (it.assigneeEmail || it.assignee || it.creatorEmail || '').toString().toLowerCase()
+            return assigneeEmail && assigneeEmail === userEmail
           })
           : parsed
         let assignedScoped = []
@@ -948,7 +923,7 @@ export default function Dashboard({ initialShowCreate = false }) {
       }catch(e){ console.error('load dashboard counts failed', e) }
     }
     loadCounts()
-  },[API_BASE, isProjectManager, isTester, projects, selectedOrg, userEmail, normalizedUserName, user?.id])
+  },[API_BASE, isProjectManager, projects, projectsLoading, userEmail, user?.id])
 
   function handleLogout() {
     // clear user and force replace to login so back won't return to protected page
@@ -1140,18 +1115,16 @@ export default function Dashboard({ initialShowCreate = false }) {
           </button> */}
         </div>
 
-        <div className="org-switch mt-3 d-flex flex-column align-items-stretch gap-2">
-          {showSelectedOrgName && (
-            <div className="org-header">
-              <div className="org-icon">{selectedOrg?.name ? selectedOrg.name.charAt(0) : 'K'}</div>
-              <div className="org-name-only">{selectedOrg?.name || 'Organization'}</div>
-            </div>
-          )}
-          <button className="switch-org-btn w-100" onClick={() => navigate('/organization')} aria-label="Switch Organization">
-            <span className="switch-left"><FiRepeat size={16} className="me-2" /></span>
-            <span className="switch-text">Switch Organization</span>
-            <FiArrowRight size={16} className="switch-arrow" />
-          </button>
+        <div className="org-switch mt-3 d-flex align-items-center gap-2">
+          <div className="org-icon">{selectedOrg?.name ? selectedOrg.name.charAt(0) : 'K'}</div>
+          <div className="org-info">
+            <div className="org-name">{selectedOrg?.name || 'Kavya Technologies'}</div>
+            <button className="switch-org-btn mt-1" onClick={() => navigate('/organization')} aria-label="Switch Organization">
+              <span className="switch-left"><FiRepeat size={16} className="me-2" /></span>
+              <span className="switch-text">Switch Organization</span>
+              <FiArrowRight size={16} className="switch-arrow" />
+            </button>
+          </div>
         </div>
 
         <div className="sidebar-inner d-flex flex-column mt-3">
@@ -2044,7 +2017,7 @@ export default function Dashboard({ initialShowCreate = false }) {
             </div>
 
             <div className="projects-grid mt-3">
-              {recentActiveProjects.map((project) => (
+              {activeProjects.map((project) => (
                 <div
                   key={project.id}
                   className="project-card"
@@ -2058,6 +2031,7 @@ export default function Dashboard({ initialShowCreate = false }) {
                       <div className="project-icon">{project.icon}</div>
                       <div>
                         <div className="project-title">{project.name}</div>
+                        <div className="project-code muted">{project.code}</div>
                       </div>
                     </div>
 
