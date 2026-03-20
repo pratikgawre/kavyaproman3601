@@ -207,9 +207,6 @@ export default function UpdatePayment() {
             <h2>Update Payment Method</h2>
             <p className="text-muted">Manage your saved payment details and pay for another plan anytime.</p>
           </div>
-          <button className="btn update-pay-btn" onClick={() => navigate('/subscription', { state: { paymentMethod: methodType } })}>
-            Pay for another plan <FiArrowRight className="ms-2" />
-          </button>
         </div>
 
         <div className="update-payment-grid">

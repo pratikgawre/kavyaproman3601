@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, useLocation, useNavigate, useParams } from 'react-router-dom'
 import './Dashboard.css'
 import './Backlog.css'
@@ -27,73 +27,8 @@ import {
 import { useAuth } from '../context/AuthContext'
 import useIssueNotifications from '../hooks/useIssueNotifications'
 
-const ACTIVE_SPRINT_ISSUES = [
-  {
-    id: 'KPM-2',
-    type: 'story',
-    title: 'Implement Kanban board with drag and drop',
-    labels: ['frontend', 'core'],
-    points: 13,
-    assignee: 'Michael Chen'
-  },
-  {
-    id: 'KPM-3',
-    type: 'story',
-    title: 'Add sprint planning interface',
-    labels: ['frontend', 'sprints'],
-    points: 5,
-    assignee: 'Emily Rodriguez'
-  },
-  {
-    id: 'KPM-4',
-    type: 'bug',
-    title: 'Bug: Filter not working on board view',
-    labels: ['bug', 'frontend'],
-    points: 2,
-    assignee: 'Sarah Johnson'
-  },
-  {
-    id: 'KPM-5',
-    type: 'task',
-    title: 'Setup authentication system',
-    labels: ['backend', 'security'],
-    points: 8,
-    assignee: 'David Kim'
-  },
-  {
-    id: 'KPM-9',
-    type: 'task',
-    title: 'Optimize database queries',
-    labels: ['backend', 'performance'],
-    points: 5,
-    assignee: 'Michael Chen'
-  }
-]
-
-const UPCOMING_BACKLOG_ISSUES = [
-  {
-    id: 'KPM-6',
-    type: 'story',
-    title: 'Create reporting dashboard',
-    labels: ['frontend', 'analytics'],
-    points: 13
-  },
-  {
-    id: 'KPM-7',
-    type: 'story',
-    title: 'Implement notifications system',
-    labels: ['backend', 'notifications'],
-    points: 8
-  },
-  {
-    id: 'KPM-8',
-    type: 'spike',
-    title: 'Add custom workflows',
-    labels: ['core', 'workflows']
-  }
-]
-
 function getInitials(name) {
+  if (!name) return ''
   return name
     .split(' ')
     .filter(Boolean)
@@ -103,6 +38,28 @@ function getInitials(name) {
 }
 
 const normalizeRole = (role) => (role || '').trim().toLowerCase()
+const normalizeProjectKey = (value) => (value || '').trim().toUpperCase()
+
+const normalizeSprintStatus = (status) => {
+  const normalized = (status || '').toLowerCase().trim()
+  if (normalized === 'active' || normalized === 'started' || normalized === 'in progress' || normalized === 'in-progress') return 'active'
+  if (normalized === 'completed' || normalized === 'complete' || normalized === 'done') return 'completed'
+  return 'planned'
+}
+
+const normalizeIssueType = (issueType) => {
+  const normalized = (issueType || '').toString().toLowerCase().trim()
+  if (!normalized) return 'task'
+  if (normalized === 'story' || normalized === 'bug' || normalized === 'task' || normalized === 'spike') return normalized
+  return 'task'
+}
+
+const pointsFromDifficulty = (difficulty) => {
+  const diff = (difficulty || '').toLowerCase().trim()
+  if (diff === 'high') return 8
+  if (diff === 'low') return 2
+  return 5
+}
 
 function renderIssueIcon(type) {
   if (type === 'bug') {
@@ -125,14 +82,36 @@ export default function Backlog() {
   const location = useLocation()
   const { projectId } = useParams()
   const { user, clearUser } = useAuth()
-  const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
-  const isDeveloper = normalizeRole(user?.role) === 'developer'
+  const [profileUser, setProfileUser] = useState(null)
+  const currentUser = profileUser || user || {}
+  const displayName = currentUser?.name || (currentUser?.email ? currentUser.email.split('@')[0] : 'Guest')
+  const roleValue = normalizeRole(currentUser?.role)
+  const isDeveloper = roleValue === 'developer'
+  const isProjectManager = roleValue === 'admin' || roleValue === 'project manager'
+  const userId = currentUser?.id || user?.id
+  const API_BASE = (import.meta?.env?.VITE_API_BASE || 'http://localhost:8080')
   const [selectedOrg, setSelectedOrg] = useState(() => { try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null } })
   useEffect(() => {
     function onOrgChanged(e){ const org = e?.detail || null; setSelectedOrg(org); try { if (org) localStorage.setItem('org', JSON.stringify(org)) } catch(err){} }
     window.addEventListener('org:changed', onOrgChanged)
     return () => window.removeEventListener('org:changed', onOrgChanged)
   }, [])
+  useEffect(() => {
+    if (!user?.id) return
+    let isMounted = true
+    fetch(`${API_BASE}/api/user`, {
+      headers: { 'X-USER-ID': String(user.id) }
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!isMounted || !data) return
+        setProfileUser(data)
+      })
+      .catch(() => {})
+      .finally(() => {})
+
+    return () => { isMounted = false }
+  }, [API_BASE, user?.id])
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
@@ -151,10 +130,23 @@ export default function Backlog() {
   const notificationRef = useRef(null)
   const topSearchInputRef = useRef(null)
   const projectFromState = location.state?.project
+  const projectKeyRaw = (projectFromState?.projectKey || projectFromState?.id || projectId || '').trim()
+  const activeProjectKey = normalizeProjectKey(projectKeyRaw)
   const activeProject = projectFromState || {
-    id: projectId || 'KPM',
-    name: 'KavyaProMan 360'
+    id: activeProjectKey || projectKeyRaw || projectId || 'PROJECT',
+    name: projectKeyRaw || activeProjectKey || 'Project'
   }
+  const [issues, setIssues] = useState([])
+  const [issuesLoading, setIssuesLoading] = useState(true)
+  const [issuesError, setIssuesError] = useState('')
+  const [sprints, setSprints] = useState([])
+  const [sprintsLoading, setSprintsLoading] = useState(true)
+  const [sprintsError, setSprintsError] = useState('')
+  const [draggingIssueId, setDraggingIssueId] = useState(null)
+  const [dragOverTarget, setDragOverTarget] = useState('')
+  const [sprintActionId, setSprintActionId] = useState('')
+  const [sprintActionError, setSprintActionError] = useState('')
+  const [issueMoveError, setIssueMoveError] = useState('')
 
   useEffect(() => {
     function handleOutsideClick(event) {
@@ -168,10 +160,163 @@ export default function Backlog() {
   }, [])
 
   useEffect(() => {
+    if (!activeProjectKey) {
+      setIssues([])
+      setIssuesLoading(false)
+      return
+    }
+    const controller = new AbortController()
+    setIssuesLoading(true)
+    setIssuesError('')
+    fetch(`${API_BASE}/api/issues?project=${encodeURIComponent(activeProjectKey)}`, { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errorText = await res.text()
+          throw new Error(errorText || 'Failed to load issues')
+        }
+        return res.json()
+      })
+      .then((data) => {
+        setIssues(Array.isArray(data) ? data : [])
+      })
+      .catch((err) => {
+        if (err.name === 'AbortError') return
+        setIssues([])
+        setIssuesError(err.message || 'Failed to load issues')
+      })
+      .finally(() => {
+        setIssuesLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [API_BASE, activeProjectKey])
+
+  useEffect(() => {
+    if (!activeProjectKey) {
+      setSprints([])
+      setSprintsLoading(false)
+      return
+    }
+    const controller = new AbortController()
+    setSprintsLoading(true)
+    setSprintsError('')
+    fetch(`${API_BASE}/api/sprints?project=${encodeURIComponent(activeProjectKey)}`, { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errorText = await res.text()
+          throw new Error(errorText || 'Failed to load sprints')
+        }
+        return res.json()
+      })
+      .then((data) => {
+        setSprints(Array.isArray(data) ? data : [])
+      })
+      .catch((err) => {
+        if (err.name === 'AbortError') return
+        setSprints([])
+        setSprintsError(err.message || 'Failed to load sprints')
+      })
+      .finally(() => {
+        setSprintsLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [API_BASE, activeProjectKey])
+
+  async function refreshSprints() {
+    if (!activeProjectKey) {
+      setSprints([])
+      setSprintsLoading(false)
+      return
+    }
+    setSprintsLoading(true)
+    setSprintsError('')
+    try {
+      const res = await fetch(`${API_BASE}/api/sprints?project=${encodeURIComponent(activeProjectKey)}`)
+      if (!res.ok) {
+        const errorText = await res.text()
+        throw new Error(errorText || 'Failed to load sprints')
+      }
+      const data = await res.json()
+      setSprints(Array.isArray(data) ? data : [])
+    } catch (err) {
+      setSprints([])
+      setSprintsError(err.message || 'Failed to load sprints')
+    } finally {
+      setSprintsLoading(false)
+    }
+  }
+
+  useEffect(() => {
     if (!mobileSearchOpen) return
     const timeoutId = setTimeout(() => topSearchInputRef.current?.focus(), 0)
     return () => clearTimeout(timeoutId)
   }, [mobileSearchOpen])
+
+  const canManageSprints = isProjectManager
+
+  const issueIdentity = (issue) => (
+    (issue?.dbId || issue?.id || issue?.issueKey || issue?.key || '').toString()
+  )
+
+  const mappedIssues = useMemo(() => (
+    (issues || []).map((issue) => {
+      const issueType = normalizeIssueType(issue.issueType || issue.type)
+      const labels = Array.isArray(issue.labels) ? issue.labels : []
+      const points = Number.isFinite(issue.points) ? issue.points : pointsFromDifficulty(issue.difficulty)
+      return {
+        ...issue,
+        dbId: issue.id,
+        displayKey: issue.issueKey || issue.key || issue.id,
+        title: issue.summary || issue.title || 'Untitled issue',
+        type: issueType,
+        labels,
+        points,
+        assignee: issue.assigneeName || issue.assignee || issue.creatorName || 'Unassigned',
+        sprintId: issue.sprintId || issue.sprint || null
+      }
+    })
+  ), [issues])
+
+  const normalizedSprints = useMemo(() => (
+    (sprints || []).map((sprint) => ({
+      ...sprint,
+      status: normalizeSprintStatus(sprint.status)
+    }))
+  ), [sprints])
+
+  const activeSprint = useMemo(
+    () => normalizedSprints.find((sprint) => sprint.status === 'active') || null,
+    [normalizedSprints]
+  )
+  const plannedSprint = useMemo(
+    () => normalizedSprints.find((sprint) => sprint.status === 'planned') || null,
+    [normalizedSprints]
+  )
+
+  const activeSprintIssues = useMemo(() => {
+    if (!activeSprint?.id) return []
+    return mappedIssues.filter((issue) => issue.sprintId === activeSprint.id)
+  }, [mappedIssues, activeSprint?.id])
+
+  const plannedSprintIssues = useMemo(() => {
+    if (!plannedSprint?.id) return []
+    return mappedIssues.filter((issue) => issue.sprintId === plannedSprint.id)
+  }, [mappedIssues, plannedSprint?.id])
+
+  const backlogIssues = useMemo(() => {
+    const knownSprintIds = new Set(normalizedSprints.map((sprint) => sprint.id).filter(Boolean))
+    return mappedIssues.filter((issue) => {
+      const sprintId = issue.sprintId
+      if (!sprintId) return true
+      if (!knownSprintIds.has(sprintId)) return true
+      if (activeSprint?.id === sprintId) return false
+      if (plannedSprint?.id === sprintId) return false
+      return true
+    })
+  }, [mappedIssues, normalizedSprints, activeSprint?.id, plannedSprint?.id])
+
+  const isActionLoading = (id) => sprintActionId && id && sprintActionId === id
 
   function handleLogout() {
     clearUser()
@@ -216,6 +361,158 @@ export default function Backlog() {
     }
 
     runIssueSearch()
+  }
+
+  async function assignIssueToSprint(issueId, sprintId) {
+    if (!issueId || !canManageSprints) return
+    if (!userId) {
+      setIssueMoveError('Sign in to move issues between sprints.')
+      return
+    }
+    setIssueMoveError('')
+    try {
+      const res = await fetch(`${API_BASE}/api/issues/${encodeURIComponent(issueId)}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-USER-ID': String(userId)
+        },
+        body: JSON.stringify({ sprintId: sprintId || '' })
+      })
+      if (!res.ok) {
+        const errorText = await res.text()
+        throw new Error(errorText || 'Failed to move issue')
+      }
+      const updated = await res.json()
+      setIssues((prev) => {
+        const next = Array.isArray(prev) ? [...prev] : []
+        const index = next.findIndex((item) => item?.id === updated?.id)
+        if (index >= 0) {
+          next[index] = updated
+        } else {
+          next.push(updated)
+        }
+        return next
+      })
+    } catch (err) {
+      setIssueMoveError(err.message || 'Failed to move issue')
+    }
+  }
+
+  function handleIssueDragStart(event, issue) {
+    if (!canManageSprints) return
+    const id = issueIdentity(issue)
+    if (!id) return
+    event.dataTransfer.setData('text/plain', id)
+    event.dataTransfer.effectAllowed = 'move'
+    setDraggingIssueId(id)
+  }
+
+  function handleIssueDragEnd() {
+    setDraggingIssueId(null)
+    setDragOverTarget('')
+  }
+
+  function handleDragOver(event, target) {
+    if (!canManageSprints) return
+    event.preventDefault()
+    if (dragOverTarget !== target) {
+      setDragOverTarget(target)
+    }
+  }
+
+  function handleDragLeave(target) {
+    if (!canManageSprints) return
+    if (dragOverTarget === target) {
+      setDragOverTarget('')
+    }
+  }
+
+  function handleDrop(event, sprintId) {
+    if (!canManageSprints) return
+    event.preventDefault()
+    const issueId = event.dataTransfer.getData('text/plain')
+    const target = dragOverTarget
+    setDragOverTarget('')
+    if (!issueId) return
+    if (!sprintId && target !== 'backlog') return
+    assignIssueToSprint(issueId, sprintId)
+  }
+
+  async function handleStartSprint() {
+    if (!plannedSprint?.id || !canManageSprints || activeSprint) return
+    if (!userId) {
+      setSprintActionError('Sign in to start a sprint.')
+      return
+    }
+    setSprintActionError('')
+    setSprintActionId(plannedSprint.id)
+    try {
+      const res = await fetch(`${API_BASE}/api/sprints/${encodeURIComponent(plannedSprint.id)}/start`, {
+        method: 'POST',
+        headers: { 'X-USER-ID': String(userId) }
+      })
+      if (!res.ok) {
+        const errorText = await res.text()
+        throw new Error(errorText || 'Failed to start sprint')
+      }
+      const updated = await res.json()
+      setSprints((prev) => {
+        if (!Array.isArray(prev) || prev.length === 0) return [updated]
+        let found = false
+        const next = prev.map((item) => {
+          if (item.id === updated.id) {
+            found = true
+            return updated
+          }
+          return item
+        })
+        return found ? next : [updated, ...next]
+      })
+      refreshSprints()
+    } catch (err) {
+      setSprintActionError(err.message || 'Failed to start sprint')
+    } finally {
+      setSprintActionId('')
+    }
+  }
+
+  async function handleCompleteSprint() {
+    if (!activeSprint?.id || !canManageSprints) return
+    if (!userId) {
+      setSprintActionError('Sign in to complete a sprint.')
+      return
+    }
+    setSprintActionError('')
+    setSprintActionId(activeSprint.id)
+    try {
+      const res = await fetch(`${API_BASE}/api/sprints/${encodeURIComponent(activeSprint.id)}/complete`, {
+        method: 'POST',
+        headers: { 'X-USER-ID': String(userId) }
+      })
+      if (!res.ok) {
+        const errorText = await res.text()
+        throw new Error(errorText || 'Failed to complete sprint')
+      }
+      const updated = await res.json()
+      setSprints((prev) => {
+        if (!Array.isArray(prev) || prev.length === 0) return [updated]
+        let found = false
+        const next = prev.map((item) => {
+          if (item.id === updated.id) {
+            found = true
+            return updated
+          }
+          return item
+        })
+        return found ? next : [updated, ...next]
+      })
+      refreshSprints()
+    } catch (err) {
+      setSprintActionError(err.message || 'Failed to complete sprint')
+    } finally {
+      setSprintActionId('')
+    }
   }
 
   return (
@@ -269,7 +566,7 @@ export default function Backlog() {
               <div className="avatar-icon"><FiUser size={20} /></div>
               <div className="ms-2 user-info">
                 <div className="user-name">{displayName}</div>
-                <div className="user-role">{user?.role || 'Member'}</div>
+                <div className="user-role">{currentUser?.role || 'Member'}</div>
               </div>
             </div>
             <button className="btn logout-badge mt-3" onClick={handleLogout} title="Logout">
@@ -450,84 +747,177 @@ export default function Backlog() {
             </div>
           </div>
 
-          <article className="backlog-sprint-card">
+          {(issuesError || sprintsError || sprintActionError || issueMoveError) && (
+            <div className="backlog-empty-state">
+              {issuesError || sprintsError || sprintActionError || issueMoveError}
+            </div>
+          )}
+
+          <article
+            className={`backlog-sprint-card ${dragOverTarget === 'active' ? 'backlog-drop-target' : ''}`}
+            onDragOver={(event) => handleDragOver(event, 'active')}
+            onDragLeave={() => handleDragLeave('active')}
+            onDrop={(event) => handleDrop(event, activeSprint?.id || '')}
+          >
             <div className="backlog-sprint-head">
               <div className="backlog-sprint-left">
                 <span className="backlog-sprint-icon"><FiPlayCircle size={18} /></span>
                 <div>
                   <div className="backlog-sprint-title-row">
-                    <h2>Sprint 2 - Board Implementation</h2>
-                    <span className="backlog-active-pill">ACTIVE</span>
+                    <h2>{activeSprint?.name || 'No active sprint'}</h2>
+                    {activeSprint && <span className="backlog-active-pill">ACTIVE</span>}
                   </div>
-                  <p>Implement Kanban board and drag-and-drop functionality</p>
+                  <p>{activeSprint?.goal || 'Start a sprint to track the current work.'}</p>
                 </div>
               </div>
-              <button className="btn backlog-outline-btn">Complete Sprint</button>
+              <button
+                className="btn backlog-outline-btn"
+                onClick={handleCompleteSprint}
+                disabled={!activeSprint || !canManageSprints || isActionLoading(activeSprint?.id)}
+              >
+                {isActionLoading(activeSprint?.id) ? 'Completing...' : 'Complete Sprint'}
+              </button>
             </div>
 
-            <div className="backlog-issue-list">
-              {ACTIVE_SPRINT_ISSUES.map((issue) => (
-                <div key={issue.id} className="backlog-issue-row">
-                  <div className="backlog-issue-main">
-                    <span className={`backlog-issue-type backlog-type-${issue.type}`}>
-                      {renderIssueIcon(issue.type)}
-                    </span>
-                    <span className="backlog-issue-key">{issue.id}</span>
-                    <span className="backlog-issue-title">{issue.title}</span>
+            {issuesLoading || sprintsLoading ? (
+              <div className="backlog-empty-state">Loading sprint...</div>
+            ) : !activeSprint ? (
+              <div className="backlog-empty-state">No active sprint yet.</div>
+            ) : activeSprintIssues.length === 0 ? (
+              <div className="backlog-empty-state">No issues in this sprint</div>
+            ) : (
+              <div className="backlog-issue-list">
+                {activeSprintIssues.map((issue) => (
+                  <div
+                    key={issueIdentity(issue)}
+                    className={`backlog-issue-row ${draggingIssueId === issueIdentity(issue) ? 'is-dragging' : ''}`}
+                    draggable={canManageSprints}
+                    onDragStart={(event) => handleIssueDragStart(event, issue)}
+                    onDragEnd={handleIssueDragEnd}
+                  >
+                    <div className="backlog-issue-main">
+                      <span className={`backlog-issue-type backlog-type-${issue.type}`}>
+                        {renderIssueIcon(issue.type)}
+                      </span>
+                      <span className="backlog-issue-key">{issue.displayKey}</span>
+                      <span className="backlog-issue-title">{issue.title}</span>
+                    </div>
+                    <div className="backlog-issue-meta">
+                      {issue.labels.map((label) => (
+                        <span key={label} className="backlog-label-pill">{label}</span>
+                      ))}
+                      <span className="backlog-points-pill">{issue.points} pts</span>
+                      <span className="backlog-avatar">{getInitials(issue.assignee)}</span>
+                    </div>
                   </div>
-                  <div className="backlog-issue-meta">
-                    {issue.labels.map((label) => (
-                      <span key={label} className="backlog-label-pill">{label}</span>
-                    ))}
-                    <span className="backlog-points-pill">{issue.points} pts</span>
-                    <span className="backlog-avatar">{getInitials(issue.assignee)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </article>
 
-          <article className="backlog-next-sprint-card">
+          <article
+            className={`backlog-next-sprint-card ${dragOverTarget === 'planned' ? 'backlog-drop-target' : ''}`}
+            onDragOver={(event) => handleDragOver(event, 'planned')}
+            onDragLeave={() => handleDragLeave('planned')}
+            onDrop={(event) => handleDrop(event, plannedSprint?.id || '')}
+          >
             <div className="backlog-next-sprint-head">
               <div>
-                <h2>Sprint 3 - Advanced Features</h2>
-                <p>Add reporting, analytics, and automation</p>
+                <h2>{plannedSprint?.name || 'No upcoming sprint'}</h2>
+                <p>{plannedSprint?.goal || 'Create a sprint to plan upcoming work.'}</p>
               </div>
-              <button className="btn backlog-outline-btn">Start Sprint</button>
+              <button
+                className="btn backlog-outline-btn"
+                onClick={handleStartSprint}
+                disabled={!plannedSprint || !!activeSprint || !canManageSprints || isActionLoading(plannedSprint?.id)}
+              >
+                {isActionLoading(plannedSprint?.id) ? 'Starting...' : 'Start Sprint'}
+              </button>
             </div>
-            <div className="backlog-empty-state">
-              No issues in this sprint
-            </div>
+            {issuesLoading || sprintsLoading ? (
+              <div className="backlog-empty-state">Loading sprint...</div>
+            ) : !plannedSprint ? (
+              <div className="backlog-empty-state">No upcoming sprint yet.</div>
+            ) : plannedSprintIssues.length === 0 ? (
+              <div className="backlog-empty-state">No issues in this sprint</div>
+            ) : (
+              <div className="backlog-issue-list">
+                {plannedSprintIssues.map((issue) => (
+                  <div
+                    key={issueIdentity(issue)}
+                    className={`backlog-issue-row ${draggingIssueId === issueIdentity(issue) ? 'is-dragging' : ''}`}
+                    draggable={canManageSprints}
+                    onDragStart={(event) => handleIssueDragStart(event, issue)}
+                    onDragEnd={handleIssueDragEnd}
+                  >
+                    <div className="backlog-issue-main">
+                      <span className={`backlog-issue-type backlog-type-${issue.type}`}>
+                        {renderIssueIcon(issue.type)}
+                      </span>
+                      <span className="backlog-issue-key">{issue.displayKey}</span>
+                      <span className="backlog-issue-title">{issue.title}</span>
+                    </div>
+                    <div className="backlog-issue-meta">
+                      {issue.labels.map((label) => (
+                        <span key={label} className="backlog-label-pill">{label}</span>
+                      ))}
+                      <span className="backlog-points-pill">{issue.points} pts</span>
+                      <span className="backlog-avatar">{getInitials(issue.assignee)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </article>
 
-          <article className="backlog-pool-card">
+          <article
+            className={`backlog-pool-card ${dragOverTarget === 'backlog' ? 'backlog-drop-target' : ''}`}
+            onDragOver={(event) => handleDragOver(event, 'backlog')}
+            onDragLeave={() => handleDragLeave('backlog')}
+            onDrop={(event) => handleDrop(event, '')}
+          >
             <div className="backlog-pool-head">
               <h2>Backlog</h2>
-              <p>{UPCOMING_BACKLOG_ISSUES.length} issues • Drag issues to sprints to plan your work</p>
+              <p>{backlogIssues.length} issues - Drag issues to sprints to plan your work</p>
             </div>
 
-            <div className="backlog-issue-list backlog-pool-list">
-              {UPCOMING_BACKLOG_ISSUES.map((issue) => (
-                <div key={issue.id} className="backlog-issue-row backlog-pool-row">
-                  <div className="backlog-issue-main">
-                    <span className={`backlog-issue-type backlog-type-${issue.type}`}>
-                      {renderIssueIcon(issue.type)}
-                    </span>
-                    <span className="backlog-issue-key">{issue.id}</span>
-                    <span className="backlog-issue-title">{issue.title}</span>
+            {issuesLoading || sprintsLoading ? (
+              <div className="backlog-empty-state">Loading backlog...</div>
+            ) : backlogIssues.length === 0 ? (
+              <div className="backlog-empty-state">No issues in backlog</div>
+            ) : (
+              <div className="backlog-issue-list backlog-pool-list">
+                {backlogIssues.map((issue) => (
+                  <div
+                    key={issueIdentity(issue)}
+                    className={`backlog-issue-row backlog-pool-row ${draggingIssueId === issueIdentity(issue) ? 'is-dragging' : ''}`}
+                    draggable={canManageSprints}
+                    onDragStart={(event) => handleIssueDragStart(event, issue)}
+                    onDragEnd={handleIssueDragEnd}
+                  >
+                    <div className="backlog-issue-main">
+                      <span className={`backlog-issue-type backlog-type-${issue.type}`}>
+                        {renderIssueIcon(issue.type)}
+                      </span>
+                      <span className="backlog-issue-key">{issue.displayKey}</span>
+                      <span className="backlog-issue-title">{issue.title}</span>
+                    </div>
+                    <div className="backlog-issue-meta">
+                      {issue.labels.map((label) => (
+                        <span key={label} className="backlog-label-pill">{label}</span>
+                      ))}
+                      <span className="backlog-points-pill">{issue.points} pts</span>
+                    </div>
                   </div>
-                  <div className="backlog-issue-meta">
-                    {issue.labels.map((label) => (
-                      <span key={label} className="backlog-label-pill">{label}</span>
-                    ))}
-                    {issue.points ? <span className="backlog-points-pill">{issue.points} pts</span> : null}
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </article>
         </section>
       </main>
     </div>
   )
 }
+
+
+

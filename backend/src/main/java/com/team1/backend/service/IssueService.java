@@ -73,6 +73,7 @@ public class IssueService {
         issue.setCreatorEmail(normalizeEmail(issue.getCreatorEmail()));
         issue.setAssignDate(normalizeText(issue.getAssignDate()));
         issue.setDeadlineDate(normalizeText(issue.getDeadlineDate()));
+        issue.setSprintId(normalizeText(issue.getSprintId()));
 
         if (issue.getStatus() == null || issue.getStatus().trim().isEmpty()) {
             issue.setStatus("todo");
@@ -226,6 +227,9 @@ public class IssueService {
             }
             if (updated.getLabels() != null) {
                 existing.setLabels(updated.getLabels());
+            }
+            if (updated.getSprintId() != null) {
+                existing.setSprintId(normalizeText(updated.getSprintId()));
             }
             existing.setUpdatedAt(LocalDateTime.now());
             return repo.save(existing);
@@ -580,6 +584,9 @@ public class IssueService {
         }
         if (updated.getLabels() != null) {
             existing.setLabels(updated.getLabels());
+        }
+        if (updated.getSprintId() != null) {
+            existing.setSprintId(normalizeText(updated.getSprintId()));
         }
         existing.setUpdatedAt(LocalDateTime.now());
         return repo.save(existing);

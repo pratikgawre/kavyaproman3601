@@ -72,6 +72,11 @@
   overflow: hidden;
 }
 
+.backlog-drop-target {
+  border: 2px dashed #94a3b8;
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.15);
+}
+
 .backlog-sprint-head {
   align-items: center;
   background: #dfe8f5;
@@ -140,6 +145,10 @@
   justify-content: space-between;
   min-height: 52px;
   padding: 8px 12px;
+}
+
+.backlog-issue-row.is-dragging {
+  opacity: 0.6;
 }
 
 .backlog-issue-main {
@@ -332,6 +341,11 @@ html[data-theme='dark'] .backlog-active-pill {
 html[data-theme='dark'] .backlog-issue-row {
   background: #000000 !important;
   border: 1px solid #374151 !important;
+}
+
+html[data-theme='dark'] .backlog-drop-target {
+  border: 2px dashed #94a3b8 !important;
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.25);
 }
 
 html[data-theme='dark'] .backlog-issue-key,

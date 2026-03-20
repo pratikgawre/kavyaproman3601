@@ -4,7 +4,6 @@ import { FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLog
 import { NavLink } from 'react-router-dom'
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { FiX } from 'react-icons/fi'
-import { BOARD_COLUMNS } from '../data/boardColumns'
 import { useAuth } from '../context/AuthContext'
 import useIssueNotifications from '../hooks/useIssueNotifications'
 import { uploadFiles } from '../utils/upload'
@@ -148,6 +147,7 @@ export default function Dashboard({ initialShowCreate = false }) {
   const [projectsError, setProjectsError] = useState('')
   const avatar = user?.avatar || ''
   const projectKeyFrom = (projectItem) => (projectItem?.projectKey || projectItem?.id || '').toString().trim()
+  const issueProjectKeyFrom = (issueItem) => (issueItem?.project || issueItem?.projectKey || issueItem?.projectId || '').toString().trim().toUpperCase()
   const projectLabel = (projectItem) => {
     const key = projectKeyFrom(projectItem)
     const name = projectItem?.name || key || 'Project'
@@ -223,6 +223,33 @@ export default function Dashboard({ initialShowCreate = false }) {
 
     return () => controller.abort()
   }, [API_BASE, isProjectManager, organizationId, organizationName, organizationUsername, user?.email])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setSprintsLoading(true)
+    setSprintsError('')
+    fetch(`${API_BASE}/api/sprints`, { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errorText = await res.text()
+          throw new Error(errorText || 'Failed to load sprints')
+        }
+        return res.json()
+      })
+      .then((data) => {
+        setSprints(Array.isArray(data) ? data : [])
+      })
+      .catch((err) => {
+        if (err.name === 'AbortError') return
+        setSprints([])
+        setSprintsError(err.message || 'Failed to load sprints')
+      })
+      .finally(() => {
+        setSprintsLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [API_BASE])
 
   const [project, setProject] = useState('')
   const [didApplyPreselect, setDidApplyPreselect] = useState(false)
@@ -618,6 +645,10 @@ export default function Dashboard({ initialShowCreate = false }) {
   const [taskCounts, setTaskCounts] = useState({ todo: 0, progress: 0, review: 0, done: 0 })
   const [overdueTasks, setOverdueTasks] = useState([])
   const [recentActivities, setRecentActivities] = useState([])
+  const [dashboardIssues, setDashboardIssues] = useState([])
+  const [sprints, setSprints] = useState([])
+  const [sprintsLoading, setSprintsLoading] = useState(false)
+  const [sprintsError, setSprintsError] = useState('')
   const preselectedProjectKey = useMemo(() => {
     const fromState = location.state?.projectKey || location.state?.project?.projectKey || location.state?.project?.id
     return fromState ? String(fromState).trim() : ''
@@ -696,13 +727,44 @@ export default function Dashboard({ initialShowCreate = false }) {
       total += count
       if (column.key === 'done') done += count
     })
+  }, [activeProjectKeys, normalizedSprints])
+  const sprintRecencyTime = (sprint) => {
+    const date = parseBackendDate(sprint?.updatedAt || sprint?.createdAt || sprint?.startDate || sprint?.start)
+    return date ? date.getTime() : 0
+  }
+  const activeSprint = useMemo(() => {
+    const candidates = relevantSprints.filter((sprint) => sprint.status === 'active')
+    if (!candidates.length) return null
+    const sorted = [...candidates].sort((a, b) => sprintRecencyTime(b) - sprintRecencyTime(a))
+    return sorted[0]
+  }, [relevantSprints])
+  const sprintCardProject = useMemo(() => {
+    if (!activeSprint) return activeProjects[0] || null
+    const key = (activeSprint?.projectKey || '').toString().trim().toUpperCase()
+    if (!key) return activeProjects[0] || null
+    return activeProjects.find((projectItem) => projectKeyFrom(projectItem).toUpperCase() === key) || activeProjects[0] || null
+  }, [activeSprint, activeProjects])
+  const sprintIssues = useMemo(() => {
+    if (!activeSprint?.id) return []
+    return dashboardIssues.filter((issue) => (issue?.sprintId || issue?.sprint || '') === activeSprint.id)
+  }, [dashboardIssues, activeSprint?.id])
+  const sprintProgress = useMemo(() => {
+    const total = sprintIssues.length
+    const done = sprintIssues.filter((issue) => normalizeStatus(issue?.status) === 'done').length
     const pct = total ? Math.round((done / total) * 100) : 0
     return { total, done, pct }
-  }, [])
+  }, [sprintIssues])
   const sprintTimeLabel = useMemo(() => {
-    if (!activeSprint?.start || !activeSprint?.end) return 'Dates not set'
-    const start = new Date(activeSprint.start)
-    const end = new Date(activeSprint.end)
+    if (!activeSprint) {
+      if (sprintsLoading) return 'Loading sprint...'
+      if (sprintsError) return sprintsError
+      return 'No active sprint'
+    }
+    const startValue = activeSprint?.startDate || activeSprint?.start
+    const endValue = activeSprint?.endDate || activeSprint?.end
+    if (!startValue || !endValue) return 'Dates not set'
+    const start = parseBackendDate(startValue) || new Date(startValue)
+    const end = parseBackendDate(endValue) || new Date(endValue)
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 'Dates not set'
     const now = new Date()
     const msPerDay = 1000 * 60 * 60 * 24
@@ -716,7 +778,7 @@ export default function Dashboard({ initialShowCreate = false }) {
     }
     const daysPast = Math.abs(daysUntilEnd)
     return `Ended ${daysPast} day${daysPast === 1 ? '' : 's'} ago`
-  }, [activeSprint.start, activeSprint.end])
+  }, [activeSprint, sprintsError, sprintsLoading])
   // load counts for dashboard summary
   useEffect(()=>{
     async function loadCounts(){
@@ -727,6 +789,7 @@ export default function Dashboard({ initialShowCreate = false }) {
           setTaskCounts({ todo: 0, progress: 0, review: 0, done: 0 })
           setOverdueTasks([])
           setRecentActivities([])
+          setDashboardIssues([])
           return
         }
         if (projectsLoading && !projects.length) return
@@ -747,9 +810,61 @@ export default function Dashboard({ initialShowCreate = false }) {
             const assigneeEmail = (it.assigneeEmail || it.assignee || it.creatorEmail || '').toString().toLowerCase()
             return assigneeEmail && assigneeEmail === userEmail
           })
-        setTotalIssues(scoped.length)
+          : parsed
+        let assignedScoped = []
+        const hasTeamScope = isProjectManager || isTester
+        if (hasTeamScope) {
+          const orgProjects = shouldFilterByOrg
+            ? (projects || []).filter((projectItem) => {
+              const key = projectKeyFrom(projectItem)
+              return key && orgProjectKeys.has(key.toUpperCase())
+            })
+            : (projects || [])
+          const teamMemberEmails = new Set()
+          const teamMemberNames = new Set()
+          orgProjects.forEach((projectItem) => {
+            const members = Array.isArray(projectItem?.teamMembers) ? projectItem.teamMembers : []
+            members.forEach((member) => {
+              const email = (member?.email || '').toString().trim().toLowerCase()
+              if (email) teamMemberEmails.add(email)
+              const name = (member?.name || '').toString().trim().toLowerCase()
+              if (name) teamMemberNames.add(name)
+            })
+            const managerEmail = (projectItem?.managerEmail || '').toString().trim().toLowerCase()
+            if (managerEmail) teamMemberEmails.add(managerEmail)
+            const teamLead = (projectItem?.teamLead || '').toString().trim()
+            if (teamLead) {
+              const normalizedLead = teamLead.toLowerCase()
+              if (normalizedLead.includes('@')) teamMemberEmails.add(normalizedLead)
+              else teamMemberNames.add(normalizedLead)
+            }
+          })
+
+          if (teamMemberEmails.size === 0 && teamMemberNames.size === 0) {
+            assignedScoped = orgScoped.filter((issue) => isAssignedToUser(issue) || isCreatedByUser(issue))
+          } else {
+            assignedScoped = orgScoped.filter((issue) => {
+              const assigneeEmail = (issue.assigneeEmail || '').toString().toLowerCase()
+              if (assigneeEmail && teamMemberEmails.has(assigneeEmail)) return true
+              const assigneeField = (issue.assignee || '').toString().toLowerCase()
+              if (assigneeField && teamMemberEmails.has(assigneeField)) return true
+              const assigneeName = (issue.assigneeName || issue.assignee || '').toString().trim().toLowerCase()
+              if (assigneeName && teamMemberNames.has(assigneeName)) return true
+              return false
+            })
+          }
+        } else {
+          assignedScoped = orgScoped.filter((issue) => isAssignedToUser(issue) || isCreatedByUser(issue))
+        }
+        const personalScoped = orgScoped.filter((issue) => isAssignedToUser(issue) || isCreatedByUser(issue))
+        const usePersonalScopeForCounts = isProjectManager || isTester
+        const scopedForTotals = usePersonalScopeForCounts ? personalScoped : assignedScoped
+        const scopedForTasks = usePersonalScopeForCounts ? personalScoped : assignedScoped
+
+        setDashboardIssues(orgScoped)
+        setTotalIssues(scopedForTotals.length)
         const counts = { High:0, Medium:0, Low:0 }
-        scoped.forEach(it => {
+        scopedForTotals.forEach(it => {
           const diff = (it.difficulty || '').toString()
           if(diff.toLowerCase()==='high') counts.High++
           else if(diff.toLowerCase()==='medium') counts.Medium++
@@ -760,7 +875,7 @@ export default function Dashboard({ initialShowCreate = false }) {
         const nextTaskCounts = { todo: 0, progress: 0, review: 0, done: 0 }
         const today = formatDateForInput(new Date())
         const nextOverdue = []
-        scoped.forEach((it) => {
+        scopedForTasks.forEach((it) => {
           const status = normalizeStatus(it.status)
           if (status === 'todo') nextTaskCounts.todo += 1
           else if (status === 'progress') nextTaskCounts.progress += 1
@@ -781,7 +896,7 @@ export default function Dashboard({ initialShowCreate = false }) {
         setTaskCounts(nextTaskCounts)
         setOverdueTasks(nextOverdue)
 
-        const nextActivities = scoped
+        const nextActivities = scopedForTasks
           .slice()
           .sort((a, b) => {
             const ad = parseBackendDate(a?.updatedAt || a?.createdAt)
@@ -831,7 +946,7 @@ export default function Dashboard({ initialShowCreate = false }) {
   }
 
   function openActiveSprint() {
-    const projectItem = activeProjects[0]
+    const projectItem = sprintCardProject || activeProjects[0]
     if (!projectItem) return
     const projectKey = projectItem.projectKey || projectItem.id
     if (!projectKey) return
@@ -1720,7 +1835,7 @@ export default function Dashboard({ initialShowCreate = false }) {
             <div className="stat-card-body">
               <div className="stat-meta">
                 <div className="muted">Active Sprint</div>
-                <h3 className="stat-title">{activeSprint.name}</h3>
+                <h3 className="stat-title">{activeSprint?.name || 'No active sprint yet'}</h3>
               </div>
 
               <div className="stat-progress">
@@ -1814,9 +1929,9 @@ export default function Dashboard({ initialShowCreate = false }) {
                 <div className="muted">No overdue tasks</div>
               ) : (
                 <ul className="overdue-list">
-                  {overdueTasks.map((task) => (
+                  {overdueTasks.map((task, index) => (
                     <li
-                      key={`${task.projectKey || 'project'}:${task.id}`}
+                      key={`${task.projectKey || 'project'}:${task.id}:${index}`}
                       className="overdue-item"
                       role="button"
                       tabIndex={0}
@@ -1851,7 +1966,7 @@ export default function Dashboard({ initialShowCreate = false }) {
               ) : (
                 recentActivities.map((item, index) => (
                   <div
-                    key={`${item.projectKey || 'project'}:${item.key}`}
+                    key={`${item.projectKey || 'project'}:${item.key}:${index}`}
                     className={`activity-item ${index === 2 ? 'highlight' : ''}`}
                     role="button"
                     tabIndex={0}
@@ -1886,13 +2001,6 @@ export default function Dashboard({ initialShowCreate = false }) {
                 ))
               )}
             </div>
-          </div>
-        </section>
-
-        <section className="large-info-card mt-4">
-          <div className="info-card">
-            <h5>My Tasks</h5>
-            <p className="muted">Issues assigned to you</p>
           </div>
         </section>
 

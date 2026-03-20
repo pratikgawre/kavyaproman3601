@@ -32,6 +32,7 @@ public class Issue {
     private String assignDate;
     private String deadlineDate;
     private List<String> labels;
+    private String sprintId;
 
     // attachments stored as JSON string (array of objects with name,type,url,publicId,resourceType,etc.)
     private String attachmentsJson;
@@ -99,6 +100,9 @@ public class Issue {
 
     public List<String> getLabels() { return labels; }
     public void setLabels(List<String> labels) { this.labels = labels; }
+
+    public String getSprintId() { return sprintId; }
+    public void setSprintId(String sprintId) { this.sprintId = sprintId; }
 
     public String getAttachmentsJson() { return attachmentsJson; }
     public void setAttachmentsJson(String attachmentsJson) { this.attachmentsJson = attachmentsJson; }
