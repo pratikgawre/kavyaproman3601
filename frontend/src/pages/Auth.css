@@ -708,9 +708,9 @@ html[data-theme='dark'] .org-url input::placeholder {
   top: 8px;
   padding: 7px 14px;
   border-radius: 10px;
-  border: 1px solid #000000;
-  background: #000000;
-  color: #ffffff;
+  border: 1px solid #f87171;
+  background: #ffffff;
+  color: #dc2626;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -718,13 +718,14 @@ html[data-theme='dark'] .org-url input::placeholder {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 8px 20px rgba(220, 38, 38, 0.15);
 }
 
 .org-list-logout:hover {
-  background: #111827;
-  border-color: #111827;
+  background: #fee2e2;
+  border-color: #dc2626;
   transform: translateY(-1px);
+  color: #dc2626;
 }
 
 .org-logout-icon svg {

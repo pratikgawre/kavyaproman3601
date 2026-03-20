@@ -3,3 +3,4 @@
 backend/target/
 backend/.m2/
 frontend/node_modules/
+maven_home/

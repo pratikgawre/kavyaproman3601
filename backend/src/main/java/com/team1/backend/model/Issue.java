@@ -38,6 +38,11 @@ public class Issue {
 
     private String difficulty;
 
+    private String reviewerName;
+    private String reviewerEmail;
+
+    private List<IssueComment> comments;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -100,6 +105,15 @@ public class Issue {
 
     public String getDifficulty() { return difficulty; }
     public void setDifficulty(String difficulty) { this.difficulty = difficulty; }
+
+    public String getReviewerName() { return reviewerName; }
+    public void setReviewerName(String reviewerName) { this.reviewerName = reviewerName; }
+
+    public String getReviewerEmail() { return reviewerEmail; }
+    public void setReviewerEmail(String reviewerEmail) { this.reviewerEmail = reviewerEmail; }
+
+    public List<IssueComment> getComments() { return comments; }
+    public void setComments(List<IssueComment> comments) { this.comments = comments; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
