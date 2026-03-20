@@ -772,7 +772,10 @@ export default function Teams() {
       email: normalizedEmail,
       role: normalizedRole,
       projectId: undefined,
-      managerEmail
+      managerEmail,
+      organizationId: organizationId || undefined,
+      organizationUsername: organizationUsername || undefined,
+      organizationName: organizationName || undefined
     };
       const response = await fetch(MEMBERS_API_URL, {
         method: 'POST',

@@ -396,9 +396,18 @@ public class IssueService {
             return;
         }
 
+        String requestedReviewer = updated != null ? normalizeEmail(updated.getReviewerEmail()) : null;
+        if (requestedReviewer != null && !requestedReviewer.isEmpty()) {
+            if (actorEmail == null || actorEmail.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Missing tester identity");
+            }
+            if (!requestedReviewer.equalsIgnoreCase(actorEmail)) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Tester can only assign themselves");
+            }
+        }
+
         int testerCount = countProjectTesters(existing.getProject());
         if (testerCount > 1) {
-            String requestedReviewer = updated != null ? normalizeEmail(updated.getReviewerEmail()) : null;
             if (requestedReviewer == null || requestedReviewer.isEmpty()) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Select a tester before updating");
             }

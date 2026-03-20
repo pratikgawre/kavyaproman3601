@@ -238,6 +238,12 @@
   width: 310px;
 }
 
+.board-column.board-drop-target {
+  border-color: rgba(59, 130, 246, 0.6);
+  box-shadow: 0 20px 45px rgba(37, 99, 235, 0.22);
+  transform: translateY(-4px);
+}
+
 @media (hover: hover) and (pointer: fine) {
   .board-column:hover {
     transform: translateY(-4px);
@@ -339,6 +345,13 @@
   gap: 11px;
   padding: 12px;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.board-issue-card.is-dragging {
+  opacity: 0.6;
+  transform: scale(0.98);
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.12);
+  cursor: grabbing;
 }
 
 @media (hover: hover) and (pointer: fine) {
