@@ -43,6 +43,68 @@ export default function Subscription() {
     const plan = normalizePlan(value)
     return plan.charAt(0).toUpperCase() + plan.slice(1)
   }
+  const SUBSCRIPTION_STORAGE_KEY = 'kpm360.subscription.current'
+  const readStoredSubscription = () => {
+    if (typeof window === 'undefined') {
+      return { plan: DEFAULT_PLAN, billing: 'monthly', manualTimestamp: 0 }
+    }
+    try {
+      const raw = window.localStorage.getItem(SUBSCRIPTION_STORAGE_KEY)
+      if (!raw) return { plan: DEFAULT_PLAN, billing: 'monthly', manualTimestamp: 0 }
+      const parsed = JSON.parse(raw)
+      const manualTimestamp = typeof parsed?.manualTimestamp === 'number' && !Number.isNaN(parsed.manualTimestamp)
+        ? parsed.manualTimestamp
+        : 0
+      return {
+        plan: normalizePlan(parsed?.plan),
+        billing: normalizeBilling(parsed?.billing || 'monthly'),
+        manualTimestamp
+      }
+    } catch (err) {
+      return { plan: DEFAULT_PLAN, billing: 'monthly', manualTimestamp: 0 }
+    }
+  }
+  const persistCurrentSubscription = (planValue, billingValue, manualTimestamp) => {
+    if (typeof window === 'undefined') return
+    try {
+      const plan = normalizePlan(planValue)
+      const billing = normalizeBilling(billingValue)
+      let safeTimestamp = 0
+      if (typeof manualTimestamp === 'number' && !Number.isNaN(manualTimestamp)) {
+        safeTimestamp = manualTimestamp
+      } else {
+        const stored = readStoredSubscription()
+        safeTimestamp = stored.manualTimestamp || 0
+      }
+      window.localStorage.setItem(
+        SUBSCRIPTION_STORAGE_KEY,
+        JSON.stringify({ plan, billing, manualTimestamp: safeTimestamp })
+      )
+    } catch (err) {
+      // ignore storage failures
+    }
+  }
+  const PERIOD_STORAGE_KEY = 'kpm360.subscription.period'
+  const readPeriodPreference = () => {
+    if (typeof window === 'undefined') return null
+    const stored = window.localStorage.getItem(PERIOD_STORAGE_KEY)
+    if (stored === 'monthly' || stored === 'yearly') return stored
+    return null
+  }
+  const persistPeriodPreference = (value) => {
+    if (typeof window === 'undefined') return
+    if (value === 'monthly' || value === 'yearly') {
+      window.localStorage.setItem(PERIOD_STORAGE_KEY, value)
+      return
+    }
+    window.localStorage.removeItem(PERIOD_STORAGE_KEY)
+  }
+  const initialSubscription = readStoredSubscription()
+  const periodPreference = readPeriodPreference()
+  const lastManualPlanRef = useRef({
+    plan: initialSubscription.plan,
+    millis: initialSubscription.manualTimestamp || 0
+  })
   const addMonths = (date, count) => {
     const next = new Date(date.getTime())
     const day = next.getDate()
@@ -75,10 +137,10 @@ export default function Subscription() {
   })
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [period, setPeriod] = useState('monthly')
-  const [currentPlan, setCurrentPlan] = useState(DEFAULT_PLAN)
-  const [currentBillingCycle, setCurrentBillingCycle] = useState('monthly')
-  const [selectedPlan, setSelectedPlan] = useState(DEFAULT_PLAN)
+  const [period, setPeriod] = useState(periodPreference || initialSubscription.billing)
+  const [currentPlan, setCurrentPlan] = useState(initialSubscription.plan)
+  const [currentBillingCycle, setCurrentBillingCycle] = useState(initialSubscription.billing)
+  const [selectedPlan, setSelectedPlan] = useState(initialSubscription.plan)
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const [topSearchText, setTopSearchText] = useState('')
   const [showUpgradeModal, setShowUpgradeModal] = useState(false)
@@ -91,6 +153,17 @@ export default function Subscription() {
   const [payments, setPayments] = useState([])
   const [paymentsLoading, setPaymentsLoading] = useState(false)
   const invoiceListScrollable = payments.length > 3
+  const handlePeriodSelection = (value) => {
+    setPeriod(value)
+    persistPeriodPreference(value)
+  }
+  const togglePeriodSelection = () => {
+    setPeriod((prev) => {
+      const next = prev === 'monthly' ? 'yearly' : 'monthly'
+      persistPeriodPreference(next)
+      return next
+    })
+  }
   const currentPlanKey = normalizePlan(currentPlan)
   const isFreePlan = currentPlanKey === 'free'
   const activeEntitlements = useMemo(() => {
@@ -218,13 +291,19 @@ export default function Subscription() {
     return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
   }
 
-  const applyCurrentSubscription = (planValue, billingValue) => {
+  const applyCurrentSubscription = (planValue, billingValue, options = {}) => {
     const normalizedPlan = normalizePlan(planValue)
     const normalizedBilling = normalizeBilling(billingValue)
     setCurrentPlan(normalizedPlan)
     setCurrentBillingCycle(normalizedBilling)
     setSelectedPlan(normalizedPlan)
     setPeriod(normalizedBilling)
+    const manualTimestamp = typeof options.manualTimestamp === 'number' ? options.manualTimestamp : undefined
+    persistCurrentSubscription(normalizedPlan, normalizedBilling, manualTimestamp)
+    if (options.source === 'manual') {
+      const referenceTimestamp = typeof manualTimestamp === 'number' ? manualTimestamp : Date.now()
+      lastManualPlanRef.current = { plan: normalizedPlan, millis: referenceTimestamp }
+    }
   }
 
   const updateCurrentSubscription = async (planValue, billingValue, purchasedAtOverride) => {
@@ -252,14 +331,18 @@ export default function Subscription() {
 
       if (res.ok) {
         const data = await res.json()
-        applyCurrentSubscription(data?.planName || normalizedPlan, data?.billingCycle || normalizedBilling)
+        applyCurrentSubscription(
+          data?.planName || normalizedPlan,
+          data?.billingCycle || normalizedBilling,
+          { source: 'manual', manualTimestamp: Date.now() }
+        )
         return
       }
     } catch (err) {
       // Ignore and fallback to local update for demo flow
     }
 
-    applyCurrentSubscription(normalizedPlan, normalizedBilling)
+    applyCurrentSubscription(normalizedPlan, normalizedBilling, { source: 'manual', manualTimestamp: Date.now() })
   }
 
   // sync sidebar state from global controller
@@ -285,7 +368,13 @@ export default function Subscription() {
         if (!res.ok) return
         const data = await res.json()
         if (!isMounted) return
-        applyCurrentSubscription(data?.planName, data?.billingCycle)
+        const normalizedPlan = normalizePlan(data?.planName)
+        const lastManual = lastManualPlanRef.current
+        const shouldSkipRemoteFree =
+          normalizedPlan === 'free' &&
+          lastManual.plan !== 'free'
+        if (shouldSkipRemoteFree) return
+        applyCurrentSubscription(data?.planName, data?.billingCycle, { source: 'remote' })
       } catch (err) {
         // Keep defaults if the API is unavailable
       }
@@ -349,7 +438,7 @@ export default function Subscription() {
   // apply current plan passed from other pages (e.g., after upgrade flow)
   useEffect(() => {
     if (!location?.state?.currentPlan) return
-    applyCurrentSubscription(location.state.currentPlan, location.state.billingCycle || currentBillingCycle)
+    applyCurrentSubscription(location.state.currentPlan, location.state.billingCycle || currentBillingCycle, { source: 'manual' })
   }, [location?.state?.currentPlan, location?.state?.billingCycle])
 
   // listen for organization changes
@@ -654,11 +743,11 @@ return (
                 <div className="text-muted mb-3">Select the perfect plan for your team. Upgrade, downgrade, or cancel anytime.</div>
 
                 <div className="period-toggle d-inline-flex align-items-center">
-                  <button type="button" className={`toggle-label ${period === 'monthly' ? 'active' : ''}`} onClick={() => setPeriod('monthly')}>Monthly</button>
-                  <button className={`switch ${period === 'yearly' ? 'on' : ''}`} onClick={() => setPeriod(p => p === 'monthly' ? 'yearly' : 'monthly')} aria-pressed={period === 'yearly'}>
-                    <span className="knob" />
+                  <button type="button" className={`toggle-label ${period === 'monthly' ? 'active' : ''}`} onClick={() => handlePeriodSelection('monthly')}>Monthly</button>
+                  <button className={`switch ${period === 'yearly' ? 'on' : ''}`} onClick={togglePeriodSelection} aria-pressed={period === 'yearly'}>
+                  <span className="knob" />
                   </button>
-                  <button type="button" className={`toggle-label ${period === 'yearly' ? 'active' : ''}`} onClick={() => setPeriod('yearly')}>Yearly</button>
+                  <button type="button" className={`toggle-label ${period === 'yearly' ? 'active' : ''}`} onClick={() => handlePeriodSelection('yearly')}>Yearly</button>
                 </div>
               </div>
             </div>
