@@ -143,6 +143,8 @@ export default function Board() {
   const [issues, setIssues] = useState([])
   const [issuesLoading, setIssuesLoading] = useState(true)
   const [issuesError, setIssuesError] = useState('')
+  const [draggingIssueId, setDraggingIssueId] = useState(null)
+  const [dragOverStatus, setDragOverStatus] = useState('')
   const [commentModalIssueId, setCommentModalIssueId] = useState(null)
   const [commentFormIssueId, setCommentFormIssueId] = useState(null)
   const [commentText, setCommentText] = useState('')
@@ -163,15 +165,18 @@ export default function Board() {
   const topSearchInputRef = useRef(null)
   const assigneeDropdownRef = useRef(null)
   const typeDropdownRef = useRef(null)
+  const autoAssignRef = useRef(new Set())
   const API_BASE = (import.meta?.env?.VITE_API_BASE || 'http://localhost:8080')
   const projectFromState = location.state?.project
   const projectKeyRaw = (projectFromState?.projectKey || projectFromState?.id || projectId || '').trim()
   const activeProjectKey = normalizeProjectKey(projectKeyRaw)
   const [projectDetails, setProjectDetails] = useState(null)
-  const activeProject = projectFromState || projectDetails || {
-    id: activeProjectKey || projectKeyRaw,
-    name: projectKeyRaw || activeProjectKey || 'Project'
-  }
+  const activeProject = projectDetails
+    ? { ...(projectFromState || {}), ...projectDetails }
+    : (projectFromState || {
+      id: activeProjectKey || projectKeyRaw,
+      name: projectKeyRaw || activeProjectKey || 'Project'
+    })
   const projectTeamMembers = Array.isArray(activeProject?.teamMembers) ? activeProject.teamMembers : []
   const testerMembershipKnown = projectTeamMembers.length > 0
   const isTesterInProject = isTester
@@ -188,6 +193,12 @@ export default function Board() {
       }))
       .filter((member) => member.email && member.role === 'tester')
   ), [projectTeamMembers])
+  const reviewerOptions = useMemo(() => {
+    if (!isTester) return projectTesters
+    if (!userEmail) return []
+    return projectTesters.filter((tester) => tester.email === userEmail)
+  }, [isTester, userEmail, projectTesters])
+  const soleTester = projectTesters.length === 1 ? projectTesters[0] : null
   const activeFilterCount =
     selectedFilters.status.length +
     selectedFilters.type.length +
@@ -262,7 +273,8 @@ export default function Board() {
   }, [API_BASE, user?.id])
 
   useEffect(() => {
-    if (!activeProjectKey || projectFromState) return
+    const hasTeamMembers = Array.isArray(projectFromState?.teamMembers) && projectFromState.teamMembers.length > 0
+    if (!activeProjectKey || hasTeamMembers) return
     const controller = new AbortController()
     fetch(`${API_BASE}/api/projects`, { signal: controller.signal })
       .then(async (res) => {
@@ -325,7 +337,9 @@ export default function Board() {
       const assigneeEmail = (issue?.assigneeEmail || issue?.assignee || issue?.creatorEmail || '').toLowerCase()
       const isAssigned = assigneeEmail && assigneeEmail === userEmail
       if (isTester) {
-        return isAssigned || (isTesterInProject && normalizeStatus(issue?.status) === 'review')
+        const reviewerEmail = (issue?.reviewerEmail || '').toLowerCase()
+        const isReviewer = reviewerEmail && reviewerEmail === userEmail
+        return isAssigned || isReviewer || (isTesterInProject && normalizeStatus(issue?.status) === 'review')
       }
       return isAssigned
     })
@@ -358,6 +372,20 @@ export default function Board() {
     })
   ), [issues])
 
+  useEffect(() => {
+    if (!isTester || !isTesterInProject || !soleTester?.email) return
+    mappedIssues.forEach((issue) => {
+      if (normalizeStatus(issue?.status) !== 'review') return
+      if ((issue?.reviewerEmail || '').toString().trim()) return
+      const issueId = issue.id || issue.dbId
+      if (!issueId) return
+      const key = String(issueId)
+      if (autoAssignRef.current.has(key)) return
+      autoAssignRef.current.add(key)
+      handleAssignReviewer(issue, soleTester.email)
+    })
+  }, [isTester, isTesterInProject, soleTester?.email, mappedIssues])
+
   const issueIdentity = (issue) => (
     (issue?.id || issue?.dbId || issue?.issueKey || issue?.key || issue?.displayKey || '').toString()
   )
@@ -389,6 +417,22 @@ export default function Board() {
   const allLabels = useMemo(() => (
     [...new Set(mappedIssues.flatMap((issue) => issue.labels || []))]
   ), [mappedIssues])
+
+  const canDeveloperMoveStatus = (fromStatus, toStatus) => {
+    const from = normalizeStatus(fromStatus)
+    const to = normalizeStatus(toStatus)
+    if (from === to) return false
+    if (from === 'todo' && to === 'progress') return true
+    if (from === 'progress' && (to === 'todo' || to === 'review')) return true
+    return false
+  }
+
+  const canDeveloperDragIssue = (issueStatus) => {
+    const status = normalizeStatus(issueStatus)
+    if (status === 'todo') return true
+    if (status === 'progress') return true
+    return false
+  }
 
   const filteredColumns = useMemo(() => {
     const hasStatusFilter = selectedFilters.status.length > 0
@@ -472,6 +516,52 @@ export default function Board() {
       return isTesterInProject && projectTesters.length <= 1 && Boolean(userEmail)
     }
     return reviewer === userEmail
+  }
+
+  const canManagerMoveStatus = (fromStatus, toStatus) => {
+    const from = normalizeStatus(fromStatus)
+    const to = normalizeStatus(toStatus)
+    if (from === to) return false
+    return to === 'done' || to === 'todo'
+  }
+
+  const canTesterMoveStatus = (issue, toStatus) => {
+    if (!issue) return false
+    const from = normalizeStatus(issue.status)
+    const to = normalizeStatus(toStatus)
+    if (from === to) return false
+    if (from !== 'review') return false
+    if (to !== 'done' && to !== 'todo') return false
+    return isTesterAssignedToIssue(issue)
+  }
+
+  const canUserMoveStatus = (issue, targetStatus) => {
+    if (!issue) return false
+    if (isDeveloper) {
+      return canDeveloperMoveStatus(issue.status, targetStatus)
+    }
+    if (isProjectManager) {
+      return canManagerMoveStatus(issue.status, targetStatus)
+    }
+    if (isTester) {
+      return canTesterMoveStatus(issue, targetStatus)
+    }
+    return false
+  }
+
+  const canUserDragIssue = (issue) => {
+    if (!issue) return false
+    const status = normalizeStatus(issue.status)
+    if (isDeveloper) {
+      return canDeveloperDragIssue(status)
+    }
+    if (isProjectManager) {
+      return true
+    }
+    if (isTester) {
+      return status === 'review' && isTesterAssignedToIssue(issue)
+    }
+    return false
   }
 
   const getTesterLabel = (issue) => {
@@ -559,20 +649,127 @@ export default function Board() {
     return res.json()
   }
 
+  const updateIssueStatus = async (issueId, status) => {
+    if (!userId) {
+      throw new Error('Missing user session. Please log in again.')
+    }
+    const res = await fetch(`${API_BASE}/api/issues/${issueId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-USER-ID': String(userId)
+      },
+      body: JSON.stringify({ status })
+    })
+    if (!res.ok) {
+      const errorText = await res.text().catch(() => '')
+      throw new Error(errorText || 'Failed to move issue')
+    }
+    return res.json()
+  }
+
   const handleAssignReviewer = async (issue, reviewerEmail) => {
     if (!issue) return
+    if (isTester && reviewerEmail && reviewerEmail.toLowerCase() !== userEmail) {
+      alert('You can only select yourself as tester.')
+      return
+    }
     const issueId = issue.id || issue.dbId
     if (!issueId) return
     const tester = projectTesters.find((member) => member.email === reviewerEmail)
     if (!tester) return
+    const previousReviewer = {
+      reviewerEmail: issue.reviewerEmail || '',
+      reviewerName: issue.reviewerName || ''
+    }
+    setIssues((prev) => prev.map((item) => (
+      item.id === issueId
+        ? { ...item, reviewerEmail: tester.email, reviewerName: tester.name }
+        : item
+    )))
     try {
       const saved = await updateIssueReviewer(issueId, tester.email, tester.name)
       if (saved?.id) {
         setIssues((prev) => prev.map((item) => (item.id === saved.id ? { ...item, ...saved } : item)))
       }
     } catch (err) {
+      setIssues((prev) => prev.map((item) => (
+        item.id === issueId
+          ? { ...item, reviewerEmail: previousReviewer.reviewerEmail, reviewerName: previousReviewer.reviewerName }
+          : item
+      )))
       alert(err?.message || 'Failed to assign tester')
     }
+  }
+
+  const handleMoveIssueStatus = async (issue, targetStatus) => {
+    if (!issue) return
+    const issueId = issue.id || issue.dbId
+    if (!issueId) return
+    const currentStatus = normalizeStatus(issue.status)
+    const nextStatus = normalizeStatus(targetStatus)
+    if (currentStatus === nextStatus) return
+    if (!canUserMoveStatus(issue, nextStatus)) {
+      if (isTester && currentStatus === 'review' && !isTesterAssignedToIssue(issue)) {
+        alert('Select yourself as tester before moving this issue.')
+      }
+      return
+    }
+
+    setIssues((prev) => prev.map((item) => (item.id === issueId ? { ...item, status: nextStatus } : item)))
+    try {
+      const saved = await updateIssueStatus(issueId, nextStatus)
+      if (saved?.id) {
+        setIssues((prev) => prev.map((item) => (item.id === saved.id ? { ...item, ...saved } : item)))
+      }
+    } catch (err) {
+      setIssues((prev) => prev.map((item) => (item.id === issueId ? { ...item, status: currentStatus } : item)))
+      alert(err?.message || 'Failed to move issue')
+    }
+  }
+
+  const handleIssueDragStart = (event, issue) => {
+    if (!issue) return
+    if (!canUserDragIssue(issue)) return
+    const status = normalizeStatus(issue.status)
+    const issueId = issueIdentity(issue)
+    if (!issueId) return
+    setDraggingIssueId(issueId)
+    setDragOverStatus('')
+    event.dataTransfer?.setData('text/plain', issueId)
+    event.dataTransfer?.setData('application/x-issue-status', status)
+    event.dataTransfer?.setDragImage?.(event.currentTarget, 20, 20)
+    event.dataTransfer.dropEffect = 'move'
+  }
+
+  const handleIssueDragEnd = () => {
+    setDraggingIssueId(null)
+    setDragOverStatus('')
+  }
+
+  const handleColumnDragOver = (event, columnStatus) => {
+    if (!draggingIssueId) return
+    const issue = mappedIssues.find((item) => issueIdentity(item) === draggingIssueId)
+    if (!issue) return
+    if (!canUserMoveStatus(issue, columnStatus)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    setDragOverStatus(columnStatus)
+  }
+
+  const handleColumnDragLeave = () => {
+    setDragOverStatus('')
+  }
+
+  const handleColumnDrop = (event, columnStatus) => {
+    const issueId = event.dataTransfer?.getData('text/plain') || draggingIssueId
+    if (!issueId) return
+    event.preventDefault()
+    setDragOverStatus('')
+    const issue = mappedIssues.find((item) => issueIdentity(item) === issueId)
+    if (!issue) return
+    if (!canUserMoveStatus(issue, columnStatus)) return
+    handleMoveIssueStatus(issue, columnStatus)
   }
 
   const handleAddComment = async (issue, message, attachments = []) => {
@@ -1112,7 +1309,13 @@ export default function Board() {
             ) : (
               <div className="board-columns-track">
                 {filteredColumns.map((column) => (
-                  <section key={column.key} className={`board-column board-column-${column.tone}`}>
+                  <section
+                    key={column.key}
+                    className={`board-column board-column-${column.tone} ${dragOverStatus === column.key ? 'board-drop-target' : ''}`}
+                    onDragOver={(event) => handleColumnDragOver(event, column.key)}
+                    onDragLeave={handleColumnDragLeave}
+                    onDrop={(event) => handleColumnDrop(event, column.key)}
+                  >
                     <header className="board-column-head">
                       <div className="board-column-title-wrap">
                         <h2>{column.title}</h2>
@@ -1131,7 +1334,13 @@ export default function Board() {
 
                     <div className="board-column-body">
                       {column.issues.map((issue) => (
-                        <article key={issue.dbId || issue.displayKey} className={`board-issue-card board-priority-${issue.priority}`}>
+                        <article
+                          key={issue.dbId || issue.displayKey}
+                          className={`board-issue-card board-priority-${issue.priority} ${draggingIssueId === issueIdentity(issue) ? 'is-dragging' : ''}`}
+                          draggable={canUserDragIssue(issue)}
+                          onDragStart={(event) => handleIssueDragStart(event, issue)}
+                          onDragEnd={handleIssueDragEnd}
+                        >
                           <div className="board-issue-key-row">
                             <span className={`board-issue-type board-issue-${issue.type}`}>{issue.typeLabel}</span>
                             <span className="board-issue-key">{issue.displayKey}</span>
@@ -1151,14 +1360,14 @@ export default function Board() {
                                 <span className="board-reviewer-label">
                                   Tester assigned: {issue.reviewerName || issue.reviewerEmail}
                                 </span>
-                              ) : (isTester && isTesterInProject && projectTesters.length > 1) ? (
+                              ) : (isTester && isTesterInProject && reviewerOptions.length >= 1) ? (
                                 <select
                                   className="board-reviewer-select"
-                                  value=""
+                                  value={issue.reviewerEmail || (projectTesters.length === 1 ? projectTesters[0].email : '')}
                                   onChange={(event) => handleAssignReviewer(issue, event.target.value)}
                                 >
                                   <option value="" disabled>Select tester</option>
-                                  {projectTesters.map((tester) => (
+                                  {reviewerOptions.map((tester) => (
                                     <option key={tester.email} value={tester.email}>
                                       {tester.name}
                                     </option>
