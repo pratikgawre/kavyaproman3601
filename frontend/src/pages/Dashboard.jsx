@@ -38,6 +38,13 @@ function statusLabelFromStatus(status) {
   return 'to do'
 }
 
+function normalizeSprintStatus(status) {
+  const normalized = (status || '').toString().trim().toLowerCase()
+  if (normalized === 'active' || normalized === 'started' || normalized === 'in progress' || normalized === 'in-progress') return 'active'
+  if (normalized === 'completed' || normalized === 'complete' || normalized === 'done') return 'completed'
+  return 'planned'
+}
+
 function normalizeProjectMatchValue(value) {
   return (value || '').toString().trim().toLowerCase()
 }
@@ -114,8 +121,26 @@ export default function Dashboard({ initialShowCreate = false }) {
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
   const avatarInitials = getInitials(user?.name || displayName, user?.email)
   const userEmail = (user?.email || '').trim().toLowerCase()
+  const normalizedUserName = (user?.name || displayName || '').trim().toLowerCase()
   const isProjectManager = ['admin', 'project manager'].includes(normalizeRole(user?.role))
   const isDeveloper = normalizeRole(user?.role) === 'developer'
+  const isTester = normalizeRole(user?.role) === 'tester'
+  const isAssignedToUser = (issue) => {
+    if (!issue) return false
+    const assigneeEmail = (issue.assigneeEmail || '').toString().toLowerCase()
+    if (assigneeEmail && userEmail && assigneeEmail === userEmail) return true
+    const assigneeName = (issue.assigneeName || issue.assignee || '').toString().trim().toLowerCase()
+    if (assigneeName && normalizedUserName && assigneeName === normalizedUserName) return true
+    return false
+  }
+  const isCreatedByUser = (issue) => {
+    if (!issue) return false
+    const creatorEmail = (issue.creatorEmail || '').toString().toLowerCase()
+    if (creatorEmail && userEmail && creatorEmail === userEmail) return true
+    const creatorName = (issue.creatorName || issue.creator || '').toString().trim().toLowerCase()
+    if (creatorName && normalizedUserName && creatorName === normalizedUserName) return true
+    return false
+  }
   const [selectedOrg, setSelectedOrg] = useState(() => {
     try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null }
   })
@@ -696,11 +721,6 @@ export default function Dashboard({ initialShowCreate = false }) {
       (member.email || '').toLowerCase().includes(term)
     ))
   }, [assigneeSearch, projectTeamMembers])
-  const activeSprint = {
-    name: 'Sprint 2 - Board Implementation',
-    start: '2026-03-01',
-    end: '2026-03-14'
-  }
   const activeProjects = useMemo(() => (
     (projects || []).map((projectItem) => {
       const key = projectKeyFrom(projectItem)
@@ -719,14 +739,23 @@ export default function Dashboard({ initialShowCreate = false }) {
       }
     })
   ), [projects])
-  const sprintProgress = useMemo(() => {
-    let total = 0
-    let done = 0
-    BOARD_COLUMNS.forEach((column) => {
-      const count = Array.isArray(column.issues) ? column.issues.length : 0
-      total += count
-      if (column.key === 'done') done += count
-    })
+  const activeProjectKeys = useMemo(() => (
+    new Set(
+      activeProjects
+        .map((projectItem) => projectKeyFrom(projectItem).toUpperCase())
+        .filter(Boolean)
+    )
+  ), [activeProjects])
+  const normalizedSprints = useMemo(() => (
+    (sprints || []).map((sprint) => ({
+      ...sprint,
+      projectKey: (sprint?.projectKey || '').toString().trim().toUpperCase(),
+      status: normalizeSprintStatus(sprint.status)
+    }))
+  ), [sprints])
+  const relevantSprints = useMemo(() => {
+    if (!activeProjectKeys.size) return normalizedSprints
+    return normalizedSprints.filter((sprint) => sprint.projectKey && activeProjectKeys.has(sprint.projectKey))
   }, [activeProjectKeys, normalizedSprints])
   const sprintRecencyTime = (sprint) => {
     const date = parseBackendDate(sprint?.updatedAt || sprint?.createdAt || sprint?.startDate || sprint?.start)
@@ -797,18 +826,12 @@ export default function Dashboard({ initialShowCreate = false }) {
         if(!res.ok) throw new Error('failed to fetch')
         const data = await res.json()
         const parsed = Array.isArray(data) ? data.map(d => ({ ...d })) : []
-        const projectScopeKeys = (Array.isArray(projects) ? projects : []).reduce((keys, projectItem) => {
-          getProjectMatchKeys(projectItem).forEach((key) => keys.add(key))
-          return keys
-        }, new Set())
-        const projectScopedIssues = projectScopeKeys.size > 0
-          ? parsed.filter((it) => projectScopeKeys.has(normalizeProjectMatchValue(it?.project)))
-          : []
-        const scoped = isProjectManager || !userEmail
-          ? projectScopedIssues
-          : projectScopedIssues.filter((it) => {
-            const assigneeEmail = (it.assigneeEmail || it.assignee || it.creatorEmail || '').toString().toLowerCase()
-            return assigneeEmail && assigneeEmail === userEmail
+        const orgProjectKeys = new Set((projects || []).map(projectKeyFrom).filter(Boolean).map((key) => key.toUpperCase()))
+        const shouldFilterByOrg = Boolean(selectedOrg)
+        const orgScoped = shouldFilterByOrg
+          ? parsed.filter((it) => {
+            const key = issueProjectKeyFrom(it)
+            return key && orgProjectKeys.has(key)
           })
           : parsed
         let assignedScoped = []
@@ -918,12 +941,12 @@ export default function Dashboard({ initialShowCreate = false }) {
               dotColor: ['critical', 'high'].includes(priorityOrDifficulty) ? 'red' : 'orange',
               projectKey: (it.project || '').toString().trim().toUpperCase()
             }
-          })
+        })
         setRecentActivities(nextActivities)
       }catch(e){ console.error('load dashboard counts failed', e) }
     }
     loadCounts()
-  },[API_BASE, isProjectManager, projects, projectsLoading, userEmail, user?.id])
+  },[API_BASE, isProjectManager, isTester, normalizedUserName, projects, projectsLoading, selectedOrg, userEmail, user?.id])
 
   function handleLogout() {
     // clear user and force replace to login so back won't return to protected page
