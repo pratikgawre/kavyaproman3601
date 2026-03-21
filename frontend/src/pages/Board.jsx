@@ -69,6 +69,17 @@ const pointsFromDifficulty = (difficulty) => {
 
 const normalizeProjectKey = (value) => (value || '').trim().toUpperCase()
 const normalizeRole = (role) => (role || '').trim().toLowerCase()
+const matchesProjectToken = (project, token) => {
+  const rawToken = (token || '').toString().trim()
+  if (!rawToken) return false
+  const normalizedToken = normalizeProjectKey(rawToken)
+  const projectKey = normalizeProjectKey(project?.projectKey || '')
+  const projectDbId = (project?.id || '').toString().trim()
+  return Boolean(
+    (projectKey && projectKey === normalizedToken) ||
+    (projectDbId && projectDbId === rawToken)
+  )
+}
 
 const formatCommentTime = (value) => {
   if (!value) return ''
@@ -143,6 +154,9 @@ export default function Board() {
   const [issues, setIssues] = useState([])
   const [issuesLoading, setIssuesLoading] = useState(true)
   const [issuesError, setIssuesError] = useState('')
+  const [sprints, setSprints] = useState([])
+  const [sprintsLoading, setSprintsLoading] = useState(false)
+  const [sprintsError, setSprintsError] = useState('')
   const [draggingIssueId, setDraggingIssueId] = useState(null)
   const [dragOverStatus, setDragOverStatus] = useState('')
   const [commentModalIssueId, setCommentModalIssueId] = useState(null)
@@ -168,15 +182,21 @@ export default function Board() {
   const autoAssignRef = useRef(new Set())
   const API_BASE = (import.meta?.env?.VITE_API_BASE || 'http://localhost:8080')
   const projectFromState = location.state?.project
-  const projectKeyRaw = (projectFromState?.projectKey || projectFromState?.id || projectId || '').trim()
-  const activeProjectKey = normalizeProjectKey(projectKeyRaw)
+  const routeProjectToken = (projectId || '').toString().trim()
   const [projectDetails, setProjectDetails] = useState(null)
-  const activeProject = projectDetails
-    ? { ...(projectFromState || {}), ...projectDetails }
-    : (projectFromState || {
-      id: activeProjectKey || projectKeyRaw,
-      name: projectKeyRaw || activeProjectKey || 'Project'
-    })
+  const projectKeyRaw = (projectFromState?.projectKey || projectDetails?.projectKey || routeProjectToken || projectFromState?.id || '').trim()
+  const activeProjectKey = normalizeProjectKey(projectKeyRaw)
+  const activeProject = useMemo(() => {
+    const baseProject = projectDetails
+      ? { ...(projectFromState || {}), ...projectDetails }
+      : (projectFromState || {})
+    return {
+      ...baseProject,
+      id: activeProjectKey || (baseProject?.id || '').toString().trim() || routeProjectToken || 'PROJECT',
+      projectKey: activeProjectKey || normalizeProjectKey(baseProject?.projectKey || baseProject?.id || routeProjectToken || '') || '',
+      name: baseProject?.name || projectKeyRaw || activeProjectKey || 'Project'
+    }
+  }, [activeProjectKey, projectDetails, projectFromState, projectKeyRaw, routeProjectToken])
   const projectTeamMembers = Array.isArray(activeProject?.teamMembers) ? activeProject.teamMembers : []
   const testerMembershipKnown = projectTeamMembers.length > 0
   const isTesterInProject = isTester
@@ -274,7 +294,7 @@ export default function Board() {
 
   useEffect(() => {
     const hasTeamMembers = Array.isArray(projectFromState?.teamMembers) && projectFromState.teamMembers.length > 0
-    if (!activeProjectKey || hasTeamMembers) return
+    if (!routeProjectToken || (hasTeamMembers && projectFromState?.projectKey)) return
     const controller = new AbortController()
     fetch(`${API_BASE}/api/projects`, { signal: controller.signal })
       .then(async (res) => {
@@ -286,10 +306,7 @@ export default function Board() {
       })
       .then((data) => {
         const list = Array.isArray(data) ? data : []
-        const match = list.find((project) => {
-          const key = normalizeProjectKey(project.projectKey || project.id || '')
-          return key === activeProjectKey
-        })
+        const match = list.find((project) => matchesProjectToken(project, routeProjectToken))
         setProjectDetails(match || null)
       })
       .catch(() => {
@@ -298,7 +315,7 @@ export default function Board() {
       .finally(() => {})
 
     return () => controller.abort()
-  }, [API_BASE, activeProjectKey, projectFromState])
+  }, [API_BASE, projectFromState, routeProjectToken])
   useEffect(() => {
     if (!activeProjectKey) {
       setIssues([])
@@ -331,6 +348,52 @@ export default function Board() {
     return () => controller.abort()
   }, [API_BASE, activeProjectKey])
 
+  useEffect(() => {
+    if (!activeProjectKey) {
+      setSprints([])
+      setSprintsLoading(false)
+      return
+    }
+    const controller = new AbortController()
+    setSprintsLoading(true)
+    setSprintsError('')
+    fetch(`${API_BASE}/api/sprints?project=${encodeURIComponent(activeProjectKey)}`, { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errorText = await res.text()
+          throw new Error(errorText || 'Failed to load sprints')
+        }
+        return res.json()
+      })
+      .then((data) => {
+        setSprints(Array.isArray(data) ? data : [])
+      })
+      .catch((err) => {
+        if (err.name === 'AbortError') return
+        setSprints([])
+        setSprintsError(err.message || 'Failed to load sprints')
+      })
+      .finally(() => {
+        setSprintsLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [API_BASE, activeProjectKey])
+
+  const normalizedSprints = useMemo(() => (
+    (sprints || []).map((sprint) => ({
+      ...sprint,
+      id: (sprint?.id || '').toString(),
+      projectKey: normalizeProjectKey(sprint?.projectKey || ''),
+      status: normalizeSprintStatus(sprint.status)
+    }))
+  ), [sprints])
+
+  const activeSprint = useMemo(
+    () => normalizedSprints.find((sprint) => sprint.projectKey === activeProjectKey && sprint.status === 'active') || null,
+    [activeProjectKey, normalizedSprints]
+  )
+
   const visibleIssues = useMemo(() => {
     if (isProjectManager || !userEmail) return issues
     return (issues || []).filter((issue) => {
@@ -341,12 +404,20 @@ export default function Board() {
         const isReviewer = reviewerEmail && reviewerEmail === userEmail
         return isAssigned || isReviewer || (isTesterInProject && normalizeStatus(issue?.status) === 'review')
       }
-      return isAssigned
-    })
+        return isAssigned
+      })
   }, [issues, isProjectManager, isTester, isTesterInProject, userEmail])
 
+  const sprintScopedIssues = useMemo(() => {
+    if (!activeSprint?.id || issueQuery) return visibleIssues
+    return (visibleIssues || []).filter((issue) => {
+      const sprintId = (issue?.sprintId || issue?.sprint || '').toString()
+      return sprintId && sprintId === activeSprint.id
+    })
+  }, [activeSprint?.id, issueQuery, visibleIssues])
+
   const mappedIssues = useMemo(() => (
-    (visibleIssues || []).map((issue) => {
+    (sprintScopedIssues || []).map((issue) => {
       const issueTypeRaw = (issue.issueType || issue.type || 'task').toString()
       const issueType = issueTypeRaw.toLowerCase().trim() || 'task'
       const labels = Array.isArray(issue.labels) ? issue.labels : []
@@ -368,9 +439,9 @@ export default function Board() {
         points,
         priority: normalizePriority(issue.priority, issue.difficulty),
         status: normalizeStatus(issue.status)
-      }
-    })
-  ), [issues])
+        }
+      })
+  ), [sprintScopedIssues])
 
   useEffect(() => {
     if (!isTester || !isTesterInProject || !soleTester?.email) return
@@ -454,6 +525,11 @@ export default function Board() {
         })
       }))
   }, [boardColumns, selectedFilters, issueQuery])
+
+  const boardScopeTitle = activeSprint?.name || (sprintsLoading ? 'Loading sprint...' : 'No active sprint')
+  const boardScopeText = activeSprint
+    ? 'Showing issues from this project\'s active sprint. Move work in Backlog to change the sprint scope.'
+    : (sprintsError || 'Showing all issues for this project until a sprint is started from the backlog.')
 
   useEffect(() => {
     const status = new URLSearchParams(location.search).get('status')
@@ -1128,23 +1204,28 @@ export default function Board() {
 
           <div className="board-title-row">
             <div>
-            <h1>{activeProject.name || activeProjectKey || 'Project Board'}</h1>
+              <h1>{activeProject.name || activeProjectKey || 'Project Board'}</h1>
             </div>
-            <div className="board-title-actions">
-            
-              <button
-                className="btn board-outline-btn"
+              <div className="board-title-actions">
+              
+                <button
+                  className="btn board-outline-btn"
                 onClick={() => navigate(`/projects/${activeProjectKey}/backlog`, { state: { project: activeProject } })}
               >
                 View Backlog
               </button>
               <button className="btn board-outline-btn" onClick={() => setShowFilters(true)}>
                 <FiFilter size={15} /> More Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
-              </button>
+                </button>
+              </div>
             </div>
-          </div>
 
-          <div className="board-filter-row">
+            <div className="board-sprint-summary" data-state={activeSprint ? 'active' : 'all'}>
+              <div className="board-sprint-summary-title">{boardScopeTitle}</div>
+              <div className="board-sprint-summary-text">{boardScopeText}</div>
+            </div>
+
+            <div className="board-filter-row">
             <div className="board-filter-dropdown" ref={assigneeDropdownRef}>
               <button className="board-filter-pill" type="button" onClick={() => {
                 setShowAssigneeDropdown((value) => !value)

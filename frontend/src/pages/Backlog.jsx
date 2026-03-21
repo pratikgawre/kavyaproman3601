@@ -39,6 +39,17 @@ function getInitials(name) {
 
 const normalizeRole = (role) => (role || '').trim().toLowerCase()
 const normalizeProjectKey = (value) => (value || '').trim().toUpperCase()
+const matchesProjectToken = (project, token) => {
+  const rawToken = (token || '').toString().trim()
+  if (!rawToken) return false
+  const normalizedToken = normalizeProjectKey(rawToken)
+  const projectKey = normalizeProjectKey(project?.projectKey || '')
+  const projectDbId = (project?.id || '').toString().trim()
+  return Boolean(
+    (projectKey && projectKey === normalizedToken) ||
+    (projectDbId && projectDbId === rawToken)
+  )
+}
 
 const normalizeSprintStatus = (status) => {
   const normalized = (status || '').toLowerCase().trim()
@@ -130,12 +141,21 @@ export default function Backlog() {
   const notificationRef = useRef(null)
   const topSearchInputRef = useRef(null)
   const projectFromState = location.state?.project
-  const projectKeyRaw = (projectFromState?.projectKey || projectFromState?.id || projectId || '').trim()
+  const routeProjectToken = (projectId || '').toString().trim()
+  const [projectDetails, setProjectDetails] = useState(null)
+  const projectKeyRaw = (projectFromState?.projectKey || projectDetails?.projectKey || routeProjectToken || projectFromState?.id || '').trim()
   const activeProjectKey = normalizeProjectKey(projectKeyRaw)
-  const activeProject = projectFromState || {
-    id: activeProjectKey || projectKeyRaw || projectId || 'PROJECT',
-    name: projectKeyRaw || activeProjectKey || 'Project'
-  }
+  const activeProject = useMemo(() => {
+    const baseProject = projectDetails
+      ? { ...(projectFromState || {}), ...projectDetails }
+      : (projectFromState || {})
+    return {
+      ...baseProject,
+      id: activeProjectKey || (baseProject?.id || '').toString().trim() || routeProjectToken || 'PROJECT',
+      projectKey: activeProjectKey || normalizeProjectKey(baseProject?.projectKey || baseProject?.id || routeProjectToken || '') || '',
+      name: baseProject?.name || projectKeyRaw || activeProjectKey || 'Project'
+    }
+  }, [activeProjectKey, projectDetails, projectFromState, projectKeyRaw, routeProjectToken])
   const [issues, setIssues] = useState([])
   const [issuesLoading, setIssuesLoading] = useState(true)
   const [issuesError, setIssuesError] = useState('')
@@ -158,6 +178,30 @@ export default function Backlog() {
     document.addEventListener('mousedown', handleOutsideClick)
     return () => document.removeEventListener('mousedown', handleOutsideClick)
   }, [])
+
+  useEffect(() => {
+    const hasProjectKey = Boolean(normalizeProjectKey(projectFromState?.projectKey || ''))
+    if (!routeProjectToken || (hasProjectKey && projectFromState?.name)) return
+    const controller = new AbortController()
+    fetch(`${API_BASE}/api/projects`, { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errorText = await res.text()
+          throw new Error(errorText || 'Failed to load project')
+        }
+        return res.json()
+      })
+      .then((data) => {
+        const list = Array.isArray(data) ? data : []
+        const match = list.find((project) => matchesProjectToken(project, routeProjectToken))
+        setProjectDetails(match || null)
+      })
+      .catch(() => {
+        setProjectDetails(null)
+      })
+
+    return () => controller.abort()
+  }, [API_BASE, projectFromState?.name, projectFromState?.projectKey, routeProjectToken])
 
   useEffect(() => {
     if (!activeProjectKey) {
@@ -281,17 +325,23 @@ export default function Backlog() {
   const normalizedSprints = useMemo(() => (
     (sprints || []).map((sprint) => ({
       ...sprint,
+      id: (sprint?.id || '').toString(),
+      projectKey: normalizeProjectKey(sprint?.projectKey || ''),
       status: normalizeSprintStatus(sprint.status)
     }))
   ), [sprints])
 
+  const projectSprints = useMemo(() => (
+    normalizedSprints.filter((sprint) => !activeProjectKey || sprint.projectKey === activeProjectKey)
+  ), [activeProjectKey, normalizedSprints])
+
   const activeSprint = useMemo(
-    () => normalizedSprints.find((sprint) => sprint.status === 'active') || null,
-    [normalizedSprints]
+    () => projectSprints.find((sprint) => sprint.status === 'active') || null,
+    [projectSprints]
   )
   const plannedSprint = useMemo(
-    () => normalizedSprints.find((sprint) => sprint.status === 'planned') || null,
-    [normalizedSprints]
+    () => projectSprints.find((sprint) => sprint.status === 'planned') || null,
+    [projectSprints]
   )
 
   const activeSprintIssues = useMemo(() => {
@@ -305,7 +355,7 @@ export default function Backlog() {
   }, [mappedIssues, plannedSprint?.id])
 
   const backlogIssues = useMemo(() => {
-    const knownSprintIds = new Set(normalizedSprints.map((sprint) => sprint.id).filter(Boolean))
+    const knownSprintIds = new Set(projectSprints.map((sprint) => sprint.id).filter(Boolean))
     return mappedIssues.filter((issue) => {
       const sprintId = issue.sprintId
       if (!sprintId) return true
@@ -314,9 +364,10 @@ export default function Backlog() {
       if (plannedSprint?.id === sprintId) return false
       return true
     })
-  }, [mappedIssues, normalizedSprints, activeSprint?.id, plannedSprint?.id])
+  }, [mappedIssues, projectSprints, activeSprint?.id, plannedSprint?.id])
 
   const isActionLoading = (id) => sprintActionId && id && sprintActionId === id
+  const startSprintActionKey = plannedSprint?.id || 'new-sprint'
 
   function handleLogout() {
     clearUser()
@@ -439,24 +490,113 @@ export default function Backlog() {
     assignIssueToSprint(issueId, sprintId)
   }
 
-  async function handleStartSprint() {
-    if (!plannedSprint?.id || !canManageSprints || activeSprint) return
-    if (!userId) {
-      setSprintActionError('Sign in to start a sprint.')
-      return
-    }
-    setSprintActionError('')
-    setSprintActionId(plannedSprint.id)
-    try {
-      const res = await fetch(`${API_BASE}/api/sprints/${encodeURIComponent(plannedSprint.id)}/start`, {
-        method: 'POST',
-        headers: { 'X-USER-ID': String(userId) }
-      })
-      if (!res.ok) {
-        const errorText = await res.text()
-        throw new Error(errorText || 'Failed to start sprint')
+  function getSprintActionHeaders(includeJson = false) {
+    const headers = {}
+    if (includeJson) headers['Content-Type'] = 'application/json'
+    if (userId) headers['X-USER-ID'] = String(userId)
+    return headers
+  }
+
+  async function submitSprintAction(sprint, action) {
+    const isStartAction = action === 'start'
+    const fallbackBody = isStartAction
+      ? {
+          status: 'active',
+          startDate: sprint?.startDate || new Date().toISOString().slice(0, 10)
+        }
+      : {
+          status: 'completed',
+          endDate: sprint?.endDate || new Date().toISOString().slice(0, 10)
+        }
+
+    let response = await fetch(`${API_BASE}/api/sprints/${encodeURIComponent(sprint.id)}/${action}`, {
+      method: 'POST',
+      headers: getSprintActionHeaders()
+    })
+
+    if (!response.ok) {
+      if (![404, 405, 501].includes(response.status)) {
+        const errorText = await response.text()
+        throw new Error(errorText || `Failed to ${action} sprint`)
       }
-      const updated = await res.json()
+
+      response = await fetch(`${API_BASE}/api/sprints/${encodeURIComponent(sprint.id)}`, {
+        method: 'PUT',
+        headers: getSprintActionHeaders(true),
+        body: JSON.stringify(fallbackBody)
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(errorText || `Failed to ${action} sprint`)
+      }
+    }
+
+    return response.json()
+  }
+
+  function getNextSprintOrder() {
+    const orderedValues = projectSprints
+      .map((sprint) => Number(sprint?.order))
+      .filter((value) => Number.isFinite(value))
+
+    if (orderedValues.length > 0) {
+      return Math.max(...orderedValues) + 1
+    }
+
+    return projectSprints.length + 1
+  }
+
+  function getNextSprintName(order) {
+    const existingNames = new Set(
+      projectSprints
+        .map((sprint) => (sprint?.name || '').trim().toLowerCase())
+        .filter(Boolean)
+    )
+
+    let index = Math.max(1, Number(order) || 1)
+    while (existingNames.has(`sprint ${index}`)) {
+      index += 1
+    }
+
+    return `Sprint ${index}`
+  }
+
+  async function createAndStartSprint() {
+    const nextOrder = getNextSprintOrder()
+    const sprintPayload = {
+      projectKey: activeProjectKey,
+      name: getNextSprintName(nextOrder),
+      goal: activeProject?.name
+        ? `Current sprint for ${activeProject.name}`
+        : `Current sprint for ${activeProjectKey}`,
+      order: nextOrder,
+      status: 'active',
+      startDate: new Date().toISOString().slice(0, 10)
+    }
+
+    const response = await fetch(`${API_BASE}/api/sprints`, {
+      method: 'POST',
+      headers: getSprintActionHeaders(true),
+      body: JSON.stringify(sprintPayload)
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(errorText || 'Failed to create sprint')
+    }
+
+    return response.json()
+  }
+
+  async function handleStartSprint() {
+    if (!activeProjectKey || activeSprint || !canManageSprints) return
+    setSprintActionError('')
+    setSprintActionId(startSprintActionKey)
+    try {
+      const updated = plannedSprint?.id
+        ? await submitSprintAction(plannedSprint, 'start')
+        : await createAndStartSprint()
       setSprints((prev) => {
         if (!Array.isArray(prev) || prev.length === 0) return [updated]
         let found = false
@@ -469,7 +609,7 @@ export default function Backlog() {
         })
         return found ? next : [updated, ...next]
       })
-      refreshSprints()
+      await refreshSprints()
     } catch (err) {
       setSprintActionError(err.message || 'Failed to start sprint')
     } finally {
@@ -479,22 +619,10 @@ export default function Backlog() {
 
   async function handleCompleteSprint() {
     if (!activeSprint?.id || !canManageSprints) return
-    if (!userId) {
-      setSprintActionError('Sign in to complete a sprint.')
-      return
-    }
     setSprintActionError('')
     setSprintActionId(activeSprint.id)
     try {
-      const res = await fetch(`${API_BASE}/api/sprints/${encodeURIComponent(activeSprint.id)}/complete`, {
-        method: 'POST',
-        headers: { 'X-USER-ID': String(userId) }
-      })
-      if (!res.ok) {
-        const errorText = await res.text()
-        throw new Error(errorText || 'Failed to complete sprint')
-      }
-      const updated = await res.json()
+      const updated = await submitSprintAction(activeSprint, 'complete')
       setSprints((prev) => {
         if (!Array.isArray(prev) || prev.length === 0) return [updated]
         let found = false
@@ -507,7 +635,7 @@ export default function Backlog() {
         })
         return found ? next : [updated, ...next]
       })
-      refreshSprints()
+      await refreshSprints()
     } catch (err) {
       setSprintActionError(err.message || 'Failed to complete sprint')
     } finally {
@@ -740,7 +868,7 @@ export default function Backlog() {
           <div className="backlog-title-row">
             <h1>Backlog</h1>
             <div className="backlog-title-actions">
-              <button className="btn backlog-outline-btn" onClick={() => navigate(`/projects/${activeProject.id}/board`, { state: { project: activeProject } })}>
+              <button className="btn backlog-outline-btn" onClick={() => navigate(`/projects/${activeProjectKey}/board`, { state: { project: activeProject } })}>
                 View Board
               </button>  
               
@@ -829,9 +957,9 @@ export default function Backlog() {
               <button
                 className="btn backlog-outline-btn"
                 onClick={handleStartSprint}
-                disabled={!plannedSprint || !!activeSprint || !canManageSprints || isActionLoading(plannedSprint?.id)}
+                disabled={!activeProjectKey || !!activeSprint || !canManageSprints || isActionLoading(startSprintActionKey)}
               >
-                {isActionLoading(plannedSprint?.id) ? 'Starting...' : 'Start Sprint'}
+                {isActionLoading(startSprintActionKey) ? 'Starting...' : 'Start Sprint'}
               </button>
             </div>
             {issuesLoading || sprintsLoading ? (
