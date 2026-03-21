@@ -87,12 +87,7 @@ const matchesProjectToken = (project, token) => {
     (projectDbId && projectDbId === rawToken)
   )
 }
-const normalizeSprintStatus = (status) => {
-  const normalized = (status || '').toString().trim().toLowerCase()
-  if (normalized === 'active' || normalized === 'started' || normalized === 'in progress' || normalized === 'in-progress') return 'active'
-  if (normalized === 'completed' || normalized === 'complete' || normalized === 'done') return 'completed'
-  return 'planned'
-}
+
 
 const formatCommentTime = (value) => {
   if (!value) return ''
