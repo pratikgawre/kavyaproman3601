@@ -1,11 +1,18 @@
 package com.team1.backend.service;
 
+import com.team1.backend.model.Issue;
 import com.team1.backend.model.Sprint;
+import com.team1.backend.repository.IssueRepository;
 import com.team1.backend.repository.SprintRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -15,9 +22,13 @@ import org.springframework.web.server.ResponseStatusException;
 public class SprintService {
 
     private final SprintRepository sprintRepository;
+    private final IssueRepository issueRepository;
 
-    public SprintService(SprintRepository sprintRepository) {
+    private static final String UNASSIGNED_LABEL = "Unassigned";
+
+    public SprintService(SprintRepository sprintRepository, IssueRepository issueRepository) {
         this.sprintRepository = sprintRepository;
+        this.issueRepository = issueRepository;
     }
 
     public List<Sprint> list(String projectKey) {
@@ -28,6 +39,7 @@ public class SprintService {
             sprints = sprintRepository.findByProjectKeyIgnoreCase(normalizeProjectKey(projectKey));
         }
         sprints.sort(this::compareSprints);
+        attachIssueSummaries(sprints);
         return sprints;
     }
 
@@ -57,7 +69,9 @@ public class SprintService {
 
         sprint.setCreatedAt(LocalDateTime.now());
         sprint.setUpdatedAt(LocalDateTime.now());
-        return sprintRepository.save(sprint);
+        Sprint saved = sprintRepository.save(sprint);
+        attachIssueSummary(saved);
+        return saved;
     }
 
     public Sprint update(String id, Sprint updated) {
@@ -97,7 +111,9 @@ public class SprintService {
         }
 
         existing.setUpdatedAt(LocalDateTime.now());
-        return sprintRepository.save(existing);
+        Sprint saved = sprintRepository.save(existing);
+        attachIssueSummary(saved);
+        return saved;
     }
 
     public Sprint startSprint(String id) {
@@ -110,7 +126,9 @@ public class SprintService {
             sprint.setStartDate(LocalDate.now().toString());
         }
         sprint.setUpdatedAt(LocalDateTime.now());
-        return sprintRepository.save(sprint);
+        Sprint saved = sprintRepository.save(sprint);
+        attachIssueSummary(saved);
+        return saved;
     }
 
     public Sprint completeSprint(String id) {
@@ -121,7 +139,9 @@ public class SprintService {
             sprint.setEndDate(LocalDate.now().toString());
         }
         sprint.setUpdatedAt(LocalDateTime.now());
-        return sprintRepository.save(sprint);
+        Sprint saved = sprintRepository.save(sprint);
+        attachIssueSummary(saved);
+        return saved;
     }
 
     private void ensureNoOtherActive(String projectKey, String currentId) {
@@ -156,6 +176,107 @@ public class SprintService {
         return leftName.compareToIgnoreCase(rightName);
     }
 
+    private void attachIssueSummary(Sprint sprint) {
+        if (sprint == null || sprint.getId() == null || sprint.getId().isBlank()) {
+            if (sprint != null) {
+                sprint.setIssueCount(0);
+                sprint.setIssueSummary(Collections.emptyList());
+                sprint.setIssueStatusCounts(Collections.emptyMap());
+                sprint.setAssigneeCounts(Collections.emptyMap());
+            }
+            return;
+        }
+        List<Issue> issues = issueRepository.findBySprintId(sprint.getId());
+        List<Sprint.SprintIssueInfo> summary = buildIssueSummary(issues);
+        sprint.setIssueSummary(summary);
+        sprint.setIssueCount(summary.size());
+        sprint.setIssueStatusCounts(buildIssueStatusCounts(issues));
+        sprint.setAssigneeCounts(buildAssigneeCounts(issues));
+    }
+
+    private void attachIssueSummaries(List<Sprint> sprints) {
+        if (sprints == null || sprints.isEmpty()) return;
+        List<String> sprintIds = new ArrayList<>();
+        for (Sprint sprint : sprints) {
+            if (sprint == null) continue;
+            String id = sprint.getId();
+            if (id == null || id.isBlank()) continue;
+            sprintIds.add(id);
+        }
+        if (sprintIds.isEmpty()) {
+            for (Sprint sprint : sprints) {
+                if (sprint == null) continue;
+                sprint.setIssueCount(0);
+                sprint.setIssueSummary(Collections.emptyList());
+                sprint.setIssueStatusCounts(Collections.emptyMap());
+                sprint.setAssigneeCounts(Collections.emptyMap());
+            }
+            return;
+        }
+        List<Issue> issues = issueRepository.findBySprintIdIn(sprintIds);
+        Map<String, List<Issue>> issuesBySprint = new HashMap<>();
+        for (Issue issue : issues) {
+            if (issue == null) continue;
+            String sprintId = normalizeText(issue.getSprintId());
+            if (sprintId == null || sprintId.isBlank()) continue;
+            issuesBySprint.computeIfAbsent(sprintId, (key) -> new ArrayList<>()).add(issue);
+        }
+        for (Sprint sprint : sprints) {
+            if (sprint == null) continue;
+            String sprintId = sprint.getId();
+            List<Issue> sprintIssues = sprintId != null ? issuesBySprint.get(sprintId) : null;
+            List<Sprint.SprintIssueInfo> summary = buildIssueSummary(sprintIssues);
+            sprint.setIssueSummary(summary);
+            sprint.setIssueCount(summary.size());
+            sprint.setIssueStatusCounts(buildIssueStatusCounts(sprintIssues));
+            sprint.setAssigneeCounts(buildAssigneeCounts(sprintIssues));
+        }
+    }
+
+    private List<Sprint.SprintIssueInfo> buildIssueSummary(List<Issue> issues) {
+        if (issues == null || issues.isEmpty()) return Collections.emptyList();
+        List<Sprint.SprintIssueInfo> summary = new ArrayList<>();
+        for (Issue issue : issues) {
+            if (issue == null) continue;
+            Sprint.SprintIssueInfo info = new Sprint.SprintIssueInfo();
+            info.setIssueId(issue.getId());
+            info.setIssueKey(normalizeText(issue.getIssueKey()));
+            info.setStatus(normalizeIssueStatus(issue.getStatus()));
+            info.setAssigneeName(normalizeText(issue.getAssigneeName()));
+            info.setAssigneeEmail(normalizeEmail(issue.getAssigneeEmail()));
+            summary.add(info);
+        }
+        return summary;
+    }
+
+    private Map<String, Integer> buildIssueStatusCounts(List<Issue> issues) {
+        if (issues == null || issues.isEmpty()) return Collections.emptyMap();
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (Issue issue : issues) {
+            if (issue == null) continue;
+            String status = normalizeIssueStatus(issue.getStatus());
+            counts.merge(status, 1, Integer::sum);
+        }
+        return counts;
+    }
+
+    private Map<String, Integer> buildAssigneeCounts(List<Issue> issues) {
+        if (issues == null || issues.isEmpty()) return Collections.emptyMap();
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (Issue issue : issues) {
+            if (issue == null) continue;
+            String assignee = normalizeText(issue.getAssigneeName());
+            if (assignee == null || assignee.isBlank()) {
+                assignee = normalizeEmail(issue.getAssigneeEmail());
+            }
+            if (assignee == null || assignee.isBlank()) {
+                assignee = UNASSIGNED_LABEL;
+            }
+            counts.merge(assignee, 1, Integer::sum);
+        }
+        return counts;
+    }
+
     private <T extends Comparable<T>> int compareNullable(T left, T right) {
         if (left == null && right == null) return 0;
         if (left == null) return 1;
@@ -177,6 +298,24 @@ public class SprintService {
         if (value == null) return null;
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String normalizeEmail(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim().toLowerCase();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String normalizeIssueStatus(String status) {
+        if (status == null) return "todo";
+        String normalized = status.trim().toLowerCase();
+        return switch (normalized) {
+            case "todo", "to-do" -> "todo";
+            case "progress", "in-progress", "in progress" -> "progress";
+            case "review", "in-review", "in review" -> "review";
+            case "done", "completed" -> "done";
+            default -> "todo";
+        };
     }
 
     private String normalizeStatus(String status) {

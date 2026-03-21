@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, useLocation, useNavigate, useParams } from 'react-router-dom'
 import './Dashboard.css'
 import './Backlog.css'
@@ -17,6 +17,7 @@ import {
   FiUser,
   FiRepeat,
   FiArrowRight,
+  FiFilter,
   FiPlayCircle,
   FiBookOpen,
   FiAlertCircle,
@@ -38,6 +39,30 @@ function getInitials(name) {
 }
 
 const normalizeRole = (role) => (role || '').trim().toLowerCase()
+const normalizeMemberRole = (role) => (
+  (role || '')
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]/g, ' ')
+    .replace(/\s+/g, ' ')
+)
+const isDeveloperRole = (role) => {
+  const normalized = normalizeMemberRole(role)
+  return normalized === 'developer' || normalized === 'dev' || normalized.includes('developer')
+}
+const isTesterRole = (role) => {
+  const normalized = normalizeMemberRole(role)
+  return normalized === 'tester' || normalized === 'qa' || normalized.includes('tester') || normalized.includes('quality assurance')
+}
+const isManagerRole = (role) => {
+  const normalized = normalizeMemberRole(role)
+  return normalized === 'project manager'
+    || normalized === 'projectmanager'
+    || normalized === 'project-manager'
+    || normalized === 'pm'
+    || normalized === 'admin'
+}
 const normalizeProjectKey = (value) => (value || '').trim().toUpperCase()
 const matchesProjectToken = (project, token) => {
   const rawToken = (token || '').toString().trim()
@@ -61,8 +86,33 @@ const normalizeSprintStatus = (status) => {
 const normalizeIssueType = (issueType) => {
   const normalized = (issueType || '').toString().toLowerCase().trim()
   if (!normalized) return 'task'
-  if (normalized === 'story' || normalized === 'bug' || normalized === 'task' || normalized === 'spike') return normalized
+  if (normalized === 'story' || normalized === 'bug' || normalized === 'task' || normalized === 'epic') return normalized
   return 'task'
+}
+
+const ISSUE_STATUS_LABELS = {
+  todo: 'To Do',
+  progress: 'In Progress',
+  review: 'In Review',
+  done: 'Done'
+}
+
+const normalizePriority = (priority, difficulty) => {
+  const normalized = (priority || '').toString().toLowerCase().trim()
+  if ([ 'high', 'medium', 'low'].includes(normalized)) return normalized
+  const diff = (difficulty || '').toString().toLowerCase().trim()
+  if (diff === 'high') return 'high'
+  if (diff === 'low') return 'low'
+  return 'medium'
+}
+
+const normalizeIssueStatus = (status) => {
+  const normalized = (status || '').toString().toLowerCase().trim()
+  if (normalized === 'todo' || normalized === 'to-do' || normalized === 'to do') return 'todo'
+  if (normalized === 'progress' || normalized === 'in-progress' || normalized === 'in progress') return 'progress'
+  if (normalized === 'review' || normalized === 'in-review' || normalized === 'in review') return 'review'
+  if (normalized === 'done' || normalized === 'completed' || normalized === 'complete') return 'done'
+  return 'todo'
 }
 
 const pointsFromDifficulty = (difficulty) => {
@@ -70,6 +120,95 @@ const pointsFromDifficulty = (difficulty) => {
   if (diff === 'high') return 8
   if (diff === 'low') return 2
   return 5
+}
+
+const parseIsoDateParts = (value) => {
+  if (!value) return null
+  const [year, month, day] = value.split('-').map((part) => Number(part))
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null
+  return { year, month, day }
+}
+
+const toUtcDateFromIso = (value) => {
+  const parts = parseIsoDateParts(value)
+  if (!parts) return null
+  return new Date(Date.UTC(parts.year, parts.month - 1, parts.day))
+}
+
+const toLocalDateFromIso = (value) => {
+  const parts = parseIsoDateParts(value)
+  if (!parts) return null
+  return new Date(parts.year, parts.month - 1, parts.day)
+}
+
+const formatDisplayDate = (value) => {
+  if (!value) return ''
+  const date = toLocalDateFromIso(value)
+  if (!date) return value
+  return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+const formatDeadlineDate = (value) => {
+  if (!value) return 'TBD'
+  const trimmed = value.toString().trim()
+  if (!trimmed) return 'TBD'
+  const isoDate = toLocalDateFromIso(trimmed)
+  if (isoDate) {
+    return isoDate.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+  }
+  const parsed = new Date(trimmed)
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+  }
+  return trimmed
+}
+
+const diffDaysInclusive = (start, end) => {
+  const startDate = toUtcDateFromIso(start)
+  const endDate = toUtcDateFromIso(end)
+  if (!startDate || !endDate) return null
+  const diff = Math.floor((endDate.getTime() - startDate.getTime()) / 86400000)
+  if (diff < 0) return null
+  return diff + 1
+}
+
+const addDaysToIso = (value, days) => {
+  const date = toUtcDateFromIso(value)
+  if (!date) return ''
+  date.setUTCDate(date.getUTCDate() + Number(days || 0))
+  return date.toISOString().slice(0, 10)
+}
+
+const todayIsoDate = () => new Date().toISOString().slice(0, 10)
+
+const createBacklogFilters = () => ({
+  status: [],
+  type: [],
+  priority: [],
+  assignee: [],
+  assignedBy: [],
+  label: []
+})
+
+const createActiveSprintFilters = () => ({
+  status: [],
+  type: [],
+  priority: [],
+  assignedTo: [],
+  assignedBy: []
+})
+
+const buildMemberLookup = (members) => {
+  const lookup = new Map()
+  ;(members || []).forEach((member) => {
+    const name = (member?.name || '').toString().trim()
+    const email = (member?.email || '').toString().trim()
+    const label = name || email
+    if (!label) return
+    if (name) lookup.set(name.toLowerCase(), label)
+    if (email) lookup.set(email.toLowerCase(), label)
+  })
+  return lookup
 }
 
 function renderIssueIcon(type) {
@@ -81,11 +220,32 @@ function renderIssueIcon(type) {
     return <FiBookOpen />
   }
 
-  if (type === 'spike') {
+  if (type === 'epic') {
     return <FiZap />
   }
 
   return <FiCheckSquare />
+}
+
+const parseCssSize = (value) => {
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+const getScrollableListHeight = (listElement, maxItems = 5) => {
+  if (!listElement) return ''
+  const items = Array.from(listElement.children || [])
+  if (items.length === 0) return ''
+  const computed = window.getComputedStyle(listElement)
+  const gap = parseCssSize(computed.rowGap || computed.gap)
+  const paddingTop = parseCssSize(computed.paddingTop)
+  const paddingBottom = parseCssSize(computed.paddingBottom)
+  const count = Math.min(maxItems, items.length)
+  let height = paddingTop + paddingBottom + gap * Math.max(0, count - 1)
+  for (let index = 0; index < count; index += 1) {
+    height += items[index].getBoundingClientRect().height
+  }
+  return `${Math.ceil(height)}px`
 }
 
 export default function Backlog() {
@@ -98,7 +258,9 @@ export default function Backlog() {
   const displayName = currentUser?.name || (currentUser?.email ? currentUser.email.split('@')[0] : 'Guest')
   const roleValue = normalizeRole(currentUser?.role)
   const isDeveloper = roleValue === 'developer'
+  const isTester = roleValue === 'tester'
   const isProjectManager = roleValue === 'admin' || roleValue === 'project manager'
+  const canUseFilters = !isDeveloper && !isTester
   const userId = currentUser?.id || user?.id
   const API_BASE = (import.meta?.env?.VITE_API_BASE || 'http://localhost:8080')
   const [selectedOrg, setSelectedOrg] = useState(() => { try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null } })
@@ -156,9 +318,18 @@ export default function Backlog() {
       name: baseProject?.name || projectKeyRaw || activeProjectKey || 'Project'
     }
   }, [activeProjectKey, projectDetails, projectFromState, projectKeyRaw, routeProjectToken])
+  const projectTeamMembers = Array.isArray(activeProject?.teamMembers) ? activeProject.teamMembers : []
   const [issues, setIssues] = useState([])
   const [issuesLoading, setIssuesLoading] = useState(true)
   const [issuesError, setIssuesError] = useState('')
+  const [showActiveSprintFilters, setShowActiveSprintFilters] = useState(false)
+  const [activeSprintFilters, setActiveSprintFilters] = useState(createActiveSprintFilters)
+  const [showBacklogFilters, setShowBacklogFilters] = useState(false)
+  const [backlogFilters, setBacklogFilters] = useState(createBacklogFilters)
+  const activeIssueListRef = useRef(null)
+  const backlogIssueListRef = useRef(null)
+  const [activeIssueListMaxHeight, setActiveIssueListMaxHeight] = useState('')
+  const [backlogIssueListMaxHeight, setBacklogIssueListMaxHeight] = useState('')
   const [sprints, setSprints] = useState([])
   const [sprintsLoading, setSprintsLoading] = useState(true)
   const [sprintsError, setSprintsError] = useState('')
@@ -167,6 +338,10 @@ export default function Backlog() {
   const [sprintActionId, setSprintActionId] = useState('')
   const [sprintActionError, setSprintActionError] = useState('')
   const [issueMoveError, setIssueMoveError] = useState('')
+  const [showStartSprintModal, setShowStartSprintModal] = useState(false)
+  const [startSprintDate, setStartSprintDate] = useState('')
+  const [endSprintDate, setEndSprintDate] = useState('')
+  const [startSprintFormError, setStartSprintFormError] = useState('')
 
   useEffect(() => {
     function handleOutsideClick(event) {
@@ -308,6 +483,13 @@ export default function Backlog() {
       const issueType = normalizeIssueType(issue.issueType || issue.type)
       const labels = Array.isArray(issue.labels) ? issue.labels : []
       const points = Number.isFinite(issue.points) ? issue.points : pointsFromDifficulty(issue.difficulty)
+      const statusKey = normalizeIssueStatus(issue.status || issue.issueStatus || issue.state)
+      const statusLabel = ISSUE_STATUS_LABELS[statusKey] || ISSUE_STATUS_LABELS.todo
+      const priority = normalizePriority(issue.priority, issue.difficulty)
+      const rawDeadline = (issue.deadlineDate || issue.dueDate || issue.deadline || '').toString().trim()
+      const deadlineLabel = formatDeadlineDate(rawDeadline)
+      const assignee = issue.assigneeName || issue.assignee || issue.creatorName || 'Unassigned'
+      const assignedBy = issue.creatorName || issue.creatorEmail || 'Unknown'
       return {
         ...issue,
         dbId: issue.id,
@@ -316,7 +498,13 @@ export default function Backlog() {
         type: issueType,
         labels,
         points,
-        assignee: issue.assigneeName || issue.assignee || issue.creatorName || 'Unassigned',
+        statusKey,
+        statusLabel,
+        priority,
+        deadlineLabel,
+        hasDeadline: Boolean(rawDeadline),
+        assignee,
+        assignedBy,
         sprintId: issue.sprintId || issue.sprint || null
       }
     })
@@ -344,6 +532,48 @@ export default function Backlog() {
     [projectSprints]
   )
 
+  const activeSprintDateLabel = useMemo(() => {
+    if (!activeSprint?.startDate && !activeSprint?.endDate) return 'Not set'
+    if (activeSprint?.startDate && activeSprint?.endDate) {
+      return `${formatDisplayDate(activeSprint.startDate)} - ${formatDisplayDate(activeSprint.endDate)}`
+    }
+    if (activeSprint?.startDate) {
+      return `${formatDisplayDate(activeSprint.startDate)} - TBD`
+    }
+    return `TBD - ${formatDisplayDate(activeSprint.endDate)}`
+  }, [activeSprint?.startDate, activeSprint?.endDate])
+
+  const activeSprintDurationDays = useMemo(
+    () => diffDaysInclusive(activeSprint?.startDate, activeSprint?.endDate),
+    [activeSprint?.startDate, activeSprint?.endDate]
+  )
+
+  const activeSprintRemainingDays = useMemo(() => {
+    if (!activeSprint?.endDate) return null
+    return diffDaysInclusive(todayIsoDate(), activeSprint.endDate)
+  }, [activeSprint?.endDate])
+
+  const plannedSprintDateLabel = useMemo(() => {
+    if (!plannedSprint?.startDate && !plannedSprint?.endDate) return 'Not set'
+    if (plannedSprint?.startDate && plannedSprint?.endDate) {
+      return `${formatDisplayDate(plannedSprint.startDate)} - ${formatDisplayDate(plannedSprint.endDate)}`
+    }
+    if (plannedSprint?.startDate) {
+      return `${formatDisplayDate(plannedSprint.startDate)} - TBD`
+    }
+    return `TBD - ${formatDisplayDate(plannedSprint.endDate)}`
+  }, [plannedSprint?.startDate, plannedSprint?.endDate])
+
+  const plannedSprintDurationDays = useMemo(
+    () => diffDaysInclusive(plannedSprint?.startDate, plannedSprint?.endDate),
+    [plannedSprint?.startDate, plannedSprint?.endDate]
+  )
+
+  const startSprintDurationDays = useMemo(
+    () => diffDaysInclusive(startSprintDate, endSprintDate),
+    [startSprintDate, endSprintDate]
+  )
+
   const activeSprintIssues = useMemo(() => {
     if (!activeSprint?.id) return []
     return mappedIssues.filter((issue) => issue.sprintId === activeSprint.id)
@@ -365,6 +595,146 @@ export default function Backlog() {
       return true
     })
   }, [mappedIssues, projectSprints, activeSprint?.id, plannedSprint?.id])
+
+  const developerMembers = useMemo(
+    () => projectTeamMembers.filter((member) => isDeveloperRole(member?.role)),
+    [projectTeamMembers]
+  )
+
+  const developerTesterMembers = useMemo(
+    () => projectTeamMembers.filter((member) => isDeveloperRole(member?.role) || isTesterRole(member?.role)),
+    [projectTeamMembers]
+  )
+
+  const assignerMembers = useMemo(
+    () => projectTeamMembers.filter((member) => isManagerRole(member?.role) || isTesterRole(member?.role)),
+    [projectTeamMembers]
+  )
+
+  const assignedToOptions = useMemo(() => {
+    const lookup = buildMemberLookup(developerTesterMembers)
+    const options = new Set()
+    backlogIssues.forEach((issue) => {
+      const raw = (issue.assignee || '').toString().trim()
+      if (!raw || raw.toLowerCase() === 'unassigned') {
+        options.add('Unassigned')
+        return
+      }
+      const label = lookup.get(raw.toLowerCase())
+      if (label) options.add(label)
+    })
+    return Array.from(options).sort((a, b) => a.localeCompare(b))
+  }, [developerTesterMembers, backlogIssues])
+
+  const assignedByOptions = useMemo(() => {
+    const lookup = buildMemberLookup(assignerMembers)
+    const options = new Set()
+    backlogIssues.forEach((issue) => {
+      const raw = (issue.assignedBy || '').toString().trim()
+      if (!raw || raw.toLowerCase() === 'unknown') {
+        options.add('Unknown')
+        return
+      }
+      const label = lookup.get(raw.toLowerCase())
+      if (label) options.add(label)
+    })
+    return Array.from(options).sort((a, b) => a.localeCompare(b))
+  }, [assignerMembers, backlogIssues])
+
+  const activeAssignedToOptions = useMemo(() => {
+    const lookup = buildMemberLookup(developerTesterMembers)
+    const options = new Set()
+    activeSprintIssues.forEach((issue) => {
+      const raw = (issue.assignee || '').toString().trim()
+      if (!raw || raw.toLowerCase() === 'unassigned') {
+        options.add('Unassigned')
+        return
+      }
+      const label = lookup.get(raw.toLowerCase())
+      if (label) options.add(label)
+    })
+    return Array.from(options).sort((a, b) => a.localeCompare(b))
+  }, [developerTesterMembers, activeSprintIssues])
+
+  const activeAssignedByOptions = useMemo(() => {
+    const lookup = buildMemberLookup(assignerMembers)
+    const options = new Set()
+    activeSprintIssues.forEach((issue) => {
+      const raw = (issue.assignedBy || '').toString().trim()
+      if (!raw || raw.toLowerCase() === 'unknown') {
+        options.add('Unknown')
+        return
+      }
+      const label = lookup.get(raw.toLowerCase())
+      if (label) options.add(label)
+    })
+    return Array.from(options).sort((a, b) => a.localeCompare(b))
+  }, [assignerMembers, activeSprintIssues])
+
+  const activeSprintFiltersActiveCount =
+    activeSprintFilters.status.length +
+    activeSprintFilters.type.length +
+    activeSprintFilters.priority.length +
+    activeSprintFilters.assignedTo.length +
+    activeSprintFilters.assignedBy.length
+
+  const filteredActiveSprintIssues = useMemo(() => (
+    activeSprintIssues.filter((issue) => {
+      const statusMatch = !activeSprintFilters.status.length || activeSprintFilters.status.includes(issue.statusKey)
+      const typeMatch = !activeSprintFilters.type.length || activeSprintFilters.type.includes(issue.type)
+      const priorityMatch = !activeSprintFilters.priority.length || activeSprintFilters.priority.includes(issue.priority)
+      const assignedToMatch = !activeSprintFilters.assignedTo.length || activeSprintFilters.assignedTo.includes(issue.assignee)
+      const assignedByMatch = !activeSprintFilters.assignedBy.length || activeSprintFilters.assignedBy.includes(issue.assignedBy)
+      return statusMatch && typeMatch && priorityMatch && assignedToMatch && assignedByMatch
+    })
+  ), [activeSprintIssues, activeSprintFilters])
+
+  const backlogLabelOptions = useMemo(() => (
+    Array.from(
+      new Set(
+        backlogIssues.flatMap((issue) => (issue.labels || []))
+      )
+    ).filter(Boolean).sort((a, b) => a.localeCompare(b))
+  ), [backlogIssues])
+
+  const backlogFiltersActiveCount =
+    backlogFilters.status.length +
+    backlogFilters.type.length +
+    backlogFilters.priority.length +
+    backlogFilters.assignee.length +
+    backlogFilters.assignedBy.length +
+    backlogFilters.label.length
+
+  const filteredBacklogIssues = useMemo(() => (
+    backlogIssues.filter((issue) => {
+      const statusMatch = !backlogFilters.status.length || backlogFilters.status.includes(issue.statusKey)
+      const typeMatch = !backlogFilters.type.length || backlogFilters.type.includes(issue.type)
+      const priorityMatch = !backlogFilters.priority.length || backlogFilters.priority.includes(issue.priority)
+      const assigneeMatch = !backlogFilters.assignee.length || backlogFilters.assignee.includes(issue.assignee)
+      const assignedByMatch = !backlogFilters.assignedBy.length || backlogFilters.assignedBy.includes(issue.assignedBy)
+      const labelMatch = !backlogFilters.label.length || issue.labels.some((label) => backlogFilters.label.includes(label))
+      return statusMatch && typeMatch && priorityMatch && assigneeMatch && assignedByMatch && labelMatch
+    })
+  ), [backlogIssues, backlogFilters])
+
+  const backlogSummaryText = backlogFiltersActiveCount
+    ? `${filteredBacklogIssues.length} of ${backlogIssues.length} issues - Drag issues to sprints to plan your work`
+    : `${backlogIssues.length} issues - Drag issues to sprints to plan your work`
+
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const updateHeights = () => {
+      setActiveIssueListMaxHeight(
+        filteredActiveSprintIssues.length > 5 ? getScrollableListHeight(activeIssueListRef.current, 5) : ''
+      )
+      setBacklogIssueListMaxHeight(
+        filteredBacklogIssues.length > 5 ? getScrollableListHeight(backlogIssueListRef.current, 5) : ''
+      )
+    }
+    updateHeights()
+    window.addEventListener('resize', updateHeights)
+    return () => window.removeEventListener('resize', updateHeights)
+  }, [filteredActiveSprintIssues, filteredBacklogIssues])
 
   const isActionLoading = (id) => sprintActionId && id && sprintActionId === id
   const startSprintActionKey = plannedSprint?.id || 'new-sprint'
@@ -391,6 +761,36 @@ export default function Backlog() {
 
   function isMobileScreen() {
     return typeof window !== 'undefined' && window.innerWidth <= 768
+  }
+
+  function toggleBacklogFilter(group, value) {
+    setBacklogFilters((current) => {
+      const values = current[group] || []
+      const exists = values.includes(value)
+      return {
+        ...current,
+        [group]: exists ? values.filter((item) => item !== value) : [...values, value]
+      }
+    })
+  }
+
+  function clearBacklogFilters() {
+    setBacklogFilters(createBacklogFilters())
+  }
+
+  function toggleActiveSprintFilter(group, value) {
+    setActiveSprintFilters((current) => {
+      const values = current[group] || []
+      const exists = values.includes(value)
+      return {
+        ...current,
+        [group]: exists ? values.filter((item) => item !== value) : [...values, value]
+      }
+    })
+  }
+
+  function clearActiveSprintFilters() {
+    setActiveSprintFilters(createActiveSprintFilters())
   }
 
   function runIssueSearch() {
@@ -562,8 +962,51 @@ export default function Backlog() {
     return `Sprint ${index}`
   }
 
-  async function createAndStartSprint() {
+  function resolveDefaultStartDate() {
+    const plannedStart = plannedSprint?.startDate
+    if (parseIsoDateParts(plannedStart)) return plannedStart
+    return new Date().toISOString().slice(0, 10)
+  }
+
+  function resolveDefaultEndDate(startDate) {
+    const plannedEnd = plannedSprint?.endDate
+    const plannedDuration = plannedEnd ? diffDaysInclusive(startDate, plannedEnd) : null
+    if (plannedEnd && plannedDuration && plannedDuration > 1) return plannedEnd
+    return addDaysToIso(startDate, 13)
+  }
+
+  function openStartSprintModal() {
+    if (!activeProjectKey || activeSprint || !canManageSprints) return
+    const defaultStart = resolveDefaultStartDate()
+    const defaultEnd = resolveDefaultEndDate(defaultStart)
+    setStartSprintDate(defaultStart)
+    setEndSprintDate(defaultEnd)
+    setStartSprintFormError('')
+    setShowStartSprintModal(true)
+  }
+
+  async function updateSprintWithDates(sprint, startDate, endDate) {
+    const response = await fetch(`${API_BASE}/api/sprints/${encodeURIComponent(sprint.id)}`, {
+      method: 'PUT',
+      headers: getSprintActionHeaders(true),
+      body: JSON.stringify({
+        status: 'active',
+        startDate,
+        endDate
+      })
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(errorText || 'Failed to start sprint')
+    }
+
+    return response.json()
+  }
+
+  async function createAndStartSprint(startDate, endDate) {
     const nextOrder = getNextSprintOrder()
+    const resolvedStartDate = startDate || new Date().toISOString().slice(0, 10)
     const sprintPayload = {
       projectKey: activeProjectKey,
       name: getNextSprintName(nextOrder),
@@ -572,7 +1015,10 @@ export default function Backlog() {
         : `Current sprint for ${activeProjectKey}`,
       order: nextOrder,
       status: 'active',
-      startDate: new Date().toISOString().slice(0, 10)
+      startDate: resolvedStartDate
+    }
+    if (endDate) {
+      sprintPayload.endDate = endDate
     }
 
     const response = await fetch(`${API_BASE}/api/sprints`, {
@@ -589,14 +1035,29 @@ export default function Backlog() {
     return response.json()
   }
 
-  async function handleStartSprint() {
+  async function confirmStartSprint() {
     if (!activeProjectKey || activeSprint || !canManageSprints) return
+    if (!startSprintDate || !endSprintDate) {
+      setStartSprintFormError('Select both start and end dates.')
+      return
+    }
+    const today = todayIsoDate()
+    if (startSprintDate < today) {
+      setStartSprintFormError('Start date cannot be in the past.')
+      return
+    }
+    const duration = diffDaysInclusive(startSprintDate, endSprintDate)
+    if (duration === null || duration <= 1) {
+      setStartSprintFormError('End date must be after the start date.')
+      return
+    }
     setSprintActionError('')
+    setStartSprintFormError('')
     setSprintActionId(startSprintActionKey)
     try {
       const updated = plannedSprint?.id
-        ? await submitSprintAction(plannedSprint, 'start')
-        : await createAndStartSprint()
+        ? await updateSprintWithDates(plannedSprint, startSprintDate, endSprintDate)
+        : await createAndStartSprint(startSprintDate, endSprintDate)
       setSprints((prev) => {
         if (!Array.isArray(prev) || prev.length === 0) return [updated]
         let found = false
@@ -610,8 +1071,11 @@ export default function Backlog() {
         return found ? next : [updated, ...next]
       })
       await refreshSprints()
+      setShowStartSprintModal(false)
     } catch (err) {
-      setSprintActionError(err.message || 'Failed to start sprint')
+      const message = err.message || 'Failed to start sprint'
+      setSprintActionError(message)
+      setStartSprintFormError(message)
     } finally {
       setSprintActionId('')
     }
@@ -896,15 +1360,47 @@ export default function Backlog() {
                     {activeSprint && <span className="backlog-active-pill">ACTIVE</span>}
                   </div>
                   <p>{activeSprint?.goal || 'Start a sprint to track the current work.'}</p>
+                  {activeSprint && (
+                    <div className="backlog-sprint-dates">
+                      <span className="backlog-sprint-date-label">Dates:</span>
+                      <span className="backlog-sprint-date-value">{activeSprintDateLabel}</span>
+                      <span className="backlog-sprint-duration">
+                        Duration: {activeSprintDurationDays ? `${activeSprintDurationDays} day${activeSprintDurationDays === 1 ? '' : 's'}` : 'N/A'}
+                      </span>
+                      {activeSprint?.endDate && (
+                        <span className="backlog-sprint-remaining">
+                          {activeSprintRemainingDays !== null
+                            ? `Remaining: ${activeSprintRemainingDays} day${activeSprintRemainingDays === 1 ? '' : 's'}`
+                            : 'Ended'}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
-              <button
-                className="btn backlog-outline-btn"
-                onClick={handleCompleteSprint}
-                disabled={!activeSprint || !canManageSprints || isActionLoading(activeSprint?.id)}
-              >
-                {isActionLoading(activeSprint?.id) ? 'Completing...' : 'Complete Sprint'}
-              </button>
+              <div className="backlog-sprint-actions">
+                {canUseFilters && (
+                  <button
+                    type="button"
+                    className="btn backlog-outline-btn backlog-filter-btn"
+                    onClick={() => setShowActiveSprintFilters(true)}
+                    disabled={!activeSprint || activeSprintIssues.length === 0}
+                  >
+                    <FiFilter className="me-1" />
+                    Filters
+                    {activeSprintFiltersActiveCount > 0 && (
+                      <span className="backlog-filter-count">{activeSprintFiltersActiveCount}</span>
+                    )}
+                  </button>
+                )}
+                <button
+                  className="btn backlog-outline-btn"
+                  onClick={handleCompleteSprint}
+                  disabled={!activeSprint || !canManageSprints || isActionLoading(activeSprint?.id)}
+                >
+                  {isActionLoading(activeSprint?.id) ? 'Completing...' : 'Complete Sprint'}
+                </button>
+              </div>
             </div>
 
             {issuesLoading || sprintsLoading ? (
@@ -913,9 +1409,15 @@ export default function Backlog() {
               <div className="backlog-empty-state">No active sprint yet.</div>
             ) : activeSprintIssues.length === 0 ? (
               <div className="backlog-empty-state">No issues in this sprint</div>
+            ) : filteredActiveSprintIssues.length === 0 ? (
+              <div className="backlog-empty-state">No issues match the selected filters</div>
             ) : (
-              <div className="backlog-issue-list">
-                {activeSprintIssues.map((issue) => (
+              <div
+                ref={activeIssueListRef}
+                className={`backlog-issue-list ${filteredActiveSprintIssues.length > 5 ? 'is-scrollable' : ''}`}
+                style={activeIssueListMaxHeight ? { maxHeight: activeIssueListMaxHeight } : undefined}
+              >
+                {filteredActiveSprintIssues.map((issue) => (
                   <div
                     key={issueIdentity(issue)}
                     className={`backlog-issue-row ${draggingIssueId === issueIdentity(issue) ? 'is-dragging' : ''}`}
@@ -934,8 +1436,12 @@ export default function Backlog() {
                       {issue.labels.map((label) => (
                         <span key={label} className="backlog-label-pill">{label}</span>
                       ))}
+                      <span className={`backlog-status-pill backlog-status-${issue.statusKey}`}>{issue.statusLabel}</span>
                       <span className="backlog-points-pill">{issue.points} pts</span>
-                      <span className="backlog-avatar">{getInitials(issue.assignee)}</span>
+                      <span className="backlog-assignee">
+                        <span className="backlog-avatar" title={issue.assignee}>{getInitials(issue.assignee)}</span>
+                        <span className="backlog-assignee-name" title={issue.assignee}>{issue.assignee}</span>
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -953,10 +1459,19 @@ export default function Backlog() {
               <div>
                 <h2>{plannedSprint?.name || 'No upcoming sprint'}</h2>
                 <p>{plannedSprint?.goal || 'Create a sprint to plan upcoming work.'}</p>
+                {plannedSprint && (
+                  <div className="backlog-sprint-dates">
+                    <span className="backlog-sprint-date-label">Dates:</span>
+                    <span className="backlog-sprint-date-value">{plannedSprintDateLabel}</span>
+                    <span className="backlog-sprint-duration">
+                      Duration: {plannedSprintDurationDays ? `${plannedSprintDurationDays} day${plannedSprintDurationDays === 1 ? '' : 's'}` : 'N/A'}
+                    </span>
+                  </div>
+                )}
               </div>
               <button
                 className="btn backlog-outline-btn"
-                onClick={handleStartSprint}
+                onClick={openStartSprintModal}
                 disabled={!activeProjectKey || !!activeSprint || !canManageSprints || isActionLoading(startSprintActionKey)}
               >
                 {isActionLoading(startSprintActionKey) ? 'Starting...' : 'Start Sprint'}
@@ -990,7 +1505,10 @@ export default function Backlog() {
                         <span key={label} className="backlog-label-pill">{label}</span>
                       ))}
                       <span className="backlog-points-pill">{issue.points} pts</span>
-                      <span className="backlog-avatar">{getInitials(issue.assignee)}</span>
+                      <span className="backlog-assignee">
+                        <span className="backlog-avatar" title={issue.assignee}>{getInitials(issue.assignee)}</span>
+                        <span className="backlog-assignee-name" title={issue.assignee}>{issue.assignee}</span>
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -1005,17 +1523,38 @@ export default function Backlog() {
             onDrop={(event) => handleDrop(event, '')}
           >
             <div className="backlog-pool-head">
-              <h2>Backlog</h2>
-              <p>{backlogIssues.length} issues - Drag issues to sprints to plan your work</p>
+              <div className="backlog-pool-head-content">
+                <h2>Backlog</h2>
+                <p>{backlogSummaryText}</p>
+              </div>
+              {canUseFilters && (
+                <button
+                  type="button"
+                  className="btn backlog-outline-btn backlog-filter-btn"
+                  onClick={() => setShowBacklogFilters(true)}
+                >
+                  <FiFilter className="me-1" />
+                  Filters
+                  {backlogFiltersActiveCount > 0 && (
+                    <span className="backlog-filter-count">{backlogFiltersActiveCount}</span>
+                  )}
+                </button>
+              )}
             </div>
 
             {issuesLoading || sprintsLoading ? (
               <div className="backlog-empty-state">Loading backlog...</div>
             ) : backlogIssues.length === 0 ? (
               <div className="backlog-empty-state">No issues in backlog</div>
+            ) : filteredBacklogIssues.length === 0 ? (
+              <div className="backlog-empty-state">No issues match the selected filters</div>
             ) : (
-              <div className="backlog-issue-list backlog-pool-list">
-                {backlogIssues.map((issue) => (
+              <div
+                ref={backlogIssueListRef}
+                className={`backlog-issue-list backlog-pool-list ${filteredBacklogIssues.length > 5 ? 'is-scrollable' : ''}`}
+                style={backlogIssueListMaxHeight ? { maxHeight: backlogIssueListMaxHeight } : undefined}
+              >
+                {filteredBacklogIssues.map((issue) => (
                   <div
                     key={issueIdentity(issue)}
                     className={`backlog-issue-row backlog-pool-row ${draggingIssueId === issueIdentity(issue) ? 'is-dragging' : ''}`}
@@ -1027,13 +1566,33 @@ export default function Backlog() {
                       <span className={`backlog-issue-type backlog-type-${issue.type}`}>
                         {renderIssueIcon(issue.type)}
                       </span>
-                      <span className="backlog-issue-key">{issue.displayKey}</span>
-                      <span className="backlog-issue-title">{issue.title}</span>
+                      <div className="backlog-issue-content">
+                        <div className="backlog-issue-header">
+                          <span className="backlog-issue-key">{issue.displayKey}</span>
+                          <span className="backlog-issue-title">{issue.title}</span>
+                        </div>
+                        <div className="backlog-issue-people">
+                          <span className="backlog-person-block">
+                            <span className="backlog-person-label">Assigned to</span>
+                            <span className="backlog-assignment-chip" title={issue.assignee}>{getInitials(issue.assignee)}</span>
+                            <span className="backlog-person-name" title={issue.assignee}>{issue.assignee}</span>
+                          </span>
+                          <span className="backlog-person-separator">•</span>
+                          <span className="backlog-person-block">
+                            <span className="backlog-person-label">Assigned by</span>
+                            <span className="backlog-assignment-chip" title={issue.assignedBy}>{getInitials(issue.assignedBy)}</span>
+                            <span className="backlog-person-name" title={issue.assignedBy}>{issue.assignedBy}</span>
+                          </span>
+                        </div>
+                      </div>
                     </div>
                     <div className="backlog-issue-meta">
                       {issue.labels.map((label) => (
                         <span key={label} className="backlog-label-pill">{label}</span>
                       ))}
+                      <span className={`backlog-deadline-pill${issue.hasDeadline ? '' : ' is-empty'}`}>
+                        Due {issue.deadlineLabel}
+                      </span>
                       <span className="backlog-points-pill">{issue.points} pts</span>
                     </div>
                   </div>
@@ -1042,10 +1601,266 @@ export default function Backlog() {
             )}
           </article>
         </section>
+
+        {canUseFilters && showActiveSprintFilters && (
+          <div className="filters-modal-overlay" onClick={() => setShowActiveSprintFilters(false)}>
+            <div className="filters-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+              <div className="filters-modal-header d-flex align-items-start">
+                <div>
+                  <h5><FiFilter className="me-2" /> Active Sprint Filters</h5>
+                  <p className="muted">Filter active sprint issues by status, type, assigned to/by, and priority.</p>
+                </div>
+                <button className="btn modal-close" onClick={() => setShowActiveSprintFilters(false)} aria-label="Close">
+                  <FiX size={18} />
+                </button>
+              </div>
+
+              <div className="filters-body">
+                <div className="filters-grid">
+                  <div className="filters-column">
+                    <div className="filter-section">
+                      <h6>Status</h6>
+                      <div className="filter-list">
+                        <label><input type="checkbox" checked={activeSprintFilters.status.includes('todo')} onChange={() => toggleActiveSprintFilter('status', 'todo')} /> To Do</label>
+                        <label><input type="checkbox" checked={activeSprintFilters.status.includes('progress')} onChange={() => toggleActiveSprintFilter('status', 'progress')} /> In Progress</label>
+                        <label><input type="checkbox" checked={activeSprintFilters.status.includes('review')} onChange={() => toggleActiveSprintFilter('status', 'review')} /> In Review</label>
+                        <label><input type="checkbox" checked={activeSprintFilters.status.includes('done')} onChange={() => toggleActiveSprintFilter('status', 'done')} /> Done</label>
+                      </div>
+                    </div>
+
+                    <div className="filter-section">
+                      <h6>Issue Type</h6>
+                      <div className="filter-list">
+                        <label><input type="checkbox" checked={activeSprintFilters.type.includes('story')} onChange={() => toggleActiveSprintFilter('type', 'story')} /> Story</label>
+                        <label><input type="checkbox" checked={activeSprintFilters.type.includes('task')} onChange={() => toggleActiveSprintFilter('type', 'task')} /> Task</label>
+                        <label><input type="checkbox" checked={activeSprintFilters.type.includes('bug')} onChange={() => toggleActiveSprintFilter('type', 'bug')} /> Bug</label>
+                        <label><input type="checkbox" checked={activeSprintFilters.type.includes('epic')} onChange={() => toggleActiveSprintFilter('type', 'epic')} /> Epic</label>
+                      </div>
+                    </div>
+
+                    <div className="filter-section">
+                      {/* <h6>Assigned By</h6> */}
+                      <div className="filter-list">
+                        {activeAssignedByOptions.map((member) => (
+                          <label key={member}>
+                            <input type="checkbox" checked={activeSprintFilters.assignedBy.includes(member)} onChange={() => toggleActiveSprintFilter('assignedBy', member)} /> {member}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="filters-column">
+                    <div className="filter-section">
+                      <h6>Priority</h6>
+                      <div className="filter-list priority-list">
+                        {/* <label><input type="checkbox" checked={activeSprintFilters.priority.includes('critical')} onChange={() => toggleActiveSprintFilter('priority')} /><span className="dot dot-red" /> Critical</label> */}
+                        <label><input type="checkbox" checked={activeSprintFilters.priority.includes('high')} onChange={() => toggleActiveSprintFilter('priority', 'high')} /><span className="dot dot-orange" /> High</label>
+                        <label><input type="checkbox" checked={activeSprintFilters.priority.includes('medium')} onChange={() => toggleActiveSprintFilter('priority', 'medium')} /><span className="dot dot-yellow" /> Medium</label>
+                        <label><input type="checkbox" checked={activeSprintFilters.priority.includes('low')} onChange={() => toggleActiveSprintFilter('priority', 'low')} /><span className="dot dot-green" /> Low</label>
+                      </div>
+                    </div>
+
+                    <div className="filter-section">
+                      <h6>Assigned To</h6>
+                      <div className="filter-list">
+                        {activeAssignedToOptions.map((member) => (
+                          <label key={member}>
+                            <input type="checkbox" checked={activeSprintFilters.assignedTo.includes(member)} onChange={() => toggleActiveSprintFilter('assignedTo', member)} /> {member}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="filters-modal-footer d-flex align-items-center">
+                <button className="link-clear" onClick={clearActiveSprintFilters} type="button">Clear All Filters</button>
+                <div className="ms-auto d-flex gap-3">
+                  <button className="btn btn-outline-secondary" onClick={() => setShowActiveSprintFilters(false)}>Close</button>
+                  <button className="btn save-filter" onClick={() => setShowActiveSprintFilters(false)} type="button">Apply Filters</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {canUseFilters && showBacklogFilters && (
+          <div className="filters-modal-overlay" onClick={() => setShowBacklogFilters(false)}>
+            <div className="filters-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+              <div className="filters-modal-header d-flex align-items-start">
+                <div>
+                  <h5><FiFilter className="me-2" /> Backlog Filters</h5>
+                  <p className="muted">Refine visible cards by type, assigned to, priority</p>
+                </div>
+                <button className="btn modal-close" onClick={() => setShowBacklogFilters(false)} aria-label="Close">
+                  <FiX size={18} />
+                </button>
+              </div>
+
+              <div className="filters-body">
+                <div className="filters-grid">
+                  <div className="filters-column">
+                    <div className="filter-section">
+                      <h6>Issue Type</h6>
+                      <div className="filter-list">
+                        <label><input type="checkbox" checked={backlogFilters.type.includes('story')} onChange={() => toggleBacklogFilter('type', 'story')} /> Story</label>
+                        <label><input type="checkbox" checked={backlogFilters.type.includes('task')} onChange={() => toggleBacklogFilter('type', 'task')} /> Task</label>
+                        <label><input type="checkbox" checked={backlogFilters.type.includes('bug')} onChange={() => toggleBacklogFilter('type', 'bug')} /> Bug</label>
+                        <label><input type="checkbox" checked={backlogFilters.type.includes('epic')} onChange={() => toggleBacklogFilter('type', 'epic')} /> Epic</label>
+                      </div>
+                    </div>
+
+                    <div className="filter-section">
+                      {/* <h6>Assigned By</h6> */}
+                      <div className="filter-list">
+                        {assignedByOptions.map((member) => (
+                          <label key={member}>
+                            <input type="checkbox" checked={backlogFilters.assignedBy.includes(member)} onChange={() => toggleBacklogFilter('assignedBy', member)} /> {member}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="filters-column">
+                    <div className="filter-section">
+                      <h6>Priority</h6>
+                      <div className="filter-list priority-list">
+                        <label><input type="checkbox" checked={backlogFilters.priority.includes('high')} onChange={() => toggleBacklogFilter('priority', 'high')} /><span className="dot dot-orange" /> High</label>
+                        <label><input type="checkbox" checked={backlogFilters.priority.includes('medium')} onChange={() => toggleBacklogFilter('priority', 'medium')} /><span className="dot dot-yellow" /> Medium</label>
+                        <label><input type="checkbox" checked={backlogFilters.priority.includes('low')} onChange={() => toggleBacklogFilter('priority', 'low')} /><span className="dot dot-green" /> Low</label>
+                      </div>
+                    </div>
+
+                    <div className="filter-section">
+                      <h6>Assigned To</h6>
+                      <div className="filter-list">
+                        {assignedToOptions.length === 0 && (
+                          <div className="muted">No developer or tester assignments yet.</div>
+                        )}
+                        {assignedToOptions.map((member) => (
+                          <label key={member}>
+                            <input type="checkbox" checked={backlogFilters.assignee.includes(member)} onChange={() => toggleBacklogFilter('assignee', member)} /> {member}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="divider" />
+
+                <div className="filter-section">
+                  {/* <h6>Labels</h6> */}
+                  <div className="filter-list backlog-filter-grid">
+                    {backlogLabelOptions.map((label) => (
+                      <label key={label}>
+                        <input type="checkbox" checked={backlogFilters.label.includes(label)} onChange={() => toggleBacklogFilter('label', label)} /> {label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="filters-modal-footer d-flex align-items-center">
+                <button className="link-clear" onClick={clearBacklogFilters} type="button">Clear All Filters</button>
+                <div className="ms-auto d-flex gap-3">
+                  <button className="btn btn-outline-secondary" onClick={() => setShowBacklogFilters(false)}>Close</button>
+                  <button className="btn save-filter" onClick={() => setShowBacklogFilters(false)} type="button">Apply Filters</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showStartSprintModal && (
+          <div className="backlog-modal-overlay" onClick={() => setShowStartSprintModal(false)}>
+            <div
+              className="backlog-modal"
+              role="dialog"
+              aria-modal="true"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="backlog-modal-header">
+                <div>
+                  <h3>Start Sprint</h3>
+                  <p className="backlog-modal-subtitle">Select the start and end dates for this sprint.</p>
+                </div>
+                <button
+                  type="button"
+                  className="backlog-modal-close"
+                  aria-label="Close"
+                  onClick={() => setShowStartSprintModal(false)}
+                >
+                  <FiX size={18} />
+                </button>
+              </div>
+              <div className="backlog-modal-body">
+                <div className="backlog-modal-row">
+                  <label className="backlog-modal-label" htmlFor="sprint-start-date">Start date</label>
+                  <input
+                    id="sprint-start-date"
+                    type="date"
+                    className="backlog-modal-input"
+                    autoFocus
+                    min={todayIsoDate()}
+                    value={startSprintDate}
+                    onChange={(event) => {
+                      const nextValue = event.target.value
+                      setStartSprintDate(nextValue)
+                      if (startSprintFormError) setStartSprintFormError('')
+                      const minEnd = addDaysToIso(nextValue, 1)
+                      if (endSprintDate && nextValue && endSprintDate < minEnd) {
+                        setEndSprintDate(minEnd)
+                      }
+                    }}
+                  />
+                </div>
+                <div className="backlog-modal-row">
+                  <label className="backlog-modal-label" htmlFor="sprint-end-date">End date</label>
+                  <input
+                    id="sprint-end-date"
+                    type="date"
+                    className="backlog-modal-input"
+                    min={startSprintDate ? addDaysToIso(startSprintDate, 1) : todayIsoDate()}
+                    value={endSprintDate}
+                    onChange={(event) => {
+                      setEndSprintDate(event.target.value)
+                      if (startSprintFormError) setStartSprintFormError('')
+                    }}
+                  />
+                </div>
+                <div className="backlog-modal-help">
+                  Duration: {startSprintDurationDays ? `${startSprintDurationDays} day${startSprintDurationDays === 1 ? '' : 's'}` : 'Select dates'}
+                </div>
+                {startSprintFormError && (
+                  <div className="backlog-modal-error">{startSprintFormError}</div>
+                )}
+              </div>
+              <div className="backlog-modal-actions">
+                <button
+                  type="button"
+                  className="backlog-modal-cancel"
+                  onClick={() => setShowStartSprintModal(false)}
+                  disabled={isActionLoading(startSprintActionKey)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="backlog-modal-submit"
+                  onClick={confirmStartSprint}
+                  disabled={isActionLoading(startSprintActionKey)}
+                >
+                  {isActionLoading(startSprintActionKey) ? 'Starting...' : 'Start Sprint'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   )
 }
-
-
-
