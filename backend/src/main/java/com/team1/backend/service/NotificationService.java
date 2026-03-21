@@ -108,7 +108,7 @@ public class NotificationService {
             case "issue-assigned", "issue-assignment", "issue-assignments", "assignment" -> prefs.isIssueAssignments();
             case "mention", "mentions" -> prefs.isMentions();
             case "comment", "comments" -> prefs.isComments();
-            case "status-change", "status-changed", "status-changes" -> prefs.isStatusChanges();
+            case "status-change", "status-changed", "status-changes", "issue-review", "issue-done" -> prefs.isStatusChanges();
             case "weekly-summary" -> prefs.isWeeklySummary();
             default -> true;
         };

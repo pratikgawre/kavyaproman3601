@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 
 const DEFAULT_LIMIT = 6
+const DEFAULT_REFRESH_INTERVAL_MS = 30000
 
 function parseDateValue(value) {
   if (!value) return null
@@ -79,7 +80,10 @@ function toUiNotification(item) {
   }
 }
 
-export default function useIssueNotifications({ limit = DEFAULT_LIMIT } = {}) {
+export default function useIssueNotifications({
+  limit = DEFAULT_LIMIT,
+  refreshIntervalMs = DEFAULT_REFRESH_INTERVAL_MS
+} = {}) {
   const API_BASE = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:8080'
   const { user } = useAuth()
   const [items, setItems] = useState([])
@@ -89,14 +93,18 @@ export default function useIssueNotifications({ limit = DEFAULT_LIMIT } = {}) {
 
   useEffect(() => {
     let cancelled = false
-    async function load() {
+    let intervalId
+
+    async function load({ silent = false } = {}) {
       if (!user?.id) {
         setItems([])
         setLoading(false)
         return
       }
-      setLoading(true)
-      setError('')
+      if (!silent) {
+        setLoading(true)
+        setError('')
+      }
       try {
         const limitCount = Math.max(0, Number(limit) || DEFAULT_LIMIT)
         const qs = limitCount ? `?limit=${encodeURIComponent(String(limitCount))}` : ''
@@ -108,15 +116,27 @@ export default function useIssueNotifications({ limit = DEFAULT_LIMIT } = {}) {
       } catch (err) {
         console.error('load notifications failed', err)
         if (cancelled) return
-        setItems([])
-        setError('Unable to load notifications')
+        if (!silent) {
+          setItems([])
+          setError('Unable to load notifications')
+        }
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled && !silent) setLoading(false)
       }
     }
-    load()
-    return () => { cancelled = true }
-  }, [API_BASE, limit, refreshKey, user?.id])
+    void load()
+
+    if (user?.id && Number(refreshIntervalMs) > 0) {
+      intervalId = window.setInterval(() => {
+        void load({ silent: true })
+      }, Number(refreshIntervalMs))
+    }
+
+    return () => {
+      cancelled = true
+      if (intervalId) window.clearInterval(intervalId)
+    }
+  }, [API_BASE, limit, refreshIntervalMs, refreshKey, user?.id])
 
   const notifications = useMemo(() => {
     const limitCount = Math.max(0, Number(limit) || DEFAULT_LIMIT)

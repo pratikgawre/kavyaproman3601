@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Service
 public class IssueService {
@@ -137,6 +138,8 @@ public class IssueService {
         if (!canModifyIssue(user, existing)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not allowed");
         }
+        String previousAssigneeEmail = normalizeEmail(existing.getAssigneeEmail());
+        String previousReviewerEmail = normalizeEmail(existing.getReviewerEmail());
         String previousStatus = normalizeStatus(existing.getStatus());
         String nextStatus = updated != null && updated.getStatus() != null
                 ? normalizeStatus(updated.getStatus())
@@ -159,9 +162,9 @@ public class IssueService {
         updated.setCreatorEmail(existing.getCreatorEmail());
         updated.setCreatorName(existing.getCreatorName());
         Issue saved = update(id, updated);
+        notifyIssueUpdate(user, saved, previousAssigneeEmail, previousReviewerEmail, previousStatus);
         if (!previousStatus.equals(nextStatus)) {
-            maybeNotifyTestersOnReview(user, existing, nextStatus, saved);
-            maybeNotifyDeveloperOnDone(user, existing, nextStatus, saved);
+            maybeNotifyTestersOnReview(user, nextStatus, saved);
         }
         return saved;
     }
@@ -283,7 +286,9 @@ public class IssueService {
         comments.add(comment);
         existing.setComments(comments);
         existing.setUpdatedAt(LocalDateTime.now());
-        return repo.save(existing);
+        Issue saved = repo.save(existing);
+        notifyCommentActivity(user, saved, comment);
+        return saved;
     }
 
     private User requireUser(String userId) {
@@ -441,10 +446,13 @@ public class IssueService {
         }
     }
 
-    private void maybeNotifyTestersOnReview(User actor, Issue existing, String nextStatus, Issue saved) {
-        if (notificationService == null || actor == null || existing == null) return;
+    private void maybeNotifyTestersOnReview(User actor, String nextStatus, Issue saved) {
+        if (notificationService == null || actor == null || saved == null) return;
         if (!"review".equals(nextStatus)) return;
-        String projectKey = normalizeProjectKey(existing.getProject());
+        String reviewerEmail = normalizeEmail(saved.getReviewerEmail());
+        if (reviewerEmail != null && !reviewerEmail.isEmpty()) return;
+
+        String projectKey = normalizeProjectKey(saved.getProject());
         Optional<Project> projectOpt = projectRepository.findByProjectKeyIgnoreCase(projectKey);
         if (projectOpt.isEmpty()) return;
         List<ProjectMember> members = projectOpt.get().getTeamMembers();
@@ -458,11 +466,10 @@ public class IssueService {
             userRepository.findByEmailIgnoreCase(memberEmail).ifPresent((testerUser) -> {
                 if (testerUser.getId() == null || testerUser.getId().equals(actor.getId())) return;
                 CreateNotificationRequest req = new CreateNotificationRequest();
-                String issueRef = saved.getIssueKey() != null ? saved.getIssueKey() : saved.getId();
                 String titleKey = saved.getIssueKey() != null ? saved.getIssueKey() : (saved.getSummary() != null ? saved.getSummary() : "Issue");
                 req.setType("issue_review");
                 req.setTitle("Review needed: " + titleKey);
-                req.setHref("/projects/" + projectKey + "/board?issue=" + (issueRef == null ? "" : issueRef));
+                req.setHref(buildIssueHref(saved));
                 try {
                     notificationService.create(testerUser.getId(), req);
                 } catch (Exception ignored) {
@@ -470,37 +477,6 @@ public class IssueService {
                 }
             });
         }
-    }
-
-    private void maybeNotifyDeveloperOnDone(User actor, Issue existing, String nextStatus, Issue saved) {
-        if (notificationService == null || actor == null || existing == null) return;
-        if (!"done".equals(nextStatus)) return;
-        String role = normalizeRole(actor.getRole());
-        boolean isTester = "tester".equals(role);
-        boolean isProjectManager = "project manager".equals(role) || "admin".equals(role);
-        if (!isTester && !isProjectManager) return;
-
-        String developerEmail = normalizeEmail(existing.getAssigneeEmail());
-        if (developerEmail == null || developerEmail.isEmpty()) {
-            developerEmail = normalizeEmail(existing.getCreatorEmail());
-        }
-        if (developerEmail == null || developerEmail.isEmpty()) return;
-
-        String projectKey = normalizeProjectKey(existing.getProject());
-        userRepository.findByEmailIgnoreCase(developerEmail).ifPresent((developerUser) -> {
-            if (developerUser.getId() == null || developerUser.getId().equals(actor.getId())) return;
-            String issueRef = saved.getIssueKey() != null ? saved.getIssueKey() : saved.getId();
-            String titleKey = saved.getIssueKey() != null ? saved.getIssueKey() : (saved.getSummary() != null ? saved.getSummary() : "Issue");
-            CreateNotificationRequest req = new CreateNotificationRequest();
-            req.setType("issue_done");
-            req.setTitle("Issue completed: " + titleKey);
-            req.setHref("/projects/" + projectKey + "/board?issue=" + (issueRef == null ? "" : issueRef));
-            try {
-                notificationService.create(developerUser.getId(), req);
-            } catch (Exception ignored) {
-                // avoid breaking update on notification failures
-            }
-        });
     }
 
     private String mapDifficultyToPriority(String difficulty) {
@@ -592,11 +568,18 @@ public class IssueService {
         return repo.save(existing);
     }
 
-    private void notifyIssueUpdate(User actor, Issue saved, String previousAssigneeEmail, String previousStatus) {
+    private void notifyIssueUpdate(
+            User actor,
+            Issue saved,
+            String previousAssigneeEmail,
+            String previousReviewerEmail,
+            String previousStatus
+    ) {
         if (notificationService == null || actor == null || saved == null) {
             return;
         }
 
+        String issueHref = buildIssueHref(saved);
         String currentAssigneeEmail = normalizeEmail(saved.getAssigneeEmail());
         if (currentAssigneeEmail != null
                 && !sameEmail(currentAssigneeEmail, previousAssigneeEmail)
@@ -605,7 +588,19 @@ public class IssueService {
                     currentAssigneeEmail,
                     "issue_assigned",
                     "You were assigned: " + getIssueDisplayLabel(saved),
-                    "/all-my-issues"
+                    issueHref
+            );
+        }
+
+        String currentReviewerEmail = normalizeEmail(saved.getReviewerEmail());
+        if (currentReviewerEmail != null
+                && !sameEmail(currentReviewerEmail, previousReviewerEmail)
+                && !sameEmail(currentReviewerEmail, actor.getEmail())) {
+            notifyUserByEmail(
+                    currentReviewerEmail,
+                    "issue_assigned",
+                    "You were assigned to review: " + getIssueDisplayLabel(saved),
+                    issueHref
             );
         }
 
@@ -614,9 +609,10 @@ public class IssueService {
             Set<String> recipients = new LinkedHashSet<>();
             addRecipientEmail(recipients, saved.getCreatorEmail(), actor.getEmail());
             addRecipientEmail(recipients, currentAssigneeEmail, actor.getEmail());
+            addRecipientEmail(recipients, currentReviewerEmail, actor.getEmail());
             String title = "Status changed: " + getIssueDisplayLabel(saved) + " is now " + formatStatusLabel(currentStatus);
             for (String recipientEmail : recipients) {
-                notifyUserByEmail(recipientEmail, "status_changed", title, "/all-my-issues");
+                notifyUserByEmail(recipientEmail, "status_changed", title, issueHref);
             }
         }
     }
@@ -633,8 +629,141 @@ public class IssueService {
                 assigneeEmail,
                 "issue_assigned",
                 "You were assigned: " + getIssueDisplayLabel(saved),
-                "/all-my-issues"
+                buildIssueHref(saved)
         );
+    }
+
+    private void notifyCommentActivity(User actor, Issue issue, IssueComment comment) {
+        if (notificationService == null || actor == null || issue == null || comment == null) {
+            return;
+        }
+
+        String issueLabel = getIssueDisplayLabel(issue);
+        String issueHref = buildIssueHref(issue);
+        String actorName = normalizeText(actor.getName()) != null ? actor.getName().trim() : actor.getEmail();
+
+        Set<String> mentionedEmails = findMentionedRecipientEmails(issue, comment.getMessage(), actor.getEmail());
+        for (String mentionedEmail : mentionedEmails) {
+            notifyUserByEmail(
+                    mentionedEmail,
+                    "mention",
+                    actorName + " mentioned you on " + issueLabel,
+                    issueHref
+            );
+        }
+
+        Set<String> commentRecipients = new LinkedHashSet<>();
+        addRecipientEmail(commentRecipients, issue.getCreatorEmail(), actor.getEmail());
+        addRecipientEmail(commentRecipients, issue.getAssigneeEmail(), actor.getEmail());
+        addRecipientEmail(commentRecipients, issue.getReviewerEmail(), actor.getEmail());
+        commentRecipients.removeAll(mentionedEmails);
+
+        for (String recipientEmail : commentRecipients) {
+            notifyUserByEmail(
+                    recipientEmail,
+                    "comment",
+                    actorName + " commented on " + issueLabel,
+                    issueHref
+            );
+        }
+    }
+
+    private Set<String> findMentionedRecipientEmails(Issue issue, String message, String actorEmail) {
+        Set<String> mentionedEmails = new LinkedHashSet<>();
+        String trimmedMessage = message == null ? "" : message.trim();
+        if (issue == null || trimmedMessage.isEmpty()) {
+            return mentionedEmails;
+        }
+
+        addMentionedEmail(mentionedEmails, trimmedMessage, actorEmail, issue.getCreatorEmail(), issue.getCreatorName());
+        addMentionedEmail(mentionedEmails, trimmedMessage, actorEmail, issue.getAssigneeEmail(), issue.getAssigneeName());
+        addMentionedEmail(mentionedEmails, trimmedMessage, actorEmail, issue.getReviewerEmail(), issue.getReviewerName());
+
+        String projectKey = normalizeProjectKey(issue.getProject());
+        projectRepository.findByProjectKeyIgnoreCase(projectKey)
+                .map(Project::getTeamMembers)
+                .orElse(List.of())
+                .forEach((member) -> {
+                    if (member == null) {
+                        return;
+                    }
+                    addMentionedEmail(mentionedEmails, trimmedMessage, actorEmail, member.getEmail(), member.getName());
+                });
+
+        return mentionedEmails;
+    }
+
+    private void addMentionedEmail(
+            Set<String> recipients,
+            String message,
+            String actorEmail,
+            String candidateEmail,
+            String candidateName
+    ) {
+        String normalizedCandidateEmail = normalizeEmail(candidateEmail);
+        if (normalizedCandidateEmail == null || sameEmail(normalizedCandidateEmail, actorEmail)) {
+            return;
+        }
+        if (messageContainsMention(message, normalizedCandidateEmail, candidateName)) {
+            recipients.add(normalizedCandidateEmail);
+        }
+    }
+
+    private boolean messageContainsMention(String message, String email, String name) {
+        for (String alias : buildMentionAliases(email, name)) {
+            if (containsMentionAlias(message, alias)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Set<String> buildMentionAliases(String email, String name) {
+        Set<String> aliases = new LinkedHashSet<>();
+
+        String normalizedEmail = normalizeEmail(email);
+        if (normalizedEmail != null) {
+            aliases.add(normalizedEmail);
+            int atIndex = normalizedEmail.indexOf('@');
+            if (atIndex > 0) {
+                String localPart = normalizedEmail.substring(0, atIndex);
+                aliases.add(localPart);
+                aliases.add(localPart.replace(".", ""));
+                aliases.add(localPart.replace(".", "-"));
+                aliases.add(localPart.replace(".", "_"));
+            }
+        }
+
+        String normalizedName = normalizeText(name);
+        if (normalizedName != null) {
+            String lowerName = normalizedName.toLowerCase().replaceAll("\\s+", " ").trim();
+            aliases.add(lowerName);
+            aliases.add(lowerName.replace(" ", ""));
+            aliases.add(lowerName.replace(" ", "-"));
+            aliases.add(lowerName.replace(" ", "_"));
+            aliases.add(lowerName.replace(" ", "."));
+        }
+
+        aliases.removeIf((alias) -> alias == null || alias.isBlank());
+        return aliases;
+    }
+
+    private boolean containsMentionAlias(String message, String alias) {
+        if (message == null || message.isBlank() || alias == null || alias.isBlank()) {
+            return false;
+        }
+
+        String normalizedAlias = alias.trim().toLowerCase();
+        StringBuilder regex = new StringBuilder("(?i)(?<![\\w@])@");
+        for (char ch : normalizedAlias.toCharArray()) {
+            if (Character.isWhitespace(ch)) {
+                regex.append("\\s+");
+            } else {
+                regex.append(Pattern.quote(String.valueOf(ch)));
+            }
+        }
+        regex.append("(?![\\w])");
+        return Pattern.compile(regex.toString()).matcher(message).find();
     }
 
     private void notifyUserByEmail(String email, String type, String title, String href) {
@@ -677,6 +806,20 @@ public class IssueService {
     private boolean sameText(String left, String right) {
         if (left == null) return right == null;
         return left.equals(right);
+    }
+
+    private String buildIssueHref(Issue issue) {
+        if (issue == null) {
+            return "/all-my-issues";
+        }
+        String projectKey = normalizeProjectKey(issue.getProject());
+        String issueRef = issue.getIssueKey() != null && !issue.getIssueKey().isBlank()
+                ? issue.getIssueKey().trim()
+                : issue.getId();
+        if (issueRef == null || issueRef.isBlank()) {
+            return "/projects/" + projectKey + "/board";
+        }
+        return "/projects/" + projectKey + "/board?issue=" + issueRef;
     }
 
     private String getIssueDisplayLabel(Issue issue) {
