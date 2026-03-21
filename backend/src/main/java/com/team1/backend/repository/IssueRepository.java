@@ -10,4 +10,6 @@ import org.springframework.stereotype.Repository;
 public interface IssueRepository extends MongoRepository<Issue, String> {
     List<Issue> findByProject(String project);
     Optional<Issue> findByIdAndCreatorEmailIgnoreCase(String id, String creatorEmail);
+    List<Issue> findBySprintId(String sprintId);
+    List<Issue> findBySprintIdIn(List<String> sprintIds);
 }

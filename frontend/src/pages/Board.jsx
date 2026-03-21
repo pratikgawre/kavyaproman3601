@@ -51,6 +51,13 @@ const normalizeStatus = (status) => {
   return 'todo'
 }
 
+function normalizeSprintStatus(status) {
+  const normalized = (status || '').toLowerCase().trim()
+  if (normalized === 'active' || normalized === 'started' || normalized === 'in progress' || normalized === 'in-progress') return 'active'
+  if (normalized === 'completed' || normalized === 'complete' || normalized === 'done') return 'completed'
+  return 'planned'
+}
+
 const normalizePriority = (priority, difficulty) => {
   const normalized = (priority || '').toLowerCase().trim()
   if (['critical', 'high', 'medium', 'low'].includes(normalized)) return normalized

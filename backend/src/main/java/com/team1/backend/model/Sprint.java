@@ -1,8 +1,11 @@
 package com.team1.backend.model;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Transient;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
@@ -26,6 +29,18 @@ public class Sprint {
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    @Transient
+    private Integer issueCount;
+
+    @Transient
+    private List<SprintIssueInfo> issueSummary;
+
+    @Transient
+    private Map<String, Integer> issueStatusCounts;
+
+    @Transient
+    private Map<String, Integer> assigneeCounts;
 
     public Sprint() {}
 
@@ -58,4 +73,41 @@ public class Sprint {
 
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+
+    public Integer getIssueCount() { return issueCount; }
+    public void setIssueCount(Integer issueCount) { this.issueCount = issueCount; }
+
+    public List<SprintIssueInfo> getIssueSummary() { return issueSummary; }
+    public void setIssueSummary(List<SprintIssueInfo> issueSummary) { this.issueSummary = issueSummary; }
+
+    public Map<String, Integer> getIssueStatusCounts() { return issueStatusCounts; }
+    public void setIssueStatusCounts(Map<String, Integer> issueStatusCounts) { this.issueStatusCounts = issueStatusCounts; }
+
+    public Map<String, Integer> getAssigneeCounts() { return assigneeCounts; }
+    public void setAssigneeCounts(Map<String, Integer> assigneeCounts) { this.assigneeCounts = assigneeCounts; }
+
+    public static class SprintIssueInfo {
+        private String issueId;
+        private String issueKey;
+        private String status;
+        private String assigneeName;
+        private String assigneeEmail;
+
+        public SprintIssueInfo() {}
+
+        public String getIssueId() { return issueId; }
+        public void setIssueId(String issueId) { this.issueId = issueId; }
+
+        public String getIssueKey() { return issueKey; }
+        public void setIssueKey(String issueKey) { this.issueKey = issueKey; }
+
+        public String getStatus() { return status; }
+        public void setStatus(String status) { this.status = status; }
+
+        public String getAssigneeName() { return assigneeName; }
+        public void setAssigneeName(String assigneeName) { this.assigneeName = assigneeName; }
+
+        public String getAssigneeEmail() { return assigneeEmail; }
+        public void setAssigneeEmail(String assigneeEmail) { this.assigneeEmail = assigneeEmail; }
+    }
 }

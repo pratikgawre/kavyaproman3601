@@ -96,6 +96,19 @@ function parseBackendDate(value) {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
+function normalizeDeadlineDate(value) {
+  if (!value) return ''
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return ''
+    if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return trimmed.slice(0, 10)
+    const parsed = parseBackendDate(trimmed)
+    return parsed ? formatDateForInput(parsed) : ''
+  }
+  const parsed = parseBackendDate(value)
+  return parsed ? formatDateForInput(parsed) : ''
+}
+
 function getDefaultDueDateRange(daysBack = 30) {
   const today = new Date()
   const to = formatDateForInput(today)
@@ -724,8 +737,18 @@ export default function Dashboard({ initialShowCreate = false }) {
   const activeProjects = useMemo(() => (
     (projects || []).map((projectItem) => {
       const key = projectKeyFrom(projectItem)
-      const total = Number(projectItem?.totalIssues || 0)
-      const completed = Number(projectItem?.completedIssues || 0)
+      // prefer backend-provided counts when available, otherwise derive from loaded issues
+      let total = Number(projectItem?.totalIssues ?? 0)
+      let completed = Number(projectItem?.completedIssues ?? 0)
+      if ((!total || !completed) && Array.isArray(dashboardIssues)) {
+        const projKey = (key || projectItem?.id || '').toString().trim()
+        const issuesForProject = dashboardIssues.filter((it) => {
+          const issueKey = (it.project || it.projectKey || it.projectId || '').toString().trim()
+          return issueKey && issueKey.toUpperCase() === projKey.toUpperCase()
+        })
+        total = issuesForProject.length
+        completed = issuesForProject.filter((it) => normalizeStatus(it?.status) === 'done').length
+      }
       const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0
       const name = projectItem?.name || key || 'Project'
       const icon = key ? key.slice(0, 2).toUpperCase() : name.slice(0, 2).toUpperCase()
@@ -738,7 +761,7 @@ export default function Dashboard({ initialShowCreate = false }) {
         progressPct
       }
     })
-  ), [projects])
+  ), [projects, dashboardIssues])
   const activeProjectKeys = useMemo(() => (
     new Set(
       activeProjects
@@ -904,8 +927,12 @@ export default function Dashboard({ initialShowCreate = false }) {
           else if (status === 'progress') nextTaskCounts.progress += 1
           else if (status === 'review') nextTaskCounts.review += 1
           else if (status === 'done') nextTaskCounts.done += 1
-
-          const deadline = (it.deadlineDate || '').toString().trim()
+        })
+        const overdueScope = orgScoped.filter((issue) => isAssignedToUser(issue))
+        overdueScope.forEach((it) => {
+          const status = normalizeStatus(it.status)
+          const rawDeadline = it.deadlineDate ?? it.dueDate ?? it.deadline
+          const deadline = normalizeDeadlineDate(rawDeadline)
           if (deadline && deadline < today && status !== 'done') {
             nextOverdue.push({
               id: (it.issueKey || it.key || it.id || '').toString(),
