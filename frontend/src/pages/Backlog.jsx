@@ -27,6 +27,7 @@ import {
 } from 'react-icons/fi'
 import { useAuth } from '../context/AuthContext'
 import useIssueNotifications from '../hooks/useIssueNotifications'
+import IssueDetailModal from '../components/IssueDetailModal'
 
 function getInitials(name) {
   if (!name) return ''
@@ -333,6 +334,7 @@ export default function Backlog() {
   const [sprints, setSprints] = useState([])
   const [sprintsLoading, setSprintsLoading] = useState(true)
   const [sprintsError, setSprintsError] = useState('')
+  const [selectedIssue, setSelectedIssue] = useState(null)
   const [draggingIssueId, setDraggingIssueId] = useState(null)
   const [dragOverTarget, setDragOverTarget] = useState('')
   const [sprintActionId, setSprintActionId] = useState('')
@@ -1424,6 +1426,7 @@ export default function Backlog() {
                     draggable={canManageSprints}
                     onDragStart={(event) => handleIssueDragStart(event, issue)}
                     onDragEnd={handleIssueDragEnd}
+                    onClick={() => setSelectedIssue(issue)}
                   >
                     <div className="backlog-issue-main">
                       <span className={`backlog-issue-type backlog-type-${issue.type}`}>
@@ -1492,6 +1495,7 @@ export default function Backlog() {
                     draggable={canManageSprints}
                     onDragStart={(event) => handleIssueDragStart(event, issue)}
                     onDragEnd={handleIssueDragEnd}
+                    onClick={() => setSelectedIssue(issue)}
                   >
                     <div className="backlog-issue-main">
                       <span className={`backlog-issue-type backlog-type-${issue.type}`}>
@@ -1561,6 +1565,7 @@ export default function Backlog() {
                     draggable={canManageSprints}
                     onDragStart={(event) => handleIssueDragStart(event, issue)}
                     onDragEnd={handleIssueDragEnd}
+                    onClick={() => setSelectedIssue(issue)}
                   >
                     <div className="backlog-issue-main">
                       <span className={`backlog-issue-type backlog-type-${issue.type}`}>
@@ -1859,6 +1864,9 @@ export default function Backlog() {
               </div>
             </div>
           </div>
+        )}
+        {selectedIssue && (
+          <IssueDetailModal issue={selectedIssue} onClose={() => setSelectedIssue(null)} />
         )}
       </main>
     </div>

@@ -25,6 +25,7 @@ import {
 import { useAuth } from '../context/AuthContext'
 import useIssueNotifications from '../hooks/useIssueNotifications'
 import { uploadFiles } from '../utils/upload'
+import IssueDetailModal from '../components/IssueDetailModal'
 
 function getInitials(name) {
   return name
@@ -173,6 +174,7 @@ export default function Board() {
   const [commentFiles, setCommentFiles] = useState([])
   const [commentFileError, setCommentFileError] = useState('')
   const [commentSubmitting, setCommentSubmitting] = useState(false)
+  const [selectedIssue, setSelectedIssue] = useState(null)
   const {
     notifications,
     unreadCount,
@@ -1049,6 +1051,14 @@ export default function Board() {
         </div>
       )}
 
+      {selectedIssue && (
+        <IssueDetailModal
+          issue={selectedIssue}
+          onClose={() => setSelectedIssue(null)}
+          resolveAttachmentUrl={resolveAttachmentUrl}
+        />
+      )}
+
       <button className="mobile-toggle btn btn-sm" onClick={toggleSidebarForScreen} aria-label="Toggle sidebar">
         <FiMenu size={18} />
       </button>
@@ -1429,6 +1439,7 @@ export default function Board() {
                           draggable={canUserDragIssue(issue)}
                           onDragStart={(event) => handleIssueDragStart(event, issue)}
                           onDragEnd={handleIssueDragEnd}
+                          onClick={() => setSelectedIssue(issue)}
                         >
                           <div className="board-issue-key-row">
                             <span className={`board-issue-type board-issue-${issue.type}`}>{issue.typeLabel}</span>
