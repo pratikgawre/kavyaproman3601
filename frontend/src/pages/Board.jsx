@@ -25,6 +25,7 @@ import {
 import { useAuth } from '../context/AuthContext'
 import useIssueNotifications from '../hooks/useIssueNotifications'
 import { uploadFiles } from '../utils/upload'
+import { openIssueAttachment, resolveAttachmentUrl } from '../utils/issueAttachments'
 import IssueDetailModal from '../components/IssueDetailModal'
 
 function getInitials(name) {
@@ -77,6 +78,37 @@ const pointsFromDifficulty = (difficulty) => {
 
 const normalizeProjectKey = (value) => (value || '').trim().toUpperCase()
 const normalizeRole = (role) => (role || '').trim().toLowerCase()
+const normalizeLookupName = (value) => (value || '').trim().replace(/\s+/g, ' ').toLowerCase()
+const formatRoleLabel = (role) => {
+  const normalized = normalizeRole(role)
+  if (!normalized) return ''
+  if (normalized === 'admin' || normalized === 'project manager') return 'Project Manager'
+  if (normalized === 'developer') return 'Developer'
+  if (normalized === 'tester') return 'Tester'
+  return (role || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ')
+}
+const getRoleColor = (role) => {
+  const normalized = normalizeRole(role)
+  if (!normalized) return '#64748b'
+  if (normalized.includes('tester')) return '#10b981'
+  if (normalized.includes('report') || normalized.includes('creator')) return '#2563eb'
+  if (normalized.includes('admin') || normalized.includes('manager')) return '#7c3aed'
+  if (normalized.includes('developer') || normalized.includes('dev')) return '#8b5cf6'
+  return '#64748b'
+}
+const getRoleBadgeStyle = (role) => {
+  const color = getRoleColor(role)
+  return {
+    background: `${color}14`,
+    color,
+    border: `1px solid ${color}26`
+  }
+}
 const matchesProjectToken = (project, token) => {
   const rawToken = (token || '').toString().trim()
   if (!rawToken) return false
@@ -134,11 +166,13 @@ export default function Board() {
   const currentUser = profileUser || user || {}
   const displayName = currentUser?.name || (currentUser?.email ? currentUser.email.split('@')[0] : 'Guest')
   const userEmail = (currentUser?.email || '').trim().toLowerCase()
+  const managerEmail = (currentUser?.email || '').trim().toLowerCase()
   const isProjectManager = ['admin', 'project manager'].includes(normalizeRole(currentUser?.role))
   const isDeveloper = normalizeRole(currentUser?.role) === 'developer'
   const isTester = normalizeRole(currentUser?.role) === 'tester'
   const userId = currentUser?.id || user?.id
   const [selectedOrg, setSelectedOrg] = useState(() => { try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null } })
+  const [directoryMembers, setDirectoryMembers] = useState([])
   useEffect(() => {
     function onOrgChanged(e){ const org = e?.detail || null; setSelectedOrg(org); try { if (org) localStorage.setItem('org', JSON.stringify(org)) } catch(err){} }
     window.addEventListener('org:changed', onOrgChanged)
@@ -208,6 +242,39 @@ export default function Board() {
     }
   }, [activeProjectKey, projectDetails, projectFromState, projectKeyRaw, routeProjectToken])
   const projectTeamMembers = Array.isArray(activeProject?.teamMembers) ? activeProject.teamMembers : []
+  const memberOrganizationId = activeProject?.organizationId || selectedOrg?.id || selectedOrg?._id || ''
+  const memberOrganizationUsername = activeProject?.organizationUsername || selectedOrg?.username || selectedOrg?.slug || ''
+  const memberOrganizationName = activeProject?.organizationName || selectedOrg?.name || ''
+  const memberDirectoryManagerEmail = (activeProject?.managerEmail || managerEmail || '').trim().toLowerCase()
+  const roleDirectoryMembers = directoryMembers.length > 0 ? directoryMembers : projectTeamMembers
+  const projectMemberRoles = useMemo(() => {
+    const byEmail = new Map()
+    const byName = new Map()
+    roleDirectoryMembers.forEach((member) => {
+      const role = formatRoleLabel(member?.role)
+      if (!role) return
+      const email = (member?.email || '').trim().toLowerCase()
+      const name = normalizeLookupName(member?.name)
+      if (email && !byEmail.has(email)) byEmail.set(email, role)
+      if (name && !byName.has(name)) byName.set(name, role)
+    })
+    const projectManagerEmail = (activeProject?.managerEmail || '').trim().toLowerCase()
+    const projectManagerName = normalizeLookupName(activeProject?.teamLead)
+    if (projectManagerEmail) byEmail.set(projectManagerEmail, 'Project Manager')
+    if (projectManagerName) byName.set(projectManagerName, 'Project Manager')
+    return { byEmail, byName }
+  }, [activeProject?.managerEmail, activeProject?.teamLead, roleDirectoryMembers])
+  const findMemberRole = (email, name) => {
+    const emailKey = (email || '').trim().toLowerCase()
+    if (emailKey && projectMemberRoles.byEmail.has(emailKey)) {
+      return projectMemberRoles.byEmail.get(emailKey) || ''
+    }
+    const nameKey = normalizeLookupName(name)
+    if (nameKey && projectMemberRoles.byName.has(nameKey)) {
+      return projectMemberRoles.byName.get(nameKey) || ''
+    }
+    return ''
+  }
   const testerMembershipKnown = projectTeamMembers.length > 0
   const isTesterInProject = isTester
     ? (!testerMembershipKnown
@@ -326,6 +393,48 @@ export default function Board() {
 
     return () => controller.abort()
   }, [API_BASE, projectFromState, routeProjectToken])
+
+  useEffect(() => {
+    const queryParams = new URLSearchParams()
+    if (memberOrganizationId) {
+      queryParams.set('organizationId', memberOrganizationId)
+    } else if (memberOrganizationUsername) {
+      queryParams.set('organizationUsername', memberOrganizationUsername)
+    } else if (memberOrganizationName) {
+      queryParams.set('organizationName', memberOrganizationName)
+    } else if (memberDirectoryManagerEmail) {
+      queryParams.set('managerEmail', memberDirectoryManagerEmail)
+    } else {
+      setDirectoryMembers([])
+      return
+    }
+
+    const controller = new AbortController()
+    fetch(`${API_BASE}/api/members?${queryParams.toString()}`, { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errorText = await res.text()
+          throw new Error(errorText || 'Failed to load members')
+        }
+        return res.json()
+      })
+      .then((data) => {
+        setDirectoryMembers(Array.isArray(data) ? data : [])
+      })
+      .catch((err) => {
+        if (err.name === 'AbortError') return
+        setDirectoryMembers([])
+      })
+
+    return () => controller.abort()
+  }, [
+    API_BASE,
+    memberDirectoryManagerEmail,
+    memberOrganizationId,
+    memberOrganizationName,
+    memberOrganizationUsername
+  ])
+
   useEffect(() => {
     if (!activeProjectKey) {
       setIssues([])
@@ -436,6 +545,15 @@ export default function Board() {
       const assignee = issue.assigneeName || issue.assignee || issue.creatorName || 'Unassigned'
       const assignedBy = issue.creatorName || issue.creatorEmail || 'Unknown'
       const points = Number.isFinite(issue.points) ? issue.points : pointsFromDifficulty(issue.difficulty)
+      const creatorRole = findMemberRole(issue.creatorEmail, issue.creatorName || assignedBy)
+      const assigneeRole = findMemberRole(issue.assigneeEmail || issue.assignee, issue.assigneeName || assignee)
+      const reviewerRole = findMemberRole(issue.reviewerEmail, issue.reviewerName)
+      const comments = Array.isArray(issue.comments)
+        ? issue.comments.map((comment) => ({
+          ...comment,
+          authorRole: comment.authorRole || findMemberRole(comment.authorEmail, comment.authorName)
+        }))
+        : []
       return {
         ...issue,
         dbId: issue.id,
@@ -446,12 +564,17 @@ export default function Board() {
         labels,
         assignee,
         assignedBy,
+        creatorRole,
+        reporterRole: creatorRole,
+        assigneeRole,
+        reviewerRole,
+        comments,
         points,
         priority: normalizePriority(issue.priority, issue.difficulty),
         status: normalizeStatus(issue.status)
         }
       })
-  ), [sprintScopedIssues])
+  ), [projectMemberRoles, sprintScopedIssues])
 
   useEffect(() => {
     if (!isTester || !isTesterInProject || !soleTester?.email) return
@@ -470,6 +593,16 @@ export default function Board() {
   const issueIdentity = (issue) => (
     (issue?.id || issue?.dbId || issue?.issueKey || issue?.key || issue?.displayKey || '').toString()
   )
+
+  useEffect(() => {
+    if (!selectedIssue) return
+    const currentId = issueIdentity(selectedIssue)
+    if (!currentId) return
+    const refreshedIssue = mappedIssues.find((issue) => issueIdentity(issue) === currentId)
+    if (refreshedIssue && refreshedIssue !== selectedIssue) {
+      setSelectedIssue(refreshedIssue)
+    }
+  }, [mappedIssues, selectedIssue])
 
   const commentModalIssue = useMemo(() => {
     if (!commentModalIssueId) return null
@@ -685,19 +818,6 @@ export default function Board() {
     setCommentText('')
     setCommentFiles([])
     setCommentFileError('')
-  }
-
-  const resolveAttachmentUrl = (attachment) => {
-    if (!attachment) return ''
-    const raw = attachment.url || attachment.fileUrl || attachment.downloadUrl || attachment.link || attachment.href || ''
-    if (!raw) return ''
-    let url = raw
-    const resourceType = (attachment.resourceType || '').toString().trim().toLowerCase()
-    if (resourceType && url.includes('/image/upload/')) {
-      if (resourceType === 'raw') url = url.replace('/image/upload/', '/raw/upload/')
-      if (resourceType === 'video') url = url.replace('/image/upload/', '/video/upload/')
-    }
-    return url
   }
 
   const buildCommentAttachments = (files, uploads) => (
@@ -1055,7 +1175,6 @@ export default function Board() {
         <IssueDetailModal
           issue={selectedIssue}
           onClose={() => setSelectedIssue(null)}
-          resolveAttachmentUrl={resolveAttachmentUrl}
         />
       )}
 
@@ -1570,7 +1689,14 @@ export default function Board() {
                 (commentModalIssue.comments || []).map((comment) => (
                   <div key={comment.id || comment.createdAt} className="board-comment-item">
                     <div className="board-comment-meta">
-                      <span className="board-comment-author">{comment.authorName || comment.authorEmail || 'Member'}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span className="board-comment-author">{comment.authorName || comment.authorEmail || 'Member'}</span>
+                        {comment.authorRole ? (
+                          <span className="comment-role-badge" style={getRoleBadgeStyle(comment.authorRole)}>
+                            {formatRoleLabel(comment.authorRole)}
+                          </span>
+                        ) : null}
+                      </div>
                       <span className="board-comment-time">
                         {formatCommentTime(comment.createdAt)}
                       </span>
@@ -1586,7 +1712,7 @@ export default function Board() {
                               type="button"
                               key={`${name}-${index}`}
                               className="board-comment-attachment"
-                              onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
+                              onClick={() => openIssueAttachment(attachment)}
                             >
                               {name}
                             </button>

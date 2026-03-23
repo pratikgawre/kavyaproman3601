@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext'
 import useIssueNotifications from '../hooks/useIssueNotifications'
 import { uploadFiles } from '../utils/upload'
 import { getInitials } from '../utils/initials'
+import { openIssueAttachment } from '../utils/issueAttachments'
 
 function formatDateForInput(date) {
   const year = date.getFullYear()
@@ -501,149 +502,6 @@ export default function Dashboard({ initialShowCreate = false }) {
       if(fileInputRef.current) fileInputRef.current.value = ''
     }
   }
-  function resolveAttachmentUrl(file) {
-    const raw = file?.url || file?.fileUrl || file?.downloadUrl || file?.link || file?.href || file?.data || ''
-    if (!raw) return ''
-    if (file?.data && !/^(https?:|blob:|data:|\/\/)/i.test(raw)) {
-      const mime = file?.type || 'application/octet-stream'
-      return `data:${mime};base64,${raw}`
-    }
-
-    let url = raw
-    const name = (file?.name || '').toLowerCase()
-    const format = (file?.format || '').toLowerCase()
-    const type = (file?.type || '').toLowerCase()
-    const resourceType = (file?.resourceType || '').toLowerCase()
-    const extFromName = (name.match(/\.([a-z0-9]+)$/) || [])[1] || ''
-    const extFromUrl = (() => {
-      try {
-        const clean = url.split('?')[0].split('#')[0]
-        const match = clean.match(/\.([a-z0-9]+)$/i)
-        return match ? match[1].toLowerCase() : ''
-      } catch (e) { return '' }
-    })()
-    const ext = extFromName || format || extFromUrl
-
-    const isImage = type.startsWith('image/') || ['png','jpg','jpeg','gif','webp','bmp','svg','heic','heif'].includes(ext)
-    const isVideoAudio = type.startsWith('video/') || type.startsWith('audio/') || ['mp4','webm','mov','avi','mkv','mp3','wav','m4a','ogg','flac'].includes(ext)
-
-    if (typeof url === 'string') {
-      if (resourceType === 'raw' && url.includes('/image/upload/')) {
-        url = url.replace('/image/upload/', '/raw/upload/')
-      } else if (resourceType === 'video' && url.includes('/image/upload/')) {
-        url = url.replace('/image/upload/', '/video/upload/')
-      } else if (!resourceType && url.includes('/image/upload/') && !isImage) {
-        url = url.replace('/image/upload/', isVideoAudio ? '/video/upload/' : '/raw/upload/')
-      }
-    }
-    return url
-  }
-  function inferMimeType(file, url = '') {
-    const type = (file?.type || '').toLowerCase()
-    if (type && type !== 'application/octet-stream') return type
-    const name = (file?.name || '').toLowerCase()
-    const fromName = (name.match(/\.([a-z0-9]+)$/) || [])[1] || ''
-    const fromUrl = (() => {
-      try {
-        const clean = url.split('?')[0].split('#')[0]
-        const match = clean.match(/\.([a-z0-9]+)$/i)
-        return match ? match[1].toLowerCase() : ''
-      } catch (e) { return '' }
-    })()
-    const ext = fromName || fromUrl || (file?.format || '').toLowerCase()
-    if (!ext) return ''
-    const map = {
-      pdf: 'application/pdf',
-      png: 'image/png',
-      jpg: 'image/jpeg',
-      jpeg: 'image/jpeg',
-      gif: 'image/gif',
-      webp: 'image/webp',
-      bmp: 'image/bmp',
-      svg: 'image/svg+xml',
-      heic: 'image/heic',
-      heif: 'image/heif',
-      mp4: 'video/mp4',
-      webm: 'video/webm',
-      mov: 'video/quicktime',
-      avi: 'video/x-msvideo',
-      mkv: 'video/x-matroska',
-      mp3: 'audio/mpeg',
-      wav: 'audio/wav',
-      m4a: 'audio/mp4',
-      ogg: 'audio/ogg',
-      flac: 'audio/flac',
-      txt: 'text/plain',
-      csv: 'text/csv',
-      json: 'application/json',
-      xml: 'application/xml',
-      md: 'text/markdown',
-      doc: 'application/msword',
-      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      xls: 'application/vnd.ms-excel',
-      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      ppt: 'application/vnd.ms-powerpoint',
-      pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      zip: 'application/zip',
-      rar: 'application/vnd.rar',
-      '7z': 'application/x-7z-compressed'
-    }
-    return map[ext] || ''
-  }
-
-  function isViewableMime(mime) {
-    if (!mime) return false
-    return (
-      mime.startsWith('image/') ||
-      mime.startsWith('video/') ||
-      mime.startsWith('audio/') ||
-      mime.startsWith('text/') ||
-      mime === 'application/pdf' ||
-      mime === 'application/json' ||
-      mime === 'application/xml'
-    )
-  }
-
-  async function downloadAttachment(file){
-    const href = resolveAttachmentUrl(file)
-    if (!href) return
-    const fileName = file?.name || file?.originalFilename || 'attachment'
-    try{
-      const res = await fetch(href)
-      if(!res.ok) throw new Error('download failed')
-      const blob = await res.blob()
-      const inferredType = inferMimeType(file, href)
-      const typedBlob = inferredType && inferredType !== blob.type
-        ? blob.slice(0, blob.size, inferredType)
-        : blob
-      const blobUrl = URL.createObjectURL(typedBlob)
-      const a = document.createElement('a')
-      a.href = blobUrl
-      a.download = fileName
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-
-      if (isViewableMime(typedBlob.type)) {
-        const opened = window.open(blobUrl, '_blank', 'noopener,noreferrer')
-        if (!opened) {
-          // fallback: navigate in same tab if popup blocked
-          window.location.href = blobUrl
-        }
-      }
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000)
-    }catch(err){
-      console.error('download failed', err)
-      const opened = window.open(href, '_blank', 'noopener,noreferrer')
-      if (opened) return
-      const a = document.createElement('a')
-      a.href = href
-      a.download = fileName
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-    }
-  }
   function handleRemoveAttachment(idx){
     setAttachments(prev => prev.filter((_, i) => i !== idx))
   }
@@ -1076,6 +934,12 @@ export default function Dashboard({ initialShowCreate = false }) {
             return key && orgProjectKeys.has(key)
           })
           : parsed
+        const managedProjectScoped = orgProjectKeys.size
+          ? parsed.filter((issue) => {
+            const key = issueProjectKeyFrom(issue)
+            return key && orgProjectKeys.has(key)
+          })
+          : orgScoped
         let assignedScoped = []
         const hasTeamScope = isProjectManager || isTester
         if (hasTeamScope) {
@@ -1147,7 +1011,9 @@ export default function Dashboard({ initialShowCreate = false }) {
           else if (status === 'review') nextTaskCounts.review += 1
           else if (status === 'done') nextTaskCounts.done += 1
         })
-        const overdueScope = orgScoped.filter((issue) => isAssignedToUser(issue))
+        const overdueScope = isProjectManager
+          ? managedProjectScoped
+          : orgScoped.filter((issue) => isAssignedToUser(issue))
         overdueScope.forEach((it) => {
           const status = normalizeStatus(it.status)
           const rawDeadline = it.deadlineDate ?? it.dueDate ?? it.deadline
@@ -2040,7 +1906,7 @@ export default function Dashboard({ initialShowCreate = false }) {
                       {attachments.map((f, i) => (
                         <div className="attachment-item" key={i} title={f.name}>
                               {(f.url || f.data) ? (
-                                <button type="button" className="attachment-name link-like" onClick={(e)=>{ e.preventDefault(); downloadAttachment(f) }}>{f.name}</button>
+                                <button type="button" className="attachment-name link-like" onClick={(e)=>{ e.preventDefault(); openIssueAttachment(f) }}>{f.name}</button>
                               ) : (
                                 <span className="attachment-name">{f.name}</span>
                               )}
