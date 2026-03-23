@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import useIssueNotifications from '../hooks/useIssueNotifications'
 import { uploadFiles } from '../utils/upload'
 import { getInitials } from '../utils/initials'
+import IssueDetailModal from '../components/IssueDetailModal'
 
 function stripHtml(value) {
   return (value || '').toString().replace(/<[^>]*>/g, ' ')
@@ -65,6 +66,7 @@ export default function AllMyIssues(){
   const [projects, setProjects] = useState([])
   const [projectsLoading, setProjectsLoading] = useState(false)
   const [projectsError, setProjectsError] = useState('')
+  const [selectedIssue, setSelectedIssue] = useState(null)
   useEffect(() => {
     const controller = new AbortController()
     setProjectsLoading(true)
@@ -817,7 +819,7 @@ export default function AllMyIssues(){
         <div className="all-my-issues-grid">
           {issues.length === 0 && <div className="filter-card">No issues found. Create one from Dashboard.</div>}
           {issues.map((it, idx)=> (
-            <div key={idx} className="filter-card">
+            <div key={idx} className="filter-card" onClick={() => setSelectedIssue(it)}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <div>
                   <div style={{fontWeight:700}}>{it.summary}</div>
@@ -826,8 +828,8 @@ export default function AllMyIssues(){
                 <div style={{textAlign:'right', display:'flex', alignItems:'center', gap:8}}>
                   {/* <div style={{fontWeight:700}}>{it.attachments?.length || 0} files</div> */}
                   <div style={{color:'#6b7280',fontSize:12,marginTop:6}}>{new Date(it.createdAt).toLocaleString()}</div>
-                  <button title="Edit" className="icon-btn" onClick={()=>openEdit(idx)}><FiEdit /></button>
-                  <button title="Delete" className="icon-btn" onClick={()=>handleDelete(idx)}><FiTrash2 /></button>
+                  <button title="Edit" className="icon-btn" onClick={(e)=>{ e.stopPropagation(); openEdit(idx) }}><FiEdit /></button>
+                  <button title="Delete" className="icon-btn" onClick={(e)=>{ e.stopPropagation(); handleDelete(idx) }}><FiTrash2 /></button>
                 </div>
               </div>
 
@@ -856,7 +858,7 @@ export default function AllMyIssues(){
                   {it.attachments.map((f,i)=> (
                     <div key={i} className="attachment-item" title={f.name}>
                       {(f.url || f.data) ? (
-                        <button type="button" className="attachment-name link-like" onClick={(e)=>{ e.preventDefault(); downloadAttachment(f) }}>{f.name}</button>
+                        <button type="button" className="attachment-name link-like" onClick={(e)=>{ e.stopPropagation(); e.preventDefault(); downloadAttachment(f) }}>{f.name}</button>
                       ) : (
                         <span>{f.name}</span>
                       )}
@@ -871,6 +873,10 @@ export default function AllMyIssues(){
           ))}
         </div>
       </main>
+
+      {selectedIssue && (
+        <IssueDetailModal issue={selectedIssue} onClose={() => setSelectedIssue(null)} resolveAttachmentUrl={resolveAttachmentUrl} />
+      )}
 
       {editingIndex > -1 && (
         <div className="create-issue-overlay" onClick={closeEdit}>

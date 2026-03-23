@@ -658,6 +658,75 @@
   color: #0f172a;
 }
 
+/* Issue detail modal header enhancements */
+.issue-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.issue-header-left {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.issue-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #eef2ff;
+  display: inline-block;
+}
+.issue-avatar-initials {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: #312e81;
+}
+.issue-role-badge {
+  background: #eef2ff;
+  color: #312e81;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* Comment item avatars and role */
+.board-comment-item {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(148,163,184,0.06);
+}
+.comment-author-left {
+  width: 36px;
+  min-width: 36px;
+  display: flex;
+  align-items: flex-start;
+}
+.comment-role-badge {
+  background: #eef2ff;
+  color: #312e81;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* Role title under names */
+.role-title {
+  display: inline-flex;
+  align-items: center;
+}
+.role-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
 .board-comment-file-item button {
   background: transparent;
   border: none;
