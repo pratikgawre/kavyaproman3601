@@ -601,7 +601,7 @@ export default function Dashboard({ initialShowCreate = false }) {
     navigate('/all-my-issues')
   }
   const descRef = useRef(null)
-  const [formatState, setFormatState] = useState({ bold: false, italic: false, underline: false })
+  const [formatState, setFormatState] = useState({ bold: false, italic: false, underline: false, align: 'left' })
 
   function updateFormatState() {
     if (typeof document === 'undefined') return
@@ -612,10 +612,18 @@ export default function Dashboard({ initialShowCreate = false }) {
     const anchor = selection.anchorNode
     const focus = selection.focusNode
     if (editor.contains(anchor) || editor.contains(focus)) {
+      const align = document.queryCommandState('justifyCenter')
+        ? 'center'
+        : document.queryCommandState('justifyRight')
+          ? 'right'
+          : document.queryCommandState('justifyFull')
+            ? 'justify'
+            : 'left'
       setFormatState({
         bold: document.queryCommandState('bold'),
         italic: document.queryCommandState('italic'),
-        underline: document.queryCommandState('underline')
+        underline: document.queryCommandState('underline'),
+        align
       })
     }
   }
@@ -1243,16 +1251,16 @@ export default function Dashboard({ initialShowCreate = false }) {
           </button> */}
         </div>
 
-        <div className="org-switch mt-3 d-flex align-items-center gap-2">
-          <div className="org-icon">{selectedOrg?.name ? selectedOrg.name.charAt(0) : 'K'}</div>
-          <div className="org-info">
-            <div className="org-name">{selectedOrg?.name || 'Kavya Technologies'}</div>
-            <button className="switch-org-btn mt-1" onClick={() => navigate('/organization')} aria-label="Switch Organization">
-              <span className="switch-left"><FiRepeat size={16} className="me-2" /></span>
-              <span className="switch-text">Switch Organization</span>
-              <FiArrowRight size={16} className="switch-arrow" />
-            </button>
+        <div className="org-switch mt-3 d-flex flex-column align-items-stretch gap-2">
+          <div className="org-header">
+            <div className="org-icon">{selectedOrg?.name ? selectedOrg.name.charAt(0) : 'K'}</div>
+            <div className="org-name-only">{selectedOrg?.name || 'Kavya Technologies'}</div>
           </div>
+          <button className="switch-org-btn w-100" onClick={() => navigate('/organization')} aria-label="Switch Organization">
+            <span className="switch-left"><FiRepeat size={16} className="me-2" /></span>
+            <span className="switch-text">Switch Organization</span>
+            <FiArrowRight size={16} className="switch-arrow" />
+          </button>
         </div>
 
         <div className="sidebar-inner d-flex flex-column mt-3">
@@ -1844,7 +1852,9 @@ export default function Dashboard({ initialShowCreate = false }) {
                 </div>
 
                 <div className="form-row">
-                  <label>Description*</label>
+                  <label className="description-label">
+                    Description* <span className={`issue-type-badge ${(issueType || '').toLowerCase()}`}>{issueType}</span>
+                  </label>
                   <div className="toolbar format-toolbar">
                     <button
                       type="button"
@@ -1878,13 +1888,53 @@ export default function Dashboard({ initialShowCreate = false }) {
                     </button>
 
                     <div className="align-group">
-                      <button type="button" className="format-btn align-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>document.execCommand('justifyLeft')} title="Align left"><FiAlignLeft /></button>
-                      <button type="button" className="format-btn align-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>document.execCommand('justifyCenter')} title="Center"><FiAlignCenter /></button>
-                      <button type="button" className="format-btn align-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>document.execCommand('justifyRight')} title="Align right"><FiAlignRight /></button>
-                      <button type="button" className="format-btn align-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>document.execCommand('justifyFull')} title="Justify"><FiAlignJustify /></button>
+                      <button
+                        type="button"
+                        className={`format-btn align-btn ${formatState.align === 'left' ? 'active' : ''}`}
+                        onMouseDown={e=>e.preventDefault()}
+                        onClick={() => { document.execCommand('justifyLeft'); updateFormatState() }}
+                        title="Align left"
+                        aria-label="Align left"
+                        aria-pressed={formatState.align === 'left'}
+                      >
+                        <FiAlignLeft />
+                      </button>
+                      <button
+                        type="button"
+                        className={`format-btn align-btn ${formatState.align === 'center' ? 'active' : ''}`}
+                        onMouseDown={e=>e.preventDefault()}
+                        onClick={() => { document.execCommand('justifyCenter'); updateFormatState() }}
+                        title="Center"
+                        aria-label="Center"
+                        aria-pressed={formatState.align === 'center'}
+                      >
+                        <FiAlignCenter />
+                      </button>
+                      <button
+                        type="button"
+                        className={`format-btn align-btn ${formatState.align === 'right' ? 'active' : ''}`}
+                        onMouseDown={e=>e.preventDefault()}
+                        onClick={() => { document.execCommand('justifyRight'); updateFormatState() }}
+                        title="Align right"
+                        aria-label="Align right"
+                        aria-pressed={formatState.align === 'right'}
+                      >
+                        <FiAlignRight />
+                      </button>
+                      <button
+                        type="button"
+                        className={`format-btn align-btn ${formatState.align === 'justify' ? 'active' : ''}`}
+                        onMouseDown={e=>e.preventDefault()}
+                        onClick={() => { document.execCommand('justifyFull'); updateFormatState() }}
+                        title="Justify"
+                        aria-label="Justify"
+                        aria-pressed={formatState.align === 'justify'}
+                      >
+                        <FiAlignJustify />
+                      </button>
                     </div>
 
-                    <input type="color" className="color-input" defaultValue="#10b981" onMouseDown={e=>e.preventDefault()} onChange={(e)=>document.execCommand('foreColor', false, e.target.value)} title="Text color" />
+                    <input type="color" className="color-input" defaultValue="#10b981" onMouseDown={e=>e.preventDefault()} onChange={(e)=>{ document.execCommand('foreColor', false, e.target.value); updateFormatState() }} title="Text color" />
                     <button type="button" className="format-btn upload-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>fileInputRef.current?.click()} title={uploadingAttachments ? 'Uploading...' : 'Attach files'} disabled={uploadingAttachments}>
                       <FiUpload />
                     </button>

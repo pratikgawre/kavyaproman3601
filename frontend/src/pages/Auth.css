@@ -728,6 +728,14 @@ html[data-theme='dark'] .org-url input::placeholder {
   color: #dc2626;
 }
 
+html[data-theme='dark'] .org-list-logout {
+  background: #000000 !important;
+}
+
+html[data-theme='dark'] .org-list-logout:hover {
+  background: #111827 !important;
+}
+
 .org-logout-icon svg {
   width: 16px;
   height: 16px;

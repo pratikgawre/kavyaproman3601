@@ -229,7 +229,7 @@ export default function AllMyIssues(){
   const [editAssigneeSearch, setEditAssigneeSearch] = useState('')
   const [editAssignee, setEditAssignee] = useState(null)
   const [editAssigneeDropdownOpen, setEditAssigneeDropdownOpen] = useState(false)
-  const [editFormatState, setEditFormatState] = useState({ bold: false, italic: false, underline: false })
+  const [editFormatState, setEditFormatState] = useState({ bold: false, italic: false, underline: false, align: 'left' })
   const editFileInputRef = useRef(null)
   const editDescRef = useRef(null)
   const editAssigneeRef = useRef(null)
@@ -350,10 +350,18 @@ export default function AllMyIssues(){
     const anchor = selection.anchorNode
     const focus = selection.focusNode
     if (editor.contains(anchor) || editor.contains(focus)) {
+      const align = document.queryCommandState('justifyCenter')
+        ? 'center'
+        : document.queryCommandState('justifyRight')
+          ? 'right'
+          : document.queryCommandState('justifyFull')
+            ? 'justify'
+            : 'left'
       setEditFormatState({
         bold: document.queryCommandState('bold'),
         italic: document.queryCommandState('italic'),
-        underline: document.queryCommandState('underline')
+        underline: document.queryCommandState('underline'),
+        align
       })
     }
   }
@@ -539,7 +547,7 @@ export default function AllMyIssues(){
     setEditAssignee(nextAssignee)
     setEditAssigneeSearch(nextAssignee?.name || nextAssignee?.email || '')
     setEditAssigneeDropdownOpen(false)
-    setEditFormatState({ bold: false, italic: false, underline: false })
+    setEditFormatState({ bold: false, italic: false, underline: false, align: 'left' })
     setEditErrors({})
     setEditingIndex(idx)
   }
@@ -551,7 +559,7 @@ export default function AllMyIssues(){
     setEditAssignee(null)
     setEditAssigneeSearch('')
     setEditAssigneeDropdownOpen(false)
-    setEditFormatState({ bold: false, italic: false, underline: false })
+    setEditFormatState({ bold: false, italic: false, underline: false, align: 'left' })
     if (editDescRef.current) editDescRef.current.innerHTML = ''
     if (editFileInputRef.current) editFileInputRef.current.value = ''
   }
@@ -1160,7 +1168,9 @@ export default function AllMyIssues(){
               </div>
 
               <div className="form-row">
-                <label>Description*</label>
+                <label className="description-label">
+                  Description* <span className={`issue-type-badge ${(editFields.issueType || '').toLowerCase()}`}>{editFields.issueType}</span>
+                </label>
                 <div className="toolbar format-toolbar">
                   <button
                     type="button"
@@ -1194,13 +1204,53 @@ export default function AllMyIssues(){
                   </button>
 
                   <div className="align-group">
-                    <button type="button" className="format-btn align-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>document.execCommand('justifyLeft')} title="Align left"><FiAlignLeft /></button>
-                    <button type="button" className="format-btn align-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>document.execCommand('justifyCenter')} title="Center"><FiAlignCenter /></button>
-                    <button type="button" className="format-btn align-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>document.execCommand('justifyRight')} title="Align right"><FiAlignRight /></button>
-                    <button type="button" className="format-btn align-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>document.execCommand('justifyFull')} title="Justify"><FiAlignJustify /></button>
+                    <button
+                      type="button"
+                      className={`format-btn align-btn ${editFormatState.align === 'left' ? 'active' : ''}`}
+                      onMouseDown={e=>e.preventDefault()}
+                      onClick={() => { document.execCommand('justifyLeft'); updateEditFormatState() }}
+                      title="Align left"
+                      aria-label="Align left"
+                      aria-pressed={editFormatState.align === 'left'}
+                    >
+                      <FiAlignLeft />
+                    </button>
+                    <button
+                      type="button"
+                      className={`format-btn align-btn ${editFormatState.align === 'center' ? 'active' : ''}`}
+                      onMouseDown={e=>e.preventDefault()}
+                      onClick={() => { document.execCommand('justifyCenter'); updateEditFormatState() }}
+                      title="Center"
+                      aria-label="Center"
+                      aria-pressed={editFormatState.align === 'center'}
+                    >
+                      <FiAlignCenter />
+                    </button>
+                    <button
+                      type="button"
+                      className={`format-btn align-btn ${editFormatState.align === 'right' ? 'active' : ''}`}
+                      onMouseDown={e=>e.preventDefault()}
+                      onClick={() => { document.execCommand('justifyRight'); updateEditFormatState() }}
+                      title="Align right"
+                      aria-label="Align right"
+                      aria-pressed={editFormatState.align === 'right'}
+                    >
+                      <FiAlignRight />
+                    </button>
+                    <button
+                      type="button"
+                      className={`format-btn align-btn ${editFormatState.align === 'justify' ? 'active' : ''}`}
+                      onMouseDown={e=>e.preventDefault()}
+                      onClick={() => { document.execCommand('justifyFull'); updateEditFormatState() }}
+                      title="Justify"
+                      aria-label="Justify"
+                      aria-pressed={editFormatState.align === 'justify'}
+                    >
+                      <FiAlignJustify />
+                    </button>
                   </div>
 
-                  <input type="color" className="color-input" defaultValue="#10b981" onMouseDown={e=>e.preventDefault()} onChange={(e)=>document.execCommand('foreColor', false, e.target.value)} title="Text color" />
+                  <input type="color" className="color-input" defaultValue="#10b981" onMouseDown={e=>e.preventDefault()} onChange={(e)=>{ document.execCommand('foreColor', false, e.target.value); updateEditFormatState() }} title="Text color" />
                   <button type="button" className="format-btn upload-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>editFileInputRef.current?.click()} title={uploadingEditAttachments ? 'Uploading...' : 'Attach files'} disabled={uploadingEditAttachments}>
                     <FiUpload />
                   </button>
