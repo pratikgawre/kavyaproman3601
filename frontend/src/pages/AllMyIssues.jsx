@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, NavLink, useLocation } from 'react-router-dom'
 import './Dashboard.css'
 import { FiArrowLeft, FiArrowRight, FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLogOut, FiMenu, FiRepeat, FiEdit, FiTrash2, FiUpload, FiAlignLeft, FiAlignCenter, FiAlignRight, FiAlignJustify, FiX, FiSearch, FiBell, FiPlus } from 'react-icons/fi'
@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import useIssueNotifications from '../hooks/useIssueNotifications'
 import { uploadFiles } from '../utils/upload'
 import { getInitials } from '../utils/initials'
+import { openIssueAttachment } from '../utils/issueAttachments'
 import IssueDetailModal from '../components/IssueDetailModal'
 
 function stripHtml(value) {
@@ -91,6 +92,37 @@ function normalizeDeadlineDate(value) {
   }
   const parsed = parseBackendDate(value)
   return parsed ? formatDateForInput(parsed) : ''
+}
+
+function formatProjectLabel(projectItem) {
+  const key = (projectItem?.projectKey || projectItem?.id || '').toString().trim()
+  const name = projectItem?.name || key || 'Project'
+  return key ? `${name} (${key})` : name
+}
+
+function stripLeadingSpace(value) {
+  return (value || '').toString().replace(/^\s+/, '')
+}
+
+function preventLeadingSpace(e) {
+  if (e.key === ' ' && (e.currentTarget.selectionStart ?? 0) === 0) e.preventDefault()
+}
+
+function createEmptyEditFields() {
+  return {
+    id: '',
+    project: '',
+    issueType: 'Story',
+    epicName: '',
+    summary: '',
+    description: '',
+    attachments: [],
+    difficulty: 'Medium',
+    assignDate: '',
+    deadlineDate: '',
+    assigneeName: '',
+    assigneeEmail: ''
+  }
 }
 
 export default function AllMyIssues(){
@@ -192,11 +224,18 @@ export default function AllMyIssues(){
   const notificationRef = useRef(null)
   const topSearchInputRef = useRef(null)
   const [editingIndex, setEditingIndex] = useState(-1)
-  const [editFields, setEditFields] = useState({ project:'', issueType:'Story', epicName:'', summary:'', description:'', attachments:[] })
+  const [editFields, setEditFields] = useState(createEmptyEditFields)
   const [editErrors, setEditErrors] = useState({})
+  const [editAssigneeSearch, setEditAssigneeSearch] = useState('')
+  const [editAssignee, setEditAssignee] = useState(null)
+  const [editAssigneeDropdownOpen, setEditAssigneeDropdownOpen] = useState(false)
+  const [editFormatState, setEditFormatState] = useState({ bold: false, italic: false, underline: false })
   const editFileInputRef = useRef(null)
   const editDescRef = useRef(null)
+  const editAssigneeRef = useRef(null)
   const [uploadingEditAttachments, setUploadingEditAttachments] = useState(false)
+  const todayDateValue = formatDateForInput(new Date())
+  const projectLabel = formatProjectLabel
   function attachmentFromUpload(file, upload) {
     return {
       name: file.name,
@@ -228,149 +267,6 @@ export default function AllMyIssues(){
 
   function handleEditRemoveAttachment(idx){
     setEditFields(prev => ({...prev, attachments: prev.attachments ? prev.attachments.filter((_,i)=>i!==idx) : []}))
-  }
-
-  function resolveAttachmentUrl(file) {
-    const raw = file?.url || file?.fileUrl || file?.downloadUrl || file?.link || file?.href || file?.data || ''
-    if (!raw) return ''
-    if (file?.data && !/^(https?:|blob:|data:|\/\/)/i.test(raw)) {
-      const mime = file?.type || 'application/octet-stream'
-      return `data:${mime};base64,${raw}`
-    }
-
-    let url = raw
-    const name = (file?.name || '').toLowerCase()
-    const format = (file?.format || '').toLowerCase()
-    const type = (file?.type || '').toLowerCase()
-    const resourceType = (file?.resourceType || '').toLowerCase()
-    const extFromName = (name.match(/\.([a-z0-9]+)$/) || [])[1] || ''
-    const extFromUrl = (() => {
-      try {
-        const clean = url.split('?')[0].split('#')[0]
-        const match = clean.match(/\.([a-z0-9]+)$/i)
-        return match ? match[1].toLowerCase() : ''
-      } catch (e) { return '' }
-    })()
-    const ext = extFromName || format || extFromUrl
-
-    const isImage = type.startsWith('image/') || ['png','jpg','jpeg','gif','webp','bmp','svg','heic','heif'].includes(ext)
-    const isVideoAudio = type.startsWith('video/') || type.startsWith('audio/') || ['mp4','webm','mov','avi','mkv','mp3','wav','m4a','ogg','flac'].includes(ext)
-
-    if (typeof url === 'string') {
-      if (resourceType === 'raw' && url.includes('/image/upload/')) {
-        url = url.replace('/image/upload/', '/raw/upload/')
-      } else if (resourceType === 'video' && url.includes('/image/upload/')) {
-        url = url.replace('/image/upload/', '/video/upload/')
-      } else if (!resourceType && url.includes('/image/upload/') && !isImage) {
-        url = url.replace('/image/upload/', isVideoAudio ? '/video/upload/' : '/raw/upload/')
-      }
-    }
-    return url
-  }
-  function inferMimeType(file, url = '') {
-    const type = (file?.type || '').toLowerCase()
-    if (type && type !== 'application/octet-stream') return type
-    const name = (file?.name || '').toLowerCase()
-    const fromName = (name.match(/\.([a-z0-9]+)$/) || [])[1] || ''
-    const fromUrl = (() => {
-      try {
-        const clean = url.split('?')[0].split('#')[0]
-        const match = clean.match(/\.([a-z0-9]+)$/i)
-        return match ? match[1].toLowerCase() : ''
-      } catch (e) { return '' }
-    })()
-    const ext = fromName || fromUrl || (file?.format || '').toLowerCase()
-    if (!ext) return ''
-    const map = {
-      pdf: 'application/pdf',
-      png: 'image/png',
-      jpg: 'image/jpeg',
-      jpeg: 'image/jpeg',
-      gif: 'image/gif',
-      webp: 'image/webp',
-      bmp: 'image/bmp',
-      svg: 'image/svg+xml',
-      heic: 'image/heic',
-      heif: 'image/heif',
-      mp4: 'video/mp4',
-      webm: 'video/webm',
-      mov: 'video/quicktime',
-      avi: 'video/x-msvideo',
-      mkv: 'video/x-matroska',
-      mp3: 'audio/mpeg',
-      wav: 'audio/wav',
-      m4a: 'audio/mp4',
-      ogg: 'audio/ogg',
-      flac: 'audio/flac',
-      txt: 'text/plain',
-      csv: 'text/csv',
-      json: 'application/json',
-      xml: 'application/xml',
-      md: 'text/markdown',
-      doc: 'application/msword',
-      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      xls: 'application/vnd.ms-excel',
-      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      ppt: 'application/vnd.ms-powerpoint',
-      pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      zip: 'application/zip',
-      rar: 'application/vnd.rar',
-      '7z': 'application/x-7z-compressed'
-    }
-    return map[ext] || ''
-  }
-
-  function isViewableMime(mime) {
-    if (!mime) return false
-    return (
-      mime.startsWith('image/') ||
-      mime.startsWith('video/') ||
-      mime.startsWith('audio/') ||
-      mime.startsWith('text/') ||
-      mime === 'application/pdf' ||
-      mime === 'application/json' ||
-      mime === 'application/xml'
-    )
-  }
-
-  async function downloadAttachment(file){
-    const href = resolveAttachmentUrl(file)
-    if (!href) return
-    const fileName = file?.name || file?.originalFilename || 'attachment'
-    try{
-      const res = await fetch(href)
-      if(!res.ok) throw new Error('download failed')
-      const blob = await res.blob()
-      const inferredType = inferMimeType(file, href)
-      const typedBlob = inferredType && inferredType !== blob.type
-        ? blob.slice(0, blob.size, inferredType)
-        : blob
-      const blobUrl = URL.createObjectURL(typedBlob)
-      const a = document.createElement('a')
-      a.href = blobUrl
-      a.download = fileName
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-
-      if (isViewableMime(typedBlob.type)) {
-        const opened = window.open(blobUrl, '_blank', 'noopener,noreferrer')
-        if (!opened) {
-          window.location.href = blobUrl
-        }
-      }
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000)
-    }catch(err){
-      console.error('download failed', err)
-      const opened = window.open(href, '_blank', 'noopener,noreferrer')
-      if (opened) return
-      const a = document.createElement('a')
-      a.href = href
-      a.download = fileName
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-    }
   }
 
   const location = useLocation()
@@ -407,6 +303,9 @@ export default function AllMyIssues(){
       if (notificationRef.current && !notificationRef.current.contains(event.target)) {
         setShowNotifications(false)
       }
+      if (editAssigneeRef.current && !editAssigneeRef.current.contains(event.target)) {
+        setEditAssigneeDropdownOpen(false)
+      }
     }
 
     document.addEventListener('mousedown', handleOutsideClick)
@@ -418,6 +317,67 @@ export default function AllMyIssues(){
     const timeoutId = setTimeout(() => topSearchInputRef.current?.focus(), 0)
     return () => clearTimeout(timeoutId)
   }, [mobileSearchOpen])
+
+  const selectedEditProjectData = useMemo(() => (
+    projects.find((projectItem) => projectKeyFrom(projectItem) === editFields.project)
+  ), [projects, editFields.project])
+
+  const editProjectTeamMembers = useMemo(() => {
+    const team = Array.isArray(selectedEditProjectData?.teamMembers) ? selectedEditProjectData.teamMembers : []
+    return team
+      .map((member) => ({
+        name: (member?.name || member?.email || 'Member').trim(),
+        email: (member?.email || '').trim().toLowerCase()
+      }))
+      .filter((member) => member.name || member.email)
+  }, [selectedEditProjectData])
+
+  const filteredEditTeamMembers = useMemo(() => {
+    const term = editAssigneeSearch.trim().toLowerCase()
+    if (!term) return editProjectTeamMembers
+    return editProjectTeamMembers.filter((member) => (
+      (member.name || '').toLowerCase().includes(term) ||
+      (member.email || '').toLowerCase().includes(term)
+    ))
+  }, [editAssigneeSearch, editProjectTeamMembers])
+
+  function updateEditFormatState() {
+    if (typeof document === 'undefined') return
+    const editor = editDescRef.current
+    if (!editor) return
+    const selection = document.getSelection()
+    if (!selection || selection.rangeCount === 0) return
+    const anchor = selection.anchorNode
+    const focus = selection.focusNode
+    if (editor.contains(anchor) || editor.contains(focus)) {
+      setEditFormatState({
+        bold: document.queryCommandState('bold'),
+        italic: document.queryCommandState('italic'),
+        underline: document.queryCommandState('underline')
+      })
+    }
+  }
+
+  useEffect(() => {
+    function handleSelectionChange() {
+      updateEditFormatState()
+    }
+    document.addEventListener('selectionchange', handleSelectionChange)
+    return () => document.removeEventListener('selectionchange', handleSelectionChange)
+  }, [])
+
+  useEffect(() => {
+    if (editingIndex < 0 || !editDescRef.current) return
+    editDescRef.current.innerHTML = editFields.description || ''
+  }, [editingIndex])
+
+  function preventLeadingSpaceInEditDescription(e) {
+    if (e.key !== ' ') return
+    const el = editDescRef.current
+    if (!el) return
+    const text = (el.innerText || '').replace(/\u00A0/g, ' ')
+    if (!text.trim()) e.preventDefault()
+  }
 
   function toggleNotifications() {
     setShowNotifications((prev) => !prev)
@@ -556,64 +516,104 @@ export default function AllMyIssues(){
   function openEdit(idx){
     const item = issues[idx]
     if(!item) return
+    const assigneeName = (item.assigneeName || item.assignee || '').toString().trim()
+    const assigneeEmail = (item.assigneeEmail || '').toString().trim().toLowerCase()
+    const nextAssignee = assigneeName || assigneeEmail
+      ? { name: assigneeName || assigneeEmail, email: assigneeEmail }
+      : null
     setEditFields({
+      ...createEmptyEditFields(),
       id: item.id,
-      project: item.project || '',
+      project: (item.project || item.projectKey || item.projectId || '').toString().trim(),
       issueType: item.issueType || 'Story',
       epicName: item.epicName || '',
       summary: item.summary || '',
       description: item.description || '',
-      attachments: item.attachments || []
-      ,difficulty: item.difficulty || 'Medium'
+      attachments: item.attachments || [],
+      difficulty: item.difficulty || 'Medium',
+      assignDate: normalizeDeadlineDate(item.assignDate),
+      deadlineDate: normalizeDeadlineDate(item.deadlineDate),
+      assigneeName,
+      assigneeEmail
     })
+    setEditAssignee(nextAssignee)
+    setEditAssigneeSearch(nextAssignee?.name || nextAssignee?.email || '')
+    setEditAssigneeDropdownOpen(false)
+    setEditFormatState({ bold: false, italic: false, underline: false })
     setEditErrors({})
     setEditingIndex(idx)
   }
 
-  function closeEdit(){ setEditingIndex(-1); setEditFields({ project:'', issueType:'Story', epicName:'', summary:'', description:'', attachments:[] }); setEditErrors({}) }
+  function closeEdit(){
+    setEditingIndex(-1)
+    setEditFields(createEmptyEditFields())
+    setEditErrors({})
+    setEditAssignee(null)
+    setEditAssigneeSearch('')
+    setEditAssigneeDropdownOpen(false)
+    setEditFormatState({ bold: false, italic: false, underline: false })
+    if (editDescRef.current) editDescRef.current.innerHTML = ''
+    if (editFileInputRef.current) editFileInputRef.current.value = ''
+  }
 
-  function saveEdit(){
+  async function saveEdit(){
     const errs = {}
-    if(!editFields.summary || editFields.summary.trim()==='') errs.summary = 'Summary required'
-    if(!editFields.project || editFields.project.trim()==='') errs.project = 'Project required'
-    if(!editFields.issueType || editFields.issueType.trim()==='') errs.issueType = 'Issue type required'
-    if(editFields.issueType==='Epic' && (!editFields.epicName || editFields.epicName.trim()==='')) errs.epicName = 'Epic name required'
+    if(!editFields.summary || editFields.summary.trim()==='') errs.summary = 'Summary is required'
+    if(!editFields.project || editFields.project.trim()==='') errs.project = 'Project is required'
+    if(!editFields.issueType || editFields.issueType.trim()==='') errs.issueType = 'Issue type is required'
+    if(editFields.issueType==='Epic' && (!editFields.epicName || editFields.epicName.trim()==='')) errs.epicName = 'Epic name is required'
+    if(editFields.deadlineDate && !editFields.assignDate) errs.assignDate = 'Assign date is required'
+    if(editFields.assignDate && !editFields.deadlineDate) errs.deadlineDate = 'Deadline date is required'
+    if(editFields.assignDate && editFields.deadlineDate && editFields.deadlineDate <= editFields.assignDate) errs.deadlineDate = 'Deadline date must be after assign date'
     setEditErrors(errs)
     if(Object.keys(errs).length>0) return
-    // send update to backend
+
     try{
       const id = editFields.id
+      const normalizedAttachments = (editFields.attachments || []).map((file) => ({
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        url: file.url,
+        publicId: file.publicId,
+        resourceType: file.resourceType,
+        format: file.format,
+        bytes: file.bytes,
+        data: file.data
+      }))
       const payload = {
-        project: editFields.project,
-        issueType: editFields.issueType,
-        epicName: editFields.epicName,
-        summary: editFields.summary,
-        description: editFields.description,
-        attachmentsJson: JSON.stringify(editFields.attachments || []),
+        project: editFields.project?.trim(),
+        issueType: editFields.issueType?.trim(),
+        epicName: editFields.epicName?.trim(),
+        summary: editFields.summary?.trim(),
+        description: editDescRef.current?.innerHTML || editFields.description || '',
+        assignDate: editFields.assignDate || '',
+        deadlineDate: editFields.deadlineDate || '',
+        assigneeName: editAssignee?.name || '',
+        assigneeEmail: editAssignee?.email || '',
+        attachmentsJson: JSON.stringify(normalizedAttachments),
         difficulty: editFields.difficulty || null
       }
-      fetch(`${API_BASE}/api/issues/${id}`, {
+
+      const updateResponse = await fetch(`${API_BASE}/api/issues/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type':'application/json', 'X-USER-ID': String(user?.id || '') },
         body: JSON.stringify(payload)
       })
-        .then(res => {
-          if(!res.ok) throw new Error('update failed')
-          return res.json()
-        })
-        .then(()=>{
-          // refresh list
-          return fetch(`${API_BASE}/api/issues`, { headers: { 'X-USER-ID': String(user?.id || '') } })
-        })
-        .then(r=>r.json())
-        .then(data=>{
-          const parsed = data.map(d => ({ ...d, attachments: d.attachmentsJson ? JSON.parse(d.attachmentsJson) : (d.attachments || []) }))
-          setIssues(parsed.slice().reverse())
-          closeEdit()
-          refreshNotifications?.()
-        })
-        .catch(err=>{ console.error(err); alert('Failed to update issue') })
-    }catch(e){ console.error(e) }
+      if(!updateResponse.ok) throw new Error('update failed')
+
+      const refreshedResponse = await fetch(`${API_BASE}/api/issues`, { headers: { 'X-USER-ID': String(user?.id || '') } })
+      if(!refreshedResponse.ok) throw new Error('refresh failed')
+
+      const data = await refreshedResponse.json()
+      const parsed = data.map(d => ({ ...d, attachments: d.attachmentsJson ? JSON.parse(d.attachmentsJson) : (d.attachments || []) }))
+      setIssues(parsed.slice().reverse())
+      closeEdit()
+      refreshNotifications?.()
+    }catch(e){
+      console.error(e)
+      alert('Failed to update issue')
+    }
   }
 
   function handleDelete(idx){
@@ -887,8 +887,12 @@ export default function AllMyIssues(){
                 <div style={{textAlign:'right', display:'flex', alignItems:'center', gap:8}}>
                   {/* <div style={{fontWeight:700}}>{it.attachments?.length || 0} files</div> */}
                   <div style={{color:'#6b7280',fontSize:12,marginTop:6}}>{new Date(it.createdAt).toLocaleString()}</div>
-                  <button title="Edit" className="icon-btn" onClick={(e)=>{ e.stopPropagation(); openEdit(idx) }}><FiEdit /></button>
-                  <button title="Delete" className="icon-btn" onClick={(e)=>{ e.stopPropagation(); handleDelete(idx) }}><FiTrash2 /></button>
+                  {!isDeveloper && (
+                    <button title="Edit" className="icon-btn" onClick={(e)=>{ e.stopPropagation(); openEdit(idx) }}><FiEdit /></button>
+                  )}
+                  {!isDeveloper && (
+                    <button title="Delete" className="icon-btn" onClick={(e)=>{ e.stopPropagation(); handleDelete(idx) }}><FiTrash2 /></button>
+                  )}
                 </div>
               </div>
 
@@ -917,7 +921,7 @@ export default function AllMyIssues(){
                   {it.attachments.map((f,i)=> (
                     <div key={i} className="attachment-item" title={f.name}>
                       {(f.url || f.data) ? (
-                        <button type="button" className="attachment-name link-like" onClick={(e)=>{ e.stopPropagation(); e.preventDefault(); downloadAttachment(f) }}>{f.name}</button>
+                        <button type="button" className="attachment-name link-like" onClick={(e)=>{ e.stopPropagation(); e.preventDefault(); openIssueAttachment(f) }}>{f.name}</button>
                       ) : (
                         <span>{f.name}</span>
                       )}
@@ -934,29 +938,54 @@ export default function AllMyIssues(){
       </main>
 
       {selectedIssue && (
-        <IssueDetailModal issue={selectedIssue} onClose={() => setSelectedIssue(null)} resolveAttachmentUrl={resolveAttachmentUrl} />
+        <IssueDetailModal issue={selectedIssue} onClose={() => setSelectedIssue(null)} />
       )}
 
       {editingIndex > -1 && (
         <div className="create-issue-overlay" onClick={closeEdit}>
           <div className="create-issue-container" role="dialog" aria-modal="true" onClick={e=>e.stopPropagation()}>
+            <button type="button" className="btn modal-close create-issue-close" onClick={closeEdit} aria-label="Close" title="Close"><FiX size={18} /></button>
             <div className="create-issue-header d-flex align-items-center">
               <h4>Edit issue</h4>
-              <div className="ms-auto d-flex gap-2">
-                <button className="btn btn-link modal-close" onClick={closeEdit} title="Close"><FiArrowLeft size={18} /></button>
-              </div>
             </div>
 
-            <div className="create-issue-form">
+            <form className="create-issue-form" noValidate onSubmit={(e) => { e.preventDefault(); saveEdit() }}>
               <div className="form-row select-row">
                 <label>Project*</label>
                 <div className="select-control">
-                  <select className={`form-control project-select ${editErrors.project ? 'invalid' : ''}`} value={editFields.project}
-                    onChange={e=>setEditFields(prev=>({...prev, project:e.target.value}))}>
-                    <option>Zapier Content (ZC)</option>
-                    <option>KavyaProMan 360</option>
-                    <option>Website Redesign</option>
-                    <option>Mobile App</option>
+                  <select
+                    className={`form-control project-select ${editErrors.project ? 'invalid' : ''}`}
+                    value={editFields.project}
+                    onChange={e=>{
+                      const nextProject = e.target.value
+                      setEditFields(prev=>({
+                        ...prev,
+                        project: nextProject,
+                        assigneeName: '',
+                        assigneeEmail: ''
+                      }))
+                      setEditAssignee(null)
+                      setEditAssigneeSearch('')
+                      setEditAssigneeDropdownOpen(false)
+                      setEditErrors(prev=>({...prev, project:undefined}))
+                    }}
+                  >
+                    {projectsLoading && <option value="">Loading projects...</option>}
+                    {!projectsLoading && projects.length === 0 && (
+                      <option value="">{projectsError || 'No projects available'}</option>
+                    )}
+                    {!projectsLoading && editFields.project && !projects.some((projectItem) => projectKeyFrom(projectItem) === editFields.project) && (
+                      <option value={editFields.project}>{editFields.project}</option>
+                    )}
+                    {!projectsLoading && projects.map((projectItem) => {
+                      const key = projectKeyFrom(projectItem)
+                      if (!key) return null
+                      return (
+                        <option key={key} value={key}>
+                          {projectLabel(projectItem)}
+                        </option>
+                      )
+                    })}
                   </select>
                   {editErrors.project && <div className="error-text">{editErrors.project}</div>}
                 </div>
@@ -965,48 +994,204 @@ export default function AllMyIssues(){
               <div className="form-row two-col">
                 <div>
                   <label className='mb-2'>Issue Type*</label>
-                  <select className={`form-control ${editErrors.issueType ? 'invalid' : ''}`} value={editFields.issueType} onChange={e=>setEditFields(prev=>({...prev, issueType:e.target.value}))}>
+                  <select
+                    className={`form-control ${editErrors.issueType ? 'invalid' : ''}`}
+                    value={editFields.issueType}
+                    onChange={e=>{
+                      setEditFields(prev=>({...prev, issueType:e.target.value}))
+                      setEditErrors(prev=>({...prev, issueType:undefined}))
+                    }}
+                  >
                     <option>Epic</option>
                     <option>Story</option>
                     <option>Task</option>
                     <option>Bug</option>
                   </select>
+                  {editErrors.issueType && <div className="error-text">{editErrors.issueType}</div>}
                 </div>
 
                 <div>
                   <label className='mb-2'>Epic Name*</label>
-                  <input className={`form-control ${editErrors.epicName ? 'invalid' : ''}`} placeholder="Epic name" value={editFields.epicName} onChange={e=>setEditFields(prev=>({...prev, epicName:e.target.value}))} />
+                  <input
+                    className={`form-control ${editErrors.epicName ? 'invalid' : ''}`}
+                    placeholder="Provide a short name to identify this epic."
+                    value={editFields.epicName}
+                    onChange={e=>{
+                      setEditFields(prev=>({...prev, epicName: stripLeadingSpace(e.target.value)}))
+                      setEditErrors(prev=>({...prev, epicName:undefined}))
+                    }}
+                    onKeyDown={preventLeadingSpace}
+                  />
+                  {editErrors.epicName && <div className="error-text">{editErrors.epicName}</div>}
                 </div>
               </div>
 
               <div className="form-row">
                 <label>Summary*</label>
-                <input className={`form-control summary-input ${editErrors.summary ? 'invalid' : ''}`} value={editFields.summary} onChange={e=>setEditFields(prev=>({...prev, summary:e.target.value}))} />
+                <input
+                  className={`form-control summary-input ${editErrors.summary ? 'invalid' : ''}`}
+                  value={editFields.summary}
+                  onChange={e=>{
+                    setEditFields(prev=>({...prev, summary: stripLeadingSpace(e.target.value)}))
+                    setEditErrors(prev=>({...prev, summary:undefined}))
+                  }}
+                  onKeyDown={preventLeadingSpace}
+                />
+                {editErrors.summary && <div className="error-text">{editErrors.summary}</div>}
+              </div>
+
+              <div className="form-row three-col">
+                <div>
+                  <label>Assign Date</label>
+                  <input
+                    type="date"
+                    className={`form-control ${editErrors.assignDate ? 'invalid' : ''}`}
+                    value={editFields.assignDate}
+                    min={todayDateValue}
+                    onChange={(e) => {
+                      setEditFields(prev => ({ ...prev, assignDate: e.target.value }))
+                      setEditErrors(prev => ({ ...prev, assignDate: undefined }))
+                    }}
+                  />
+                  {editErrors.assignDate && <div className="error-text">{editErrors.assignDate}</div>}
+                </div>
+
+                <div>
+                  <label>Deadline Date</label>
+                  <input
+                    type="date"
+                    className={`form-control ${editErrors.deadlineDate ? 'invalid' : ''}`}
+                    value={editFields.deadlineDate}
+                    min={editFields.assignDate || todayDateValue}
+                    onChange={(e) => {
+                      setEditFields(prev => ({ ...prev, deadlineDate: e.target.value }))
+                      setEditErrors(prev => ({ ...prev, deadlineDate: undefined }))
+                    }}
+                  />
+                  {editErrors.deadlineDate && <div className="error-text">{editErrors.deadlineDate}</div>}
+                </div>
+
+                <div className="assignee-field" ref={editAssigneeRef}>
+                  <label>Assigned To</label>
+                  <div className={`assignee-search ${editAssigneeDropdownOpen ? 'open' : ''}`}>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Search team member..."
+                      value={editAssigneeSearch}
+                      onFocus={() => setEditAssigneeDropdownOpen(true)}
+                      onChange={(e) => {
+                        setEditAssigneeSearch(e.target.value)
+                        setEditAssignee(null)
+                        setEditFields(prev => ({ ...prev, assigneeName: '', assigneeEmail: '' }))
+                        setEditAssigneeDropdownOpen(true)
+                      }}
+                    />
+                    {editAssigneeDropdownOpen && (
+                      <div className="assignee-dropdown">
+                        {filteredEditTeamMembers.length > 0 ? (
+                          filteredEditTeamMembers.map((member) => (
+                            <button
+                              type="button"
+                              key={`${member.email || member.name}`}
+                              className="assignee-option"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => {
+                                setEditAssignee(member)
+                                setEditAssigneeSearch(member.name || member.email)
+                                setEditAssigneeDropdownOpen(false)
+                                setEditFields(prev => ({
+                                  ...prev,
+                                  assigneeName: member.name || '',
+                                  assigneeEmail: member.email || ''
+                                }))
+                              }}
+                            >
+                              <span className="assignee-name">{member.name || 'Member'}</span>
+                              {member.email && <span className="assignee-email">{member.email}</span>}
+                            </button>
+                          ))
+                        ) : (
+                          <div className="assignee-empty">
+                            {editFields.project ? 'No team members for this project' : 'Select a project to see members'}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {editAssignee && (
+                    <div className="assignee-selected">
+                      <div className="assignee-selected-info">
+                        <span className="assignee-name">{editAssignee.name || 'Member'}</span>
+                        {editAssignee.email && <span className="assignee-email">{editAssignee.email}</span>}
+                      </div>
+                      <button
+                        type="button"
+                        className="assignee-clear"
+                        onClick={() => {
+                          setEditAssignee(null)
+                          setEditAssigneeSearch('')
+                          setEditFields(prev => ({ ...prev, assigneeName: '', assigneeEmail: '' }))
+                        }}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="form-row">
-                <label>Description</label>
-                <div className="form-row">
-                  <label>Difficulty</label>
-                  <div className="difficulty-group" title="Difficulty is fixed after creation">
-                    <div className="difficulty-radio high">
-                      <input id="edit-diff-high" type="radio" name="edit-difficulty" checked={editFields.difficulty==='High'} disabled readOnly />
-                      <label htmlFor="edit-diff-high"><span className="dot"/>High</label>
-                    </div>
-                    <div className="difficulty-radio medium">
-                      <input id="edit-diff-medium" type="radio" name="edit-difficulty" checked={editFields.difficulty==='Medium'} disabled readOnly />
-                      <label htmlFor="edit-diff-medium"><span className="dot"/>Medium</label>
-                    </div>
-                    <div className="difficulty-radio low">
-                      <input id="edit-diff-low" type="radio" name="edit-difficulty" checked={editFields.difficulty==='Low'} disabled readOnly />
-                      <label htmlFor="edit-diff-low"><span className="dot"/>Low</label>
-                    </div>
+                <label>Difficulty*</label>
+                <div className="difficulty-group" title="Difficulty is fixed after creation">
+                  <div className="difficulty-radio high">
+                    <input id="edit-diff-high" type="radio" name="edit-difficulty" checked={editFields.difficulty==='High'} disabled readOnly />
+                    <label htmlFor="edit-diff-high"><span className="dot"/>High</label>
+                  </div>
+                  <div className="difficulty-radio medium">
+                    <input id="edit-diff-medium" type="radio" name="edit-difficulty" checked={editFields.difficulty==='Medium'} disabled readOnly />
+                    <label htmlFor="edit-diff-medium"><span className="dot"/>Medium</label>
+                  </div>
+                  <div className="difficulty-radio low">
+                    <input id="edit-diff-low" type="radio" name="edit-difficulty" checked={editFields.difficulty==='Low'} disabled readOnly />
+                    <label htmlFor="edit-diff-low"><span className="dot"/>Low</label>
                   </div>
                 </div>
+              </div>
+
+              <div className="form-row">
+                <label>Description*</label>
                 <div className="toolbar format-toolbar">
-                  <button type="button" className="format-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>document.execCommand('bold')} aria-label="Bold"><strong>B</strong></button>
-                  <button type="button" className="format-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>document.execCommand('italic')} aria-label="Italic"><em>I</em></button>
-                  <button type="button" className="format-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>document.execCommand('underline')} aria-label="Underline"><u>U</u></button>
+                  <button
+                    type="button"
+                    className={`format-btn ${editFormatState.bold ? 'active' : ''}`}
+                    onMouseDown={e=>e.preventDefault()}
+                    onClick={() => { document.execCommand('bold'); updateEditFormatState() }}
+                    aria-label="Bold"
+                    aria-pressed={editFormatState.bold}
+                  >
+                    <strong>B</strong>
+                  </button>
+                  <button
+                    type="button"
+                    className={`format-btn ${editFormatState.italic ? 'active' : ''}`}
+                    onMouseDown={e=>e.preventDefault()}
+                    onClick={() => { document.execCommand('italic'); updateEditFormatState() }}
+                    aria-label="Italic"
+                    aria-pressed={editFormatState.italic}
+                  >
+                    <em>I</em>
+                  </button>
+                  <button
+                    type="button"
+                    className={`format-btn ${editFormatState.underline ? 'active' : ''}`}
+                    onMouseDown={e=>e.preventDefault()}
+                    onClick={() => { document.execCommand('underline'); updateEditFormatState() }}
+                    aria-label="Underline"
+                    aria-pressed={editFormatState.underline}
+                  >
+                    <u>U</u>
+                  </button>
 
                   <div className="align-group">
                     <button type="button" className="format-btn align-btn" onMouseDown={e=>e.preventDefault()} onClick={()=>document.execCommand('justifyLeft')} title="Align left"><FiAlignLeft /></button>
@@ -1022,14 +1207,25 @@ export default function AllMyIssues(){
                   <input type="file" ref={editFileInputRef} style={{display:'none'}} accept=".pdf,image/*,.doc,.docx" multiple onChange={(e)=>{ handleEditAddFiles(e.target.files) }} />
                 </div>
 
-                <div ref={editDescRef} className="form-control description-area" contentEditable={true} suppressContentEditableWarning onInput={e=>setEditFields(prev=>({...prev, description: editDescRef.current?.innerHTML || ''}))} dangerouslySetInnerHTML={{__html: editFields.description}} />
+                <div
+                  ref={editDescRef}
+                  className="form-control description-area"
+                  contentEditable={true}
+                  suppressContentEditableWarning
+                  onInput={() => {
+                    setEditFields(prev=>({...prev, description: editDescRef.current?.innerHTML || ''}))
+                    updateEditFormatState()
+                  }}
+                  onFocus={updateEditFormatState}
+                  onKeyDown={preventLeadingSpaceInEditDescription}
+                />
 
                 {editFields.attachments && editFields.attachments.length > 0 && (
                   <div className="attachments" style={{marginTop:8}}>
                     {editFields.attachments.map((f,i)=> (
                       <div className="attachment-item" key={i} title={f.name}>
                         {(f.url || f.data) ? (
-                          <button type="button" className="attachment-name link-like" onClick={(e)=>{ e.preventDefault(); downloadAttachment(f) }}>{f.name}</button>
+                          <button type="button" className="attachment-name link-like" onClick={(e)=>{ e.preventDefault(); openIssueAttachment(f) }}>{f.name}</button>
                         ) : (
                           <span className="attachment-name">{f.name}</span>
                         )}
@@ -1046,10 +1242,10 @@ export default function AllMyIssues(){
                 <div className="flex-fill" />
                 <div className="action-right d-flex align-items-center gap-3">
                   <button type="button" className="btn btn-outline-secondary cancel-btn" onClick={closeEdit}>Cancel</button>
-                  <button type="button" className="btn btn-primary create-btn" onClick={saveEdit} disabled={uploadingEditAttachments}>Save</button>
+                  <button type="submit" className="btn btn-primary create-btn" disabled={uploadingEditAttachments}>Save</button>
                 </div>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       )}

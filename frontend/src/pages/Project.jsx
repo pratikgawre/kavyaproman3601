@@ -555,6 +555,29 @@ export default function Project() {
     }
   }
 
+  async function handleToggleProjectArchive(project, nextArchived) {
+    const projectId = project?.id
+    if (!projectId) return
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isArchived: Boolean(nextArchived) })
+      })
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(errorText || 'Failed to update project')
+      }
+      const updated = normalizeProject(await response.json(), displayName)
+      setProjects((current) => current.map((item) => (item.id === updated.id ? updated : item)))
+    } catch (err) {
+      alert(err.message || 'Failed to update project')
+    } finally {
+      setOpenProjectMenuId(null)
+    }
+  }
+
 
   function toggleSidebarForScreen() {
     setCollapsed((prev) => {
@@ -1499,6 +1522,15 @@ export default function Project() {
                               }}
                             >
                               Edit
+                            </button>
+                            <button
+                              className="project-menu-item"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                handleToggleProjectArchive(project, !project.isArchived)
+                              }}
+                            >
+                              {project.isArchived ? 'Unarchive' : 'Archive'}
                             </button>
                             <button
                               className="project-menu-item danger"
