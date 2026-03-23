@@ -29,6 +29,69 @@ function issueProjectKeyFrom(issueItem) {
   return (issueItem?.project || issueItem?.projectKey || issueItem?.projectId || '').toString().trim().toUpperCase()
 }
 
+function normalizeStatus(value) {
+  const normalized = (value || '').toString().trim().toLowerCase()
+  if (normalized === 'todo' || normalized === 'to-do' || normalized === 'to do') return 'todo'
+  if (normalized === 'progress' || normalized === 'in-progress' || normalized === 'in progress') return 'progress'
+  if (normalized === 'review' || normalized === 'in-review' || normalized === 'in review') return 'review'
+  if (normalized === 'done' || normalized === 'completed') return 'done'
+  return normalized
+}
+
+function parseBackendDate(value) {
+  if (!value) return null
+  if (value instanceof Date) return value
+  if (Array.isArray(value) && value.length >= 3) {
+    const year = Number(value[0])
+    const monthIndex = Number(value[1]) - 1
+    const day = Number(value[2])
+    const hour = Number(value[3] || 0)
+    const minute = Number(value[4] || 0)
+    const second = Number(value[5] || 0)
+    const nano = Number(value[6] || 0)
+    if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || !Number.isFinite(day)) return null
+    const ms = Number.isFinite(nano) ? Math.floor(nano / 1_000_000) : 0
+    const parsed = new Date(year, monthIndex, day, hour, minute, second, ms)
+    return Number.isNaN(parsed.getTime()) ? null : parsed
+  }
+  if (typeof value === 'object') {
+    const year = Number(value.year)
+    const monthValue = Number(value.monthValue ?? value.month)
+    const day = Number(value.dayOfMonth ?? value.day)
+    const hour = Number(value.hour ?? 0)
+    const minute = Number(value.minute ?? 0)
+    const second = Number(value.second ?? 0)
+    const nano = Number(value.nano ?? 0)
+    if (Number.isFinite(year) && Number.isFinite(monthValue) && Number.isFinite(day)) {
+      const ms = Number.isFinite(nano) ? Math.floor(nano / 1_000_000) : 0
+      const parsed = new Date(year, monthValue - 1, day, hour, minute, second, ms)
+      return Number.isNaN(parsed.getTime()) ? null : parsed
+    }
+  }
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function formatDateForInput(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function normalizeDeadlineDate(value) {
+  if (!value) return ''
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return ''
+    if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return trimmed.slice(0, 10)
+    const parsed = parseBackendDate(trimmed)
+    return parsed ? formatDateForInput(parsed) : ''
+  }
+  const parsed = parseBackendDate(value)
+  return parsed ? formatDateForInput(parsed) : ''
+}
+
 export default function AllMyIssues(){
   const API_BASE = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:8080'
   const [issues, setIssues] = useState([])
@@ -321,6 +384,7 @@ export default function AllMyIssues(){
       return {
         status: parseCsvParam(qp, 'status'),
         issueType: parseCsvParam(qp, 'issueType'),
+        sprint: parseCsvParam(qp, 'sprint'),
         priority: parseCsvParam(qp, 'priority'),
         assignee: parseCsvParam(qp, 'assignee'),
         project: parseCsvParam(qp, 'project'),
@@ -328,7 +392,7 @@ export default function AllMyIssues(){
         dueTo: (qp.get('dueTo') || '').trim()
       }
     } catch (e) {
-      return { status: [], issueType: [], priority: [], assignee: [], project: [], dueFrom: '', dueTo: '' }
+      return { status: [], issueType: [], sprint: [], priority: [], assignee: [], project: [], dueFrom: '', dueTo: '' }
     }
   })()
 
@@ -439,10 +503,16 @@ export default function AllMyIssues(){
           })
         }
         if (filterParams.project.length) {
-          parsed = parsed.filter((p) => filterParams.project.includes((p.project || '').toString().toLowerCase()))
+          parsed = parsed.filter((p) => filterParams.project.includes((p.project || p.projectKey || p.projectId || '').toString().toLowerCase()))
         }
         if (filterParams.issueType.length) {
-          parsed = parsed.filter((p) => filterParams.issueType.includes((p.issueType || '').toString().toLowerCase()))
+          parsed = parsed.filter((p) => filterParams.issueType.includes((p.issueType || p.type || '').toString().toLowerCase()))
+        }
+        if (filterParams.sprint.length) {
+          parsed = parsed.filter((p) => {
+            const sprint = (p.sprintId || p.sprint || '').toString().trim().toLowerCase()
+            return filterParams.sprint.includes(sprint)
+          })
         }
         if (filterParams.priority.length) {
           parsed = parsed.filter((p) => {
@@ -458,27 +528,16 @@ export default function AllMyIssues(){
         }
         if (filterParams.status.length) {
           parsed = parsed.filter((p) => {
-            const status = (p.status || p.issueStatus || '').toString().toLowerCase()
+            const status = normalizeStatus(p.status || p.issueStatus)
             return filterParams.status.includes(status)
           })
         }
         if (filterParams.dueFrom || filterParams.dueTo) {
           parsed = parsed.filter((p) => {
-            const dateValue = p.dueDate || p.createdAt
-            if (!dateValue) return false
-            const issueDate = new Date(dateValue)
-            if (Number.isNaN(issueDate.getTime())) return false
-            if (filterParams.dueFrom) {
-              const from = new Date(filterParams.dueFrom)
-              if (!Number.isNaN(from.getTime()) && issueDate < from) return false
-            }
-            if (filterParams.dueTo) {
-              const to = new Date(filterParams.dueTo)
-              if (!Number.isNaN(to.getTime())) {
-                to.setHours(23, 59, 59, 999)
-                if (issueDate > to) return false
-              }
-            }
+            const issueDate = normalizeDeadlineDate(p.deadlineDate || p.dueDate || p.deadline || p.createdAt)
+            if (!issueDate) return false
+            if (filterParams.dueFrom && issueDate < filterParams.dueFrom) return false
+            if (filterParams.dueTo && issueDate > filterParams.dueTo) return false
             return true
           })
         }

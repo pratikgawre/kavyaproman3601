@@ -45,6 +45,22 @@ function normalizeSprintStatus(status) {
   return 'planned'
 }
 
+const STATUS_FILTER_OPTIONS = [
+  { value: 'todo', label: 'To Do' },
+  { value: 'progress', label: 'In Progress' },
+  { value: 'review', label: 'In Review' },
+  { value: 'done', label: 'Done' }
+]
+
+const DEFAULT_ISSUE_TYPE_OPTIONS = [
+  { value: 'epic', label: 'Epic' },
+  { value: 'story', label: 'Story' },
+  { value: 'task', label: 'Task' },
+  { value: 'bug', label: 'Bug' }
+]
+
+const PRIORITY_FILTER_ORDER = ['critical', 'high', 'medium', 'low']
+
 function normalizeProjectMatchValue(value) {
   return (value || '').toString().trim().toLowerCase()
 }
@@ -60,6 +76,12 @@ function getProjectMatchKeys(projectItem) {
       .map(normalizeProjectMatchValue)
       .filter(Boolean)
   )
+}
+
+function formatProjectLabel(projectItem) {
+  const key = (projectItem?.projectKey || projectItem?.id || '').toString().trim()
+  const name = projectItem?.name || key || 'Project'
+  return key ? `${name} (${key})` : name
 }
 
 function parseBackendDate(value) {
@@ -109,13 +131,94 @@ function normalizeDeadlineDate(value) {
   return parsed ? formatDateForInput(parsed) : ''
 }
 
-function getDefaultDueDateRange(daysBack = 30) {
-  const today = new Date()
-  const to = formatDateForInput(today)
-  const fromDate = new Date(today)
-  fromDate.setDate(fromDate.getDate() - daysBack)
-  const from = formatDateForInput(fromDate)
-  return { from, to }
+function normalizeIssueTypeValue(value) {
+  return (value || '').toString().trim().toLowerCase()
+}
+
+function formatIssueTypeLabel(value) {
+  const normalized = normalizeIssueTypeValue(value)
+  const labels = {
+    epic: 'Epic',
+    story: 'Story',
+    task: 'Task',
+    bug: 'Bug',
+    'sub-task': 'Sub-task',
+    subtask: 'Sub-task'
+  }
+  if (labels[normalized]) return labels[normalized]
+  if (!normalized) return 'Issue'
+  return normalized
+    .split(/[\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function normalizePriorityValue(priority, difficulty) {
+  const normalized = (priority || difficulty || '').toString().trim().toLowerCase()
+  if (normalized === 'highest') return 'critical'
+  return normalized
+}
+
+function priorityLabelFromValue(value) {
+  const normalized = normalizePriorityValue(value)
+  if (normalized === 'critical') return 'Critical'
+  if (normalized === 'high') return 'High'
+  if (normalized === 'medium') return 'Medium'
+  if (normalized === 'low') return 'Low'
+  if (!normalized) return 'Priority'
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1)
+}
+
+function priorityDotClass(value) {
+  const normalized = normalizePriorityValue(value)
+  if (normalized === 'critical') return 'dot-red'
+  if (normalized === 'high') return 'dot-orange'
+  if (normalized === 'medium') return 'dot-yellow'
+  if (normalized === 'low') return 'dot-green'
+  return 'dot-blue'
+}
+
+function formatSprintStatusLabel(status) {
+  const normalized = normalizeSprintStatus(status)
+  if (normalized === 'active') return 'Active'
+  if (normalized === 'completed') return 'Completed'
+  return 'Planned'
+}
+
+function formatSprintName(sprint) {
+  const name = (sprint?.name || '').toString().trim()
+  if (name) return name
+  const order = Number(sprint?.order)
+  if (Number.isFinite(order) && order > 0) return `Sprint ${order}`
+  return 'Untitled sprint'
+}
+
+function compareFilterLabels(a, b) {
+  return a.localeCompare(b, undefined, { sensitivity: 'base' })
+}
+
+function uniqueNormalizedValues(values, normalizer = normalizeProjectMatchValue) {
+  return Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .map((value) => normalizer(value))
+        .filter(Boolean)
+    )
+  )
+}
+
+function normalizeFilterCriteria(criteria = {}) {
+  return {
+    status: uniqueNormalizedValues(criteria.status, normalizeStatus),
+    issueType: uniqueNormalizedValues(criteria.issueType, normalizeIssueTypeValue),
+    sprint: uniqueNormalizedValues(criteria.sprint, normalizeProjectMatchValue),
+    priority: uniqueNormalizedValues(criteria.priority, (value) => normalizePriorityValue(value)),
+    assignee: uniqueNormalizedValues(criteria.assignee, normalizeProjectMatchValue),
+    project: uniqueNormalizedValues(criteria.project, normalizeProjectMatchValue),
+    dueFrom: normalizeDeadlineDate(criteria.dueFrom),
+    dueTo: normalizeDeadlineDate(criteria.dueTo)
+  }
 }
 
 function stripLeadingSpace(value) {
@@ -186,11 +289,7 @@ export default function Dashboard({ initialShowCreate = false }) {
   const avatar = user?.avatar || ''
   const projectKeyFrom = (projectItem) => (projectItem?.projectKey || projectItem?.id || '').toString().trim()
   const issueProjectKeyFrom = (issueItem) => (issueItem?.project || issueItem?.projectKey || issueItem?.projectId || '').toString().trim().toUpperCase()
-  const projectLabel = (projectItem) => {
-    const key = projectKeyFrom(projectItem)
-    const name = projectItem?.name || key || 'Project'
-    return key ? `${name} (${key})` : name
-  }
+  const projectLabel = formatProjectLabel
 
   // sync sidebar state from global controller
   useEffect(() => {
@@ -343,19 +442,6 @@ export default function Dashboard({ initialShowCreate = false }) {
   }, [])
 
   useEffect(() => {
-    if (!showFilters) return
-    const { from, to } = getDefaultDueDateRange(30)
-    setSelectedFilters((prev) => {
-      const dueFrom = prev.dueFrom || from
-      return {
-        ...prev,
-        dueFrom: dueFrom > to ? from : dueFrom,
-        dueTo: to
-      }
-    })
-  }, [showFilters])
-
-  useEffect(() => {
     if (!mobileSearchOpen) return
     const timeoutId = setTimeout(() => topSearchInputRef.current?.focus(), 0)
     return () => clearTimeout(timeoutId)
@@ -365,7 +451,12 @@ export default function Dashboard({ initialShowCreate = false }) {
     try {
       const raw = localStorage.getItem('dashboardSavedFilters')
       const parsed = raw ? JSON.parse(raw) : []
-      if (Array.isArray(parsed)) setSavedFilters(parsed)
+      if (Array.isArray(parsed)) {
+        setSavedFilters(parsed.map((item) => ({
+          ...item,
+          criteria: normalizeFilterCriteria(item?.criteria)
+        })))
+      }
     } catch (err) {
       console.error('failed to load saved filters', err)
     }
@@ -772,6 +863,8 @@ export default function Dashboard({ initialShowCreate = false }) {
   const normalizedSprints = useMemo(() => (
     (sprints || []).map((sprint) => ({
       ...sprint,
+      id: (sprint?.id || sprint?._id || '').toString().trim(),
+      name: formatSprintName(sprint),
       projectKey: (sprint?.projectKey || '').toString().trim().toUpperCase(),
       status: normalizeSprintStatus(sprint.status)
     }))
@@ -780,6 +873,18 @@ export default function Dashboard({ initialShowCreate = false }) {
     if (!activeProjectKeys.size) return normalizedSprints
     return normalizedSprints.filter((sprint) => sprint.projectKey && activeProjectKeys.has(sprint.projectKey))
   }, [activeProjectKeys, normalizedSprints])
+  const sprintLookupById = useMemo(() => {
+    const lookup = new Map()
+    normalizedSprints.forEach((sprint) => {
+      const value = normalizeProjectMatchValue(sprint?.id)
+      if (!value) return
+      lookup.set(value, {
+        label: sprint?.name || 'Untitled sprint',
+        meta: formatSprintStatusLabel(sprint?.status)
+      })
+    })
+    return lookup
+  }, [normalizedSprints])
   const sprintRecencyTime = (sprint) => {
     const date = parseBackendDate(sprint?.updatedAt || sprint?.createdAt || sprint?.startDate || sprint?.start)
     return date ? date.getTime() : 0
@@ -831,6 +936,120 @@ export default function Dashboard({ initialShowCreate = false }) {
     const daysPast = Math.abs(daysUntilEnd)
     return `Ended ${daysPast} day${daysPast === 1 ? '' : 's'} ago`
   }, [activeSprint, sprintsError, sprintsLoading])
+  const filterableIssues = useMemo(() => (
+    dashboardIssues.filter((issue) => {
+      const assigneeEmail = (issue?.assigneeEmail || '').toString().toLowerCase()
+      const assigneeName = (issue?.assigneeName || issue?.assignee || '').toString().trim().toLowerCase()
+      const creatorEmail = (issue?.creatorEmail || '').toString().toLowerCase()
+      const creatorName = (issue?.creatorName || issue?.creator || '').toString().trim().toLowerCase()
+      const assignedToUser =
+        (assigneeEmail && userEmail && assigneeEmail === userEmail) ||
+        (assigneeName && normalizedUserName && assigneeName === normalizedUserName)
+      const createdByUser =
+        (creatorEmail && userEmail && creatorEmail === userEmail) ||
+        (creatorName && normalizedUserName && creatorName === normalizedUserName)
+      return assignedToUser || createdByUser
+    })
+  ), [dashboardIssues, normalizedUserName, userEmail])
+  const statusFilterOptions = useMemo(() => (
+    STATUS_FILTER_OPTIONS.map((option) => ({
+      ...option,
+      count: filterableIssues.filter((issue) => normalizeStatus(issue?.status) === option.value).length
+    }))
+  ), [filterableIssues])
+  const issueTypeFilterOptions = useMemo(() => {
+    const options = new Map(DEFAULT_ISSUE_TYPE_OPTIONS.map((option) => [option.value, option]))
+    filterableIssues.forEach((issue) => {
+      const value = normalizeIssueTypeValue(issue?.issueType || issue?.type)
+      if (!value || options.has(value)) return
+      options.set(value, { value, label: formatIssueTypeLabel(value) })
+    })
+    return Array.from(options.values())
+      .map((option) => ({
+        ...option,
+        count: filterableIssues.filter((issue) => normalizeIssueTypeValue(issue?.issueType || issue?.type) === option.value).length
+      }))
+      .sort((a, b) => compareFilterLabels(a.label, b.label))
+  }, [filterableIssues])
+  const priorityFilterOptions = useMemo(() => {
+    const values = new Set(PRIORITY_FILTER_ORDER)
+    filterableIssues.forEach((issue) => {
+      const value = normalizePriorityValue(issue?.priority, issue?.difficulty)
+      if (value) values.add(value)
+    })
+    return Array.from(values)
+      .filter(Boolean)
+      .map((value) => ({
+        value,
+        label: priorityLabelFromValue(value),
+        dotClass: priorityDotClass(value),
+        count: filterableIssues.filter((issue) => normalizePriorityValue(issue?.priority, issue?.difficulty) === value).length
+      }))
+      .filter((option) => option.count > 0 || PRIORITY_FILTER_ORDER.includes(option.value))
+      .sort((a, b) => PRIORITY_FILTER_ORDER.indexOf(a.value) - PRIORITY_FILTER_ORDER.indexOf(b.value))
+  }, [filterableIssues])
+  const assigneeFilterOptions = useMemo(() => {
+    const options = new Map()
+    filterableIssues.forEach((issue) => {
+      const label = (issue?.assigneeName || issue?.assignee || issue?.assigneeEmail || '').toString().trim()
+      const value = normalizeProjectMatchValue(label)
+      if (!label || !value) return
+      if (!options.has(value)) {
+        options.set(value, {
+          value,
+          label,
+          initials: getInitials(label),
+          count: 0
+        })
+      }
+      options.get(value).count += 1
+    })
+    return Array.from(options.values()).sort((a, b) => compareFilterLabels(a.label, b.label))
+  }, [filterableIssues])
+  const projectFilterOptions = useMemo(() => {
+    const counts = new Map()
+    filterableIssues.forEach((issue) => {
+      const value = normalizeProjectMatchValue(issueProjectKeyFrom(issue))
+      if (!value) return
+      counts.set(value, (counts.get(value) || 0) + 1)
+    })
+    return projects
+      .map((projectItem) => {
+        const key = projectKeyFrom(projectItem)
+        const value = normalizeProjectMatchValue(key)
+        if (!value) return null
+        return {
+          value,
+          label: projectLabel(projectItem),
+          count: counts.get(value) || 0
+        }
+      })
+      .filter(Boolean)
+      .filter((option) => option.count > 0 || selectedFilters.project.includes(option.value))
+      .sort((a, b) => compareFilterLabels(a.label, b.label))
+  }, [filterableIssues, projects, selectedFilters.project])
+  const sprintFilterOptions = useMemo(() => {
+    const counts = new Map()
+    filterableIssues.forEach((issue) => {
+      const value = normalizeProjectMatchValue(issue?.sprintId || issue?.sprint)
+      if (!value) return
+      counts.set(value, (counts.get(value) || 0) + 1)
+    })
+    const selectedSprintValues = new Set(selectedFilters.sprint)
+    const optionValues = new Set([...counts.keys(), ...selectedSprintValues])
+    return Array.from(optionValues)
+      .map((value) => {
+        const sprintDetails = sprintLookupById.get(value)
+        return {
+          value,
+          label: sprintDetails?.label || 'Untitled sprint',
+          meta: sprintDetails?.meta || '',
+          count: counts.get(value) || 0
+        }
+      })
+      .filter((option) => option.count > 0 || selectedSprintValues.has(option.value))
+      .sort((a, b) => compareFilterLabels(a.label, b.label))
+  }, [filterableIssues, selectedFilters.sprint, sprintLookupById])
   // load counts for dashboard summary
   useEffect(()=>{
     async function loadCounts(){
@@ -1064,17 +1283,18 @@ export default function Dashboard({ initialShowCreate = false }) {
     if (filters.priority.length) parts.push(`${filters.priority.length} priority`)
     if (filters.assignee.length) parts.push(`${filters.assignee.length} assignee`)
     if (filters.project.length) parts.push(`${filters.project.length} project`)
-    if (filters.dueFrom || filters.dueTo) parts.push('due date range')
+    if (filters.dueFrom || filters.dueTo) parts.push('deadline range')
     return parts.length ? parts.join(', ') : 'No filters selected'
   }
 
   function saveCurrentFilter() {
     if (activeFilterCount === 0) return
+    const normalizedCriteria = normalizeFilterCriteria(selectedFilters)
     const newFilter = {
       id: Date.now(),
       name: `Custom Filter ${savedFilters.length + 1}`,
-      description: getFilterSummary(selectedFilters),
-      criteria: { ...selectedFilters }
+      description: getFilterSummary(normalizedCriteria),
+      criteria: normalizedCriteria
     }
     const updated = [newFilter, ...savedFilters]
     setSavedFilters(updated)
@@ -1087,16 +1307,7 @@ export default function Dashboard({ initialShowCreate = false }) {
   }
 
   function applySavedFilter(criteria) {
-    setSelectedFilters({
-      status: [...criteria.status],
-      issueType: [...criteria.issueType],
-      sprint: [...criteria.sprint],
-      priority: [...criteria.priority],
-      assignee: [...criteria.assignee],
-      project: [...criteria.project],
-      dueFrom: criteria.dueFrom || '',
-      dueTo: criteria.dueTo || ''
-    })
+    setSelectedFilters(normalizeFilterCriteria(criteria))
   }
 
   function deleteSavedFilter(id) {
@@ -1121,6 +1332,7 @@ export default function Dashboard({ initialShowCreate = false }) {
     const params = new URLSearchParams()
     if (selectedFilters.status.length) params.set('status', selectedFilters.status.join(','))
     if (selectedFilters.issueType.length) params.set('issueType', selectedFilters.issueType.join(','))
+    if (selectedFilters.sprint.length) params.set('sprint', selectedFilters.sprint.join(','))
     if (selectedFilters.priority.length) params.set('priority', selectedFilters.priority.join(','))
     if (selectedFilters.assignee.length) params.set('assignee', selectedFilters.assignee.join(','))
     if (selectedFilters.project.length) params.set('project', selectedFilters.project.join(','))
@@ -1397,7 +1609,7 @@ export default function Dashboard({ initialShowCreate = false }) {
               />
             </div>
             <button className="btn btn-outline-secondary" onClick={() => setShowFilters(true)}>
-              Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+              Filters
             </button>
           </div>
         </header>
@@ -1408,9 +1620,11 @@ export default function Dashboard({ initialShowCreate = false }) {
               <div className="filters-modal-header d-flex align-items-start">
                 <div>
                   <h5><FiFilter className="me-2" /> Advanced Filters</h5>
-                  <p className="muted">Refine your search with multiple criteria</p>
+                  <p className="muted">
+                    Refine {filterableIssues.length} accessible issue{filterableIssues.length === 1 ? '' : 's'} using live project data.
+                  </p>
                 </div>
-                <button className="btn modal-close" onClick={() => setShowFilters(false)} aria-label="Close"><FiX size={18} /></button>
+                <button className="btn modal-close filters-modal-close" onClick={() => setShowFilters(false)} aria-label="Close"><FiX size={18} /></button>
               </div>
 
               <div className="filters-body">
@@ -1419,31 +1633,59 @@ export default function Dashboard({ initialShowCreate = false }) {
                     <div className="filter-section">
                       <h6>Status</h6>
                       <div className="filter-list">
-                        <label><input type="checkbox" checked={selectedFilters.status.includes('To Do')} onChange={() => toggleFilterSelection('status', 'To Do')} /> To Do</label>
-                        <label><input type="checkbox" checked={selectedFilters.status.includes('In Progress')} onChange={() => toggleFilterSelection('status', 'In Progress')} /> In Progress</label>
-                        <label><input type="checkbox" checked={selectedFilters.status.includes('In Review')} onChange={() => toggleFilterSelection('status', 'In Review')} /> In Review</label>
-                        <label><input type="checkbox" checked={selectedFilters.status.includes('Done')} onChange={() => toggleFilterSelection('status', 'Done')} /> Done</label>
-                        <label><input type="checkbox" checked={selectedFilters.status.includes('Backlog')} onChange={() => toggleFilterSelection('status', 'Backlog')} /> Backlog</label>
+                        {statusFilterOptions.map((option) => (
+                          <label key={option.value} className={`filter-option ${selectedFilters.status.includes(option.value) ? 'is-selected' : ''}`}>
+                            <input
+                              type="checkbox"
+                              checked={selectedFilters.status.includes(option.value)}
+                              onChange={() => toggleFilterSelection('status', option.value)}
+                            />
+                            <span className="filter-option-content">
+                              <span className="filter-option-label">{option.label}</span>
+                            </span>
+                          </label>
+                        ))}
                       </div>
                     </div>
 
                     <div className="filter-section">
                       <h6>Issue Type</h6>
                       <div className="filter-list">
-                        <label><input type="checkbox" checked={selectedFilters.issueType.includes('Epic')} onChange={() => toggleFilterSelection('issueType', 'Epic')} /> Epic</label>
-                        <label><input type="checkbox" checked={selectedFilters.issueType.includes('Story')} onChange={() => toggleFilterSelection('issueType', 'Story')} /> Story</label>
-                        <label><input type="checkbox" checked={selectedFilters.issueType.includes('Task')} onChange={() => toggleFilterSelection('issueType', 'Task')} /> Task</label>
-                        <label><input type="checkbox" checked={selectedFilters.issueType.includes('Bug')} onChange={() => toggleFilterSelection('issueType', 'Bug')} /> Bug</label>
-                        <label><input type="checkbox" checked={selectedFilters.issueType.includes('Sub-task')} onChange={() => toggleFilterSelection('issueType', 'Sub-task')} /> Sub-task</label>
+                        {issueTypeFilterOptions.map((option) => (
+                          <label key={option.value} className={`filter-option ${selectedFilters.issueType.includes(option.value) ? 'is-selected' : ''}`}>
+                            <input
+                              type="checkbox"
+                              checked={selectedFilters.issueType.includes(option.value)}
+                              onChange={() => toggleFilterSelection('issueType', option.value)}
+                            />
+                            <span className="filter-option-content">
+                              <span className="filter-option-label">{option.label}</span>
+                            </span>
+                          </label>
+                        ))}
                       </div>
                     </div>
 
                     <div className="filter-section">
                       <h6>Sprint</h6>
                       <div className="filter-list">
-                        <label><input type="checkbox" checked={selectedFilters.sprint.includes('Sprint 1 - Foundation')} onChange={() => toggleFilterSelection('sprint', 'Sprint 1 - Foundation')} /> Sprint 1 - Foundation <span className="muted">(completed)</span></label>
-                        <label><input type="checkbox" checked={selectedFilters.sprint.includes('Sprint 2 - Board Implementation')} onChange={() => toggleFilterSelection('sprint', 'Sprint 2 - Board Implementation')} /> Sprint 2 - Board Implementation <span className="muted">(active)</span></label>
-                        <label><input type="checkbox" checked={selectedFilters.sprint.includes('Sprint 3 - Advanced Features')} onChange={() => toggleFilterSelection('sprint', 'Sprint 3 - Advanced Features')} /> Sprint 3 - Advanced Features <span className="muted">(planned)</span></label>
+                        {sprintsLoading && <div className="empty-filter-state">Loading sprints...</div>}
+                        {!sprintsLoading && sprintFilterOptions.length === 0 && (
+                          <div className="empty-filter-state">No sprint-linked issues are available in this workspace yet.</div>
+                        )}
+                        {!sprintsLoading && sprintFilterOptions.map((option) => (
+                          <label key={option.value} className={`filter-option ${selectedFilters.sprint.includes(option.value) ? 'is-selected' : ''}`}>
+                            <input
+                              type="checkbox"
+                              checked={selectedFilters.sprint.includes(option.value)}
+                              onChange={() => toggleFilterSelection('sprint', option.value)}
+                            />
+                            <span className="filter-option-content">
+                              <span className="filter-option-label">{option.label}</span>
+                              {option.meta && <span className="filter-option-meta">{option.meta}</span>}
+                            </span>
+                          </label>
+                        ))}
                       </div>
                     </div>
                   </div>
@@ -1452,19 +1694,41 @@ export default function Dashboard({ initialShowCreate = false }) {
                     <div className="filter-section">
                       <h6>Priority</h6>
                       <div className="filter-list priority-list">
-                        <label><input type="checkbox" checked={selectedFilters.priority.includes('High')} onChange={() => toggleFilterSelection('priority', 'High')} /><span className="dot dot-red"/> High</label>
-                        <label><input type="checkbox" checked={selectedFilters.priority.includes('Medium')} onChange={() => toggleFilterSelection('priority', 'Medium')} /><span className="dot dot-yellow"/> Medium</label>
-                        <label><input type="checkbox" checked={selectedFilters.priority.includes('Low')} onChange={() => toggleFilterSelection('priority', 'Low')} /><span className="dot dot-green"/> Low</label>
+                        {priorityFilterOptions.map((option) => (
+                          <label key={option.value} className={`filter-option ${selectedFilters.priority.includes(option.value) ? 'is-selected' : ''}`}>
+                            <input
+                              type="checkbox"
+                              checked={selectedFilters.priority.includes(option.value)}
+                              onChange={() => toggleFilterSelection('priority', option.value)}
+                            />
+                            <span className={`dot ${option.dotClass}`} />
+                            <span className="filter-option-content">
+                              <span className="filter-option-label">{option.label}</span>
+                            </span>
+                          </label>
+                        ))}
                       </div>
                     </div>
 
                     <div className="filter-section">
                       <h6>Assignee</h6>
                       <div className="filter-list assignee-list">
-                        <label><input type="checkbox" checked={selectedFilters.assignee.includes('Sarah Johnson')} onChange={() => toggleFilterSelection('assignee', 'Sarah Johnson')} /> <span className="small-avatar">SJ</span> Sarah Johnson</label>
-                        <label><input type="checkbox" checked={selectedFilters.assignee.includes('Michael Chen')} onChange={() => toggleFilterSelection('assignee', 'Michael Chen')} /> <span className="small-avatar">MC</span> Michael Chen</label>
-                        <label><input type="checkbox" checked={selectedFilters.assignee.includes('Emily Rodriguez')} onChange={() => toggleFilterSelection('assignee', 'Emily Rodriguez')} /> <span className="small-avatar">ER</span> Emily Rodriguez</label>
-                        <label><input type="checkbox" checked={selectedFilters.assignee.includes('David Kim')} onChange={() => toggleFilterSelection('assignee', 'David Kim')} /> <span className="small-avatar">DK</span> David Kim</label>
+                        {assigneeFilterOptions.length === 0 && (
+                          <div className="empty-filter-state">No assignees found in your current issue list.</div>
+                        )}
+                        {assigneeFilterOptions.map((option) => (
+                          <label key={option.value} className={`filter-option ${selectedFilters.assignee.includes(option.value) ? 'is-selected' : ''}`}>
+                            <input
+                              type="checkbox"
+                              checked={selectedFilters.assignee.includes(option.value)}
+                              onChange={() => toggleFilterSelection('assignee', option.value)}
+                            />
+                            <span className="small-avatar">{option.initials}</span>
+                            <span className="filter-option-content">
+                              <span className="filter-option-label">{option.label}</span>
+                            </span>
+                          </label>
+                        ))}
                       </div>
                     </div>
 
@@ -1472,23 +1736,21 @@ export default function Dashboard({ initialShowCreate = false }) {
                       <h6>Project</h6>
                       <div className="filter-list project-list">
                         {projectsLoading && <div className="muted">Loading projects...</div>}
-                        {!projectsLoading && projects.length === 0 && (
-                          <div className="muted">{projectsError || 'No projects found'}</div>
+                        {!projectsLoading && projectFilterOptions.length === 0 && (
+                          <div className="muted">{projectsError || 'No project-specific issues found yet'}</div>
                         )}
-                        {!projectsLoading && projects.map((projectItem) => {
-                          const key = projectKeyFrom(projectItem)
-                          if (!key) return null
-                          return (
-                            <label key={key}>
+                        {!projectsLoading && projectFilterOptions.map((option) => (
+                            <label key={option.value} className={`filter-option ${selectedFilters.project.includes(option.value) ? 'is-selected' : ''}`}>
                               <input
                                 type="checkbox"
-                                checked={selectedFilters.project.includes(key)}
-                                onChange={() => toggleFilterSelection('project', key)}
+                                checked={selectedFilters.project.includes(option.value)}
+                                onChange={() => toggleFilterSelection('project', option.value)}
                               />
-                              {projectLabel(projectItem)}
+                              <span className="filter-option-content">
+                                <span className="filter-option-label">{option.label}</span>
+                              </span>
                             </label>
-                          )
-                        })}
+                        ))}
                       </div>
                     </div>
                   </div>
@@ -1498,13 +1760,13 @@ export default function Dashboard({ initialShowCreate = false }) {
 
                 <div className="due-range-row d-flex gap-3">
                   <div className="due-col">
-                    <div className="muted">Due Date Range</div>
+                    <div className="muted">Deadline Range</div>
                     <label className="small-muted">From</label>
                     <input
                       type="date"
                       className="date-input"
                       value={selectedFilters.dueFrom}
-                      max={selectedFilters.dueTo || todayDateValue}
+                      max={selectedFilters.dueTo || undefined}
                       onChange={(e) => setSelectedFilters(prev => ({ ...prev, dueFrom: e.target.value }))}
                     />
                   </div>
@@ -1515,7 +1777,6 @@ export default function Dashboard({ initialShowCreate = false }) {
                       className="date-input"
                       value={selectedFilters.dueTo}
                       min={selectedFilters.dueFrom || undefined}
-                      max={todayDateValue}
                       onChange={(e) => setSelectedFilters(prev => ({ ...prev, dueTo: e.target.value }))}
                     />
                   </div>
@@ -1525,8 +1786,8 @@ export default function Dashboard({ initialShowCreate = false }) {
               <div className="filters-modal-footer d-flex align-items-center">
                 <button className="link-clear" onClick={clearAllFilters} type="button">Clear All Filters</button>
                 <div className="ms-auto d-flex gap-3">
-                  <button className="btn btn-primary" onClick={applyFiltersToIssues} type="button">Apply</button>
                   <button className="btn btn-outline-secondary" onClick={() => setShowFilters(false)}>Close</button>
+                  <button className="btn btn-primary" onClick={applyFiltersToIssues} type="button">Apply Filters</button>
                   <button className="btn save-filter" onClick={saveCurrentFilter} disabled={activeFilterCount === 0}>Save Filter</button>
                 </div>
               </div>
