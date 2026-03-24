@@ -642,12 +642,7 @@ html[data-theme='light'][data-user-role='project-manager'] .mobile-toggle svg {
 .org-icon{width:36px;height:36px;border-radius:8px;background:#6b5bff;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
 .org-info .org-name{font-weight:700}
 .sidebar-footer{padding-top:12px;padding-bottom:6px;border-top:1px solid #f3f6f9;width:100%;margin-top:auto}
-.switch-org-btn{display:flex;align-items:center;justify-content:space-between;width:100%;background:rgba(13,110,253,0.03);border:1px solid #ffffff;padding:8px 10px;border-radius:10px;font-weight:700;cursor:pointer;font-size:14px}
-.switch-org-btn .switch-left{display:flex;align-items:center;color:#0f172a}
-.switch-org-btn .switch-text{flex:1;text-align:left;color:#0f172a}
-.switch-org-btn .switch-arrow{color:#6b7280}
-.switch-org-btn svg{width:16px;height:16px}
-.switch-org-btn:hover{background:rgba(13,110,253,0.05)}
+.switch-org-btn{display:none !important}
 .sidebar-footer .profile{width:100%}
 .logout-badge{
   background:linear-gradient(180deg,#fff,#fff);

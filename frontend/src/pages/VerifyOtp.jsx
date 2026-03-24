@@ -4,6 +4,8 @@ import './Auth.css'
 import { useAuth } from '../context/AuthContext'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080'
+const normalizeRoleValue = (role) => (role || '').toString().trim().toLowerCase()
+const getPostLoginRoute = (role) => (normalizeRoleValue(role) === 'admin' ? '/dashboard' : '/organization')
 
 export default function VerifyOtp() {
   const [code, setCode] = useState(['', '', '', '', '', ''])
@@ -48,13 +50,13 @@ export default function VerifyOtp() {
       // Decide next step depending on which flow initiated verification
       clearPending()
       if (flow === 'login' || flow === '2fa') {
-        // after login verification, store user and navigate to organization
+        // after login verification, store user and navigate to the appropriate landing page
         const userToStore = { id: body.userId, email: body.email }
         if (body.name) userToStore.name = body.name
         if (body.role) userToStore.role = body.role
         if (body.avatar) userToStore.avatar = body.avatar
         setUser(userToStore)
-        navigate('/organization')
+        navigate(getPostLoginRoute(body.role), { replace: true })
       } else {
         // registration flow -> go to login
         alert('Verification successful. Please login.')

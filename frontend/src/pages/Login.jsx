@@ -15,11 +15,13 @@ export default function Login() {
   const navigate = useNavigate()
   const { setPendingUserId, setPendingFlow, setUser } = useAuth()
 
-  const stripLeadingSpace = (value) => value.replace(/^\s+/, '')
-  const sanitizeEmail = (value) => stripLeadingSpace(value).replace(/[^A-Za-z0-9@.]/g, '')
-  const preventLeadingSpace = (e) => {
-    if (e.key === ' ' && (e.currentTarget.selectionStart ?? 0) === 0) e.preventDefault()
-  }
+const stripLeadingSpace = (value) => value.replace(/^\s+/, '')
+const sanitizeEmail = (value) => stripLeadingSpace(value).replace(/[^A-Za-z0-9@.]/g, '')
+const preventLeadingSpace = (e) => {
+  if (e.key === ' ' && (e.currentTarget.selectionStart ?? 0) === 0) e.preventDefault()
+}
+const normalizeRoleValue = (role) => (role || '').toString().trim().toLowerCase()
+const getPostLoginRoute = (role) => (normalizeRoleValue(role) === 'admin' ? '/dashboard' : '/organization')
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -63,7 +65,7 @@ export default function Login() {
       if (body.role) userToStore.role = body.role
       if (body.avatar) userToStore.avatar = body.avatar
       setUser(userToStore)
-      navigate('/organization', { replace: true })
+      navigate(getPostLoginRoute(body.role), { replace: true })
     } catch (err) {
       setError(err.message)
     }

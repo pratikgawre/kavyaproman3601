@@ -14,8 +14,16 @@ function OrganizationPage() {
   const [searchText, setSearchText] = useState('');
   const [activeMenuOrgId, setActiveMenuOrgId] = useState(null);
   const [deletingOrgId, setDeletingOrgId] = useState(null);
+  const isAdmin = (user?.role || '').toString().trim().toLowerCase() === 'admin'
 
   useEffect(() => {
+    if (isAdmin) {
+      setLoading(false)
+      setError('')
+      setOrganizations([])
+      return undefined
+    }
+
     const controller = new AbortController()
     setLoading(true)
     setError('')
@@ -41,7 +49,7 @@ function OrganizationPage() {
       })
 
     return () => controller.abort()
-  }, [API_BASE])
+  }, [API_BASE, isAdmin])
 
   const filteredOrganizations = useMemo(() => {
     const query = searchText.trim().toLowerCase()
@@ -130,6 +138,12 @@ function OrganizationPage() {
       setDeletingOrgId(null)
     }
   }
+
+  useEffect(() => {
+    if (isAdmin) {
+      navigate('/dashboard', { replace: true })
+    }
+  }, [isAdmin, navigate])
 
   return (
     <div className="org-list-container">

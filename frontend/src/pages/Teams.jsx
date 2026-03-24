@@ -325,7 +325,7 @@ export default function Teams() {
   // sync sidebar state from global controller
   useEffect(() => {
     fetchProjects();
-  }, [managerEmail, userEmail, isProjectManager, organizationId, organizationUsername, organizationName]);
+  }, [managerEmail, userEmail, isProjectManager, organizationId, organizationUsername, organizationName, isAdmin]);
 
   useEffect(() => {
     setSelectedProjectId('all');
@@ -472,17 +472,19 @@ export default function Teams() {
 
   const fetchProjects = async () => {
     const queryParams = new URLSearchParams();
-    if (isProjectManager && managerEmail) {
-      queryParams.set('managerEmail', managerEmail);
-    } else if (!isProjectManager && userEmail) {
-      queryParams.set('memberEmail', userEmail);
-    }
-    if (organizationId) {
-      queryParams.set('organizationId', organizationId);
-    } else if (organizationUsername) {
-      queryParams.set('organizationUsername', organizationUsername);
-    } else if (organizationName) {
-      queryParams.set('organizationName', organizationName);
+    if (!isAdmin) {
+      if (isProjectManager && managerEmail) {
+        queryParams.set('managerEmail', managerEmail);
+      } else if (!isProjectManager && userEmail) {
+        queryParams.set('memberEmail', userEmail);
+      }
+      if (organizationId) {
+        queryParams.set('organizationId', organizationId);
+      } else if (organizationUsername) {
+        queryParams.set('organizationUsername', organizationUsername);
+      } else if (organizationName) {
+        queryParams.set('organizationName', organizationName);
+      }
     }
     const query = queryParams.toString();
     const shouldFetchProjects = isAdmin || Boolean(query);
@@ -496,7 +498,7 @@ export default function Teams() {
     setProjectsLoading(true);
     setProjectsError('');
     try {
-      const requestUrl = `${PROJECTS_API_URL}${query ? `?${query}` : ''}`;
+      const requestUrl = `${PROJECTS_API_URL}${(!isAdmin && query) ? `?${query}` : ''}`;
       const response = await fetch(requestUrl, { signal: controller.signal });
       if (!response.ok) {
         throw new Error('Failed to fetch projects');
