@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import './Auth.css'
 import { useAuth } from '../context/AuthContext'
 
@@ -224,7 +224,7 @@ export default function Register() {
           <option>Business Analyst</option>
         </select>
         <button className="auth-btn" type="submit">Sign up</button>
-        <div className="auth-foot">Already have an account? <a href="/login">Sign in</a></div>
+        <div className="auth-foot">Already have an account? <Link to="/login">Sign in</Link></div>
       </form>
     </div>
   )

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { FaGithub, FaGoogle } from 'react-icons/fa'
 import './Auth.css'
 import { useAuth } from '../context/AuthContext'
@@ -130,7 +130,7 @@ export default function Login() {
           </button>
         </div>
         <div className="auth-row">
-          <a className="muted" href="/forgot-password">Forgot password?</a>
+          <Link className="muted" to="/forgot-password">Forgot password?</Link>
         </div>
         <button className="auth-btn" type="submit">Sign In</button>
         <div className="auth-divider text-black">Or continue with</div>
@@ -144,7 +144,7 @@ export default function Login() {
             <span>GitHub</span>
           </button>
         </div>
-        <div className="auth-foot">Don't have an account? <a href="/register">Sign up</a></div>
+        <div className="auth-foot">Don't have an account? <Link to="/register">Sign up</Link></div>
       </form>
     </div>
   )
