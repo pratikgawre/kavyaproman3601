@@ -2038,6 +2038,43 @@ html[data-theme='dark'] .total-issues-card .legend-row.legend-low:hover{
   color: #9a3412;
 }
 
+/* Active Sprint - enhanced hover visuals (match other stat cards) */
+@media (hover: hover) and (pointer: fine) {
+  .sprint-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 14px 32px rgba(79, 70, 229, 0.20);
+    border-color: rgba(79, 70, 229, 0.55);
+    background: linear-gradient(180deg, #ffffff 0%, #eef2ff 100%);
+  }
+
+  .sprint-card:hover .stat-title {
+    color: #4338ca;
+  }
+
+  .sprint-card:hover .time-remaining {
+    color: #4f46e5;
+  }
+
+  .sprint-card:hover .progress-track {
+    background: rgba(79, 70, 229, 0.10);
+  }
+
+  html[data-theme='dark'] .sprint-card:hover {
+    border-color: rgba(56, 189, 248, 0.55) !important;
+    background: linear-gradient(180deg, #000000 0%, #0b1220 100%) !important;
+    box-shadow: 0 22px 46px rgba(56, 189, 248, 0.24);
+  }
+
+  html[data-theme='dark'] .sprint-card:hover .stat-title,
+  html[data-theme='dark'] .sprint-card:hover .time-remaining {
+    color: #7dd3fc !important;
+  }
+
+  html[data-theme='dark'] .sprint-card:hover .progress-track {
+    background: rgba(56, 189, 248, 0.15) !important;
+  }
+}
+
 /* My Tasks - enhanced hover visuals for light and dark themes */
 @media (hover: hover) and (pointer: fine) {
   .dashboard-cards-2 .task-card:hover{
@@ -2316,7 +2353,7 @@ html[data-theme='light'][data-user-role='admin'] .sidebar-footer .logout-badge {
 
 .user-name {
   font-weight: 700;
-  color: #111827;
+  color: var(--text);
 }
 
 .user-email {
