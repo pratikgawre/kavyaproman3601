@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
-import { useNavigate } from 'react-router-dom'
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate, useLocation } from 'react-router-dom'
 import "./Teams.css";
 import "./Dashboard.css";
 import { FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLogOut, FiMenu, FiSearch, FiBell, FiPlus, FiX, FiCheck, FiRepeat, FiArrowRight } from 'react-icons/fi'
@@ -32,7 +32,8 @@ const getAvatarInitials = (name, email) => {
 const normalizeRole = (role) => (role || '').trim().toLowerCase()
 const getRoleLabel = (role) => {
   const normalized = normalizeRole(role)
-  if (normalized === 'admin' || normalized === 'project manager') return 'Project Manager'
+  if (normalized === 'admin') return 'Admin'
+  if (normalized === 'project manager') return 'Project Manager'
   return role || ''
 }
 const isProjectManagerRole = (role) => {
@@ -73,9 +74,38 @@ function calculateStats(data, totalIssuesCount = 0, activeProjectCount = 0) {
   };
 }
 
+const isProjectOnHold = (project) => {
+  if (!project) return false;
+  const type = (project?.projectType || '').toLowerCase();
+  if (type.includes('hold') || type.includes('pause') || type.includes('freeze')) return true;
+  const name = (project?.name || '').toLowerCase();
+  return name.includes('hold');
+};
+
+const getProjectStatusMetadata = (project) => {
+  if (!project) {
+    return { label: 'Unknown', className: 'unknown' };
+  }
+  if (project?.isArchived) {
+    return { label: 'Archived', className: 'archived' };
+  }
+  if (isProjectOnHold(project)) {
+    return { label: 'On Hold', className: 'on-hold' };
+  }
+  const total = Number(project?.totalIssues ?? 0);
+  const completed = Number(project?.completedIssues ?? 0);
+  if (total > 0 && completed >= total) {
+    return { label: 'Completed', className: 'completed' };
+  }
+  return { label: 'Active', className: 'active' };
+};
+
 export default function Teams() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user, clearUser } = useAuth()
+  const [selectedManagerEmail, setSelectedManagerEmail] = useState('')
+  const [selectedManagerName, setSelectedManagerName] = useState('')
   const [profileUser, setProfileUser] = useState(null)
   const [profileLoading, setProfileLoading] = useState(false)
   const currentUser = profileUser || user || {}
@@ -98,7 +128,27 @@ export default function Teams() {
   const [projects, setProjects] = useState([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [projectsError, setProjectsError] = useState('');
+  const [globalProjects, setGlobalProjects] = useState([]);
+  const [globalProjectsLoading, setGlobalProjectsLoading] = useState(false);
+  const [globalProjectsError, setGlobalProjectsError] = useState('');
+  const [adminUsers, setAdminUsers] = useState([]);
+  const [adminUsersLoading, setAdminUsersLoading] = useState(false);
+  const [adminUsersError, setAdminUsersError] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState('all');
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const managerEmail = (params.get('managerEmail') || '').trim().toLowerCase();
+    setSelectedManagerEmail(managerEmail);
+    setSelectedManagerName(params.get('managerName') || '');
+  }, [location.search]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('openInvite') === '1' || params.has('openInvite')) {
+      setShowInviteModal(true);
+    }
+  }, [location.search]);
 
   const [activeTab, setActiveTab] = useState("Members");
   const [searchTerm, setSearchTerm] = useState("");
@@ -111,6 +161,7 @@ export default function Teams() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [topSearchText, setTopSearchText] = useState("");
+  const [roleUpdatedAt, setRoleUpdatedAt] = useState(0);
   const {
     notifications,
     unreadCount,
@@ -131,6 +182,9 @@ export default function Teams() {
   const memberListRef = useRef(null);
   const topSearchInputRef = useRef(null);
   const nameSuggestRef = useRef(null);
+  const globalProjectsAbortController = useRef(null);
+  const projectsFetchStarted = useRef(false);
+  const globalProjectsFetchRequested = useRef(false);
 
   const [inviteFormData, setInviteFormData] = useState({
     name: '',
@@ -152,6 +206,7 @@ export default function Teams() {
   const organizationUsername = selectedOrg?.username || selectedOrg?.slug || null;
   const organizationName = selectedOrg?.name || null;
   const isProjectManager = isProjectManagerRole(currentUser?.role);
+  const isAdmin = normalizeRole(currentUser?.role) === 'admin';
   const visibleTab = isProjectManager ? activeTab : "Members";
 
   useEffect(() => {
@@ -173,7 +228,43 @@ export default function Teams() {
     return () => { isMounted = false }
   }, [API_BASE_URL, user?.id])
 
+  useEffect(() => {
+    if (!user?.id || !isAdmin) {
+      setAdminUsers([])
+      setAdminUsersError('')
+      setAdminUsersLoading(false)
+      return
+    }
+    const controller = new AbortController()
+    setAdminUsersLoading(true)
+    setAdminUsersError('')
+    fetch(`${API_BASE_URL}/api/admin/users?limit=200`, {
+      headers: { 'X-USER-ID': String(user.id) },
+      signal: controller.signal
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(res.statusText || 'Unable to load users')
+        return res.json()
+      })
+      .then((data) => {
+        setAdminUsers(Array.isArray(data) ? data : [])
+      })
+      .catch((err) => {
+        if (err?.name === 'AbortError') return
+        console.error('Failed to load admin users', err)
+        setAdminUsersError(err?.message || 'Unable to load users')
+        setAdminUsers([])
+      })
+      .finally(() => {
+        setAdminUsersLoading(false)
+      })
+    return () => controller.abort()
+  }, [API_BASE_URL, isAdmin, user?.id])
+
   const scopeMembersForUser = (list, allowedEmails = null) => {
+    if (isAdmin) {
+      return list;
+    }
     if (!isProjectManager) {
       const normalizedSet = allowedEmails && allowedEmails.size ? allowedEmails : null;
       if (!normalizedSet) {
@@ -210,7 +301,18 @@ export default function Teams() {
   // Fetch team members and stats on component mount
   useEffect(() => {
     fetchTeamMembers();
-  }, [managerEmail, userEmail, isProjectManager, organizationId, organizationUsername, organizationName]);
+  }, [
+    managerEmail,
+    userEmail,
+    isProjectManager,
+    organizationId,
+    organizationUsername,
+    organizationName,
+    isAdmin,
+    adminUsers,
+    selectedManagerEmail,
+    roleUpdatedAt
+  ]);
 
   useEffect(() => {
     fetchIssues();
@@ -287,25 +389,59 @@ export default function Teams() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const handleRoleUpdate = () => setRoleUpdatedAt(Date.now());
+    window.addEventListener('role:updated', handleRoleUpdate);
+    return () => window.removeEventListener('role:updated', handleRoleUpdate);
+  }, []);
+
+  useEffect(() => {
     if (!mobileSearchOpen) return;
     const timeoutId = setTimeout(() => topSearchInputRef.current?.focus(), 0);
     return () => clearTimeout(timeoutId);
   }, [mobileSearchOpen]);
+
+  useEffect(() => {
+    return () => {
+      globalProjectsAbortController.current?.abort();
+    };
+  }, []);
 
   const toggleNotifications = () => {
     setShowNotifications((prev) => !prev);
   };
 
 
+  const buildAdminMembers = () => adminUsers.map((member, index) => ({
+    id: member.id || `admin-${index}`,
+    name: member.name || member.email || `User ${index + 1}`,
+    email: member.email || '',
+    role: member.role || 'Member',
+    managerEmail: member.email || '',
+    projects: member.projects ?? 0,
+    completedProjects: member.completedProjects ?? 0,
+    activeIssues: member.activeIssues ?? 0
+  }))
+
   const fetchTeamMembers = async () => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 1500);
     try {
+      const managerFilterEmail = selectedManagerEmail;
+      if (isAdmin && !managerFilterEmail) {
+        setMembers(buildAdminMembers());
+        setUsingFallbackData(false);
+        return;
+      }
       const queryParams = new URLSearchParams();
-      if (isProjectManager && managerEmail) {
-        queryParams.set('managerEmail', managerEmail);
-      } else if (!isProjectManager && userEmail) {
-        queryParams.set('memberEmail', userEmail);
+      if (managerFilterEmail) {
+        queryParams.set('managerEmail', managerFilterEmail);
+      } else if (!isAdmin) {
+        if (isProjectManager && managerEmail) {
+          queryParams.set('managerEmail', managerEmail);
+        } else if (!isProjectManager && userEmail) {
+          queryParams.set('memberEmail', userEmail);
+        }
       }
       if (organizationId) {
         queryParams.set('organizationId', organizationId);
@@ -349,16 +485,19 @@ export default function Teams() {
       queryParams.set('organizationName', organizationName);
     }
     const query = queryParams.toString();
-    if (!query) {
+    const shouldFetchProjects = isAdmin || Boolean(query);
+    if (!shouldFetchProjects) {
       setProjects([]);
       return;
     }
+    projectsFetchStarted.current = true;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 2000);
     setProjectsLoading(true);
     setProjectsError('');
     try {
-      const response = await fetch(`${PROJECTS_API_URL}?${query}`, { signal: controller.signal });
+      const requestUrl = `${PROJECTS_API_URL}${query ? `?${query}` : ''}`;
+      const response = await fetch(requestUrl, { signal: controller.signal });
       if (!response.ok) {
         throw new Error('Failed to fetch projects');
       }
@@ -373,6 +512,35 @@ export default function Teams() {
       setProjectsLoading(false);
     }
   };
+
+  const fetchAllProjects = useCallback(async () => {
+    globalProjectsAbortController.current?.abort();
+    const controller = new AbortController();
+    globalProjectsAbortController.current = controller;
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+    setGlobalProjectsLoading(true);
+    setGlobalProjectsError('');
+    try {
+      const response = await fetch(PROJECTS_API_URL, { signal: controller.signal });
+      if (!response.ok) {
+        throw new Error('Failed to fetch projects');
+      }
+      const data = await response.json();
+      const list = Array.isArray(data) ? data : [];
+      setGlobalProjects(list);
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        return;
+      }
+      setGlobalProjects([]);
+      setGlobalProjectsError(err.message || 'Unable to load projects');
+    } finally {
+      clearTimeout(timeoutId);
+      setGlobalProjectsLoading(false);
+      globalProjectsAbortController.current = null;
+      globalProjectsFetchRequested.current = false;
+    }
+  }, [PROJECTS_API_URL]);
 
   const fetchIssues = async () => {
     if (!user?.id) {
@@ -746,7 +914,7 @@ export default function Teams() {
         return;
       }
       const selectedProjectForInvite = inviteFormData.projectId
-        ? projects.find((project) => {
+        ? inviteProjectOptions.find((project) => {
           const idValue = project?.id ? String(project.id) : '';
           const matchId = idValue && idValue === String(inviteFormData.projectId);
           const matchKey = getProjectId(project) === inviteFormData.projectId;
@@ -1000,7 +1168,7 @@ export default function Teams() {
     }
   };
 
-  const getProjectId = (project) => (project?.id || project?.projectKey || project?.key || project?.code || '').toString();
+  const getProjectId = (project) => (project?.id || project?._id || project?.projectKey || project?.key || project?.code || '').toString();
   const isProjectCompleted = (project) => {
     if (!project) return false;
     if (project?.isArchived) return true;
@@ -1010,8 +1178,19 @@ export default function Teams() {
   };
   const completedProjects = projects.filter((project) => isProjectCompleted(project));
   const activeProjects = projects.filter((project) => !isProjectCompleted(project));
+  const globalCompletedProjects = globalProjects.filter((project) => isProjectCompleted(project));
+  const globalActiveProjects = globalProjects.filter((project) => !isProjectCompleted(project));
+  const adminProjectSource = globalProjects.length > 0 ? globalProjects : projects;
+  const dropdownProjects = isAdmin ? adminProjectSource : activeProjects;
+  const dropdownLoading = isAdmin
+    ? (adminProjectSource.length === 0 ? globalProjectsLoading : false)
+    : projectsLoading;
+  const dropdownPlaceholder = isAdmin
+    ? (adminProjectSource.length > 0 ? 'All projects across organizations' : (globalProjectsLoading ? 'Loading projects...' : 'No projects available'))
+    : (projectsLoading ? 'Loading projects...' : 'No active projects');
+  const dropdownDisabled = dropdownProjects.length === 0 && !dropdownLoading;
   const selectedProject = selectedProjectId && selectedProjectId !== 'all'
-    ? activeProjects.find((project) => getProjectId(project) === selectedProjectId)
+    ? dropdownProjects.find((project) => getProjectId(project) === selectedProjectId)
     : null;
   const isProjectFilterActive = !!selectedProject;
   const projectFilterKeys = selectedProject ? getProjectMatchKeys(selectedProject) : null;
@@ -1019,8 +1198,28 @@ export default function Teams() {
     getProjectMatchKeys(project).forEach((key) => keys.add(key));
     return keys;
   }, new Set());
+  const statsActiveProjectCount = isAdmin ? globalActiveProjects.length : activeProjects.length;
+  const statsCompletedProjectCount = isAdmin ? globalCompletedProjects.length : completedProjects.length;
   const managerEmailNormalized = managerEmail.trim().toLowerCase();
   const isManagerEmail = (email) => isProjectManager && !!email && managerEmailNormalized && email === managerEmailNormalized;
+  const inviteProjectOptions = isAdmin ? adminProjectSource : projects;
+  const inviteProjectsLoading = isAdmin
+    ? (adminProjectSource.length === 0 ? globalProjectsLoading : false)
+    : projectsLoading;
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (globalProjects.length > 0 || globalProjectsLoading) return;
+    if (globalProjectsFetchRequested.current) return;
+    globalProjectsFetchRequested.current = true;
+    fetchAllProjects();
+  }, [isAdmin, globalProjects.length, globalProjectsLoading, fetchAllProjects]);
+
+  useEffect(() => {
+    if (selectedProjectId === 'all') return;
+    if (dropdownProjects.some((project) => getProjectId(project) === selectedProjectId)) return;
+    setSelectedProjectId('all');
+  }, [dropdownProjects, selectedProjectId]);
 
   const projectMemberEmails = new Set();
   if (!isProjectManager) {
@@ -1147,8 +1346,8 @@ export default function Teams() {
   });
 
   const managerProjectKeys = selectedProject ? projectFilterKeys : allProjectKeys;
-  const managerActiveProjectCount = selectedProject ? selectedProjectActiveCount : activeProjects.length;
-  const managerCompletedProjectCount = selectedProject ? selectedProjectCompletedCount : completedProjects.length;
+  const managerActiveProjectCount = selectedProject ? selectedProjectActiveCount : (isAdmin ? globalActiveProjects.length : activeProjects.length);
+  const managerCompletedProjectCount = selectedProject ? selectedProjectCompletedCount : statsCompletedProjectCount;
 
   const prioritizedMembers = ensureManagerOnTop(
     filteredMembers,
@@ -1164,7 +1363,6 @@ export default function Teams() {
 
   // sync sidebar state from global controller
   useEffect(() => {
-    const activeProjectCount = activeProjects.length;
     if (selectedProject) {
       const teamMembersForStats = ensureManagerOnTop(
         projectTeamMembers,
@@ -1182,8 +1380,8 @@ export default function Teams() {
     }
     const membersForStats = ensureManagerOnTop(
       allMembers,
-      activeProjectCount,
-      completedProjects.length,
+      statsActiveProjectCount,
+      statsCompletedProjectCount,
       false,
       allProjectKeys
     );
@@ -1191,8 +1389,8 @@ export default function Teams() {
       (sum, member) => sum + (member.activeIssues ?? getActiveIssuesForMember(member.email, allProjectKeys)),
       0
     );
-    setStats(calculateStats(membersForStats, totalIssues, activeProjectCount));
-  }, [members, issues, userEmail, isProjectManager, projects, selectedProjectId]);
+    setStats(calculateStats(membersForStats, totalIssues, statsActiveProjectCount));
+  }, [members, issues, userEmail, isProjectManager, projects, selectedProjectId, statsActiveProjectCount, statsCompletedProjectCount]);
 
   function handleLogout() {
     clearUser()
@@ -1480,6 +1678,20 @@ export default function Teams() {
                 {/* header-actions left intentionally for other right-side controls */}
               </div>
           </div>
+          {selectedManagerEmail && (
+            <div className="team-filter-banner">
+              <div>
+                Viewing <strong>{selectedManagerName || selectedManagerEmail}</strong>'s team
+              </div>
+              <button
+                type="button"
+                className="btn btn-link btn-sm"
+                onClick={() => navigate('/teams')}
+              >
+                Show everyone
+              </button>
+            </div>
+          )}
 
           {/* Invite action above stats */}
           {isProjectManager && (
@@ -1536,6 +1748,8 @@ export default function Teams() {
             </div>
           )}
 
+          {/* Admin-only user list removed per request */}
+
           {/* Search + Filter */}
           <div className="filters">
             <input 
@@ -1548,16 +1762,14 @@ export default function Teams() {
               className="project-filter"
               value={selectedProjectId}
               onChange={(e) => setSelectedProjectId(e.target.value)}
-              disabled={projectsLoading || activeProjects.length === 0}
+              disabled={dropdownDisabled}
             >
-              {activeProjects.length === 0 ? (
-                <option value="all">
-                  {projectsLoading ? 'Loading projects...' : 'No active projects'}
-                </option>
+              {dropdownProjects.length === 0 ? (
+                <option value="all">{dropdownPlaceholder}</option>
               ) : (
                 <>
-                  <option value="all">All Projects</option>
-                  {activeProjects.map((project) => (
+                  <option value="all">{activeProjects.length > 0 ? 'All Projects' : 'All Projects'}</option>
+                  {dropdownProjects.map((project) => (
                     <option key={getProjectId(project)} value={getProjectId(project)}>
                       {project?.name || 'Untitled Project'} {project?.projectKey ? `(${project.projectKey})` : ''}
                     </option>
@@ -2056,12 +2268,12 @@ export default function Teams() {
                   onChange={(e) => setInviteFormData({ ...inviteFormData, projectId: e.target.value })}
                 >
                   <option value="">Select project (optional)</option>
-                  {projects.length === 0 ? (
+                  {inviteProjectOptions.length === 0 ? (
                     <option value="" disabled>
-                      {projectsLoading ? 'Loading projects...' : 'No projects available'}
+                      {inviteProjectsLoading ? 'Loading projects...' : 'No projects available'}
                     </option>
                   ) : (
-                    projects.map((project) => (
+                    inviteProjectOptions.map((project) => (
                       <option key={project?.id || getProjectId(project)} value={project?.id || getProjectId(project)}>
                         {project?.name || 'Untitled Project'} {project?.projectKey ? `(${project.projectKey})` : ''}
                       </option>

@@ -15,6 +15,7 @@ import CustomizeOrganization from './pages/CustomizeOrganization'
 import Settings from './pages/Settings'
 import Teams from "./pages/Teams";
 import Reports from './pages/Reports'
+import RoleManagement from './pages/RoleManagement'
 import Subscription from './pages/Subscription'
 import ContactSales from './pages/ContactSales'
 import PaymentMethod from './pages/PaymentMethod'
@@ -25,6 +26,7 @@ import Project from './pages/Project'
 import Board from './pages/Board'
 import Backlog from './pages/Backlog'
 import { useAuth } from './context/AuthContext'
+import PendingRequests from './pages/PendingRequests'
 
 function AuthThemeGuard() {
   const location = useLocation()
@@ -108,6 +110,7 @@ function App() {
         <Route path="/customize" element={<CustomizeOrganization />} />
         <Route path="/teams" element={<Teams />} />
         <Route path="/reports" element={<Reports />} />
+        <Route path="/pending-requests" element={<PendingRequests />} />
         <Route path="/subscription" element={<Subscription />} />
         <Route path="/free-plan" element={<FreePlan />} />
         <Route path="/payment" element={<PaymentMethod />} />
@@ -115,6 +118,7 @@ function App() {
         <Route path="/update-payment" element={<UpdatePayment />} />
         <Route path="/contact-sales" element={<ContactSales />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/role-management" element={<RoleManagement />} />
         <Route path="/projects" element={<Project />} />
         <Route path="/projects/:projectId/board" element={<Board />} />
         <Route path="/projects/:projectId/backlog" element={<Backlog />} />
