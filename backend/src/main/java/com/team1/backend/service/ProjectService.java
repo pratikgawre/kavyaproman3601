@@ -188,6 +188,35 @@ public class ProjectService {
         projectRepository.deleteById(id);
     }
 
+    public Optional<String> updateProjectMemberStatus(String projectId, String memberEmail, String status) {
+        if (!hasText(projectId) || !hasText(memberEmail)) {
+            throw new IllegalArgumentException("projectId and memberEmail are required");
+        }
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new IllegalArgumentException("Project not found"));
+        List<ProjectMember> members = project.getTeamMembers();
+        if (members == null || members.isEmpty()) {
+            return Optional.empty();
+        }
+        String normalizedMemberEmail = normalizeEmail(memberEmail);
+        boolean updated = false;
+        for (ProjectMember member : members) {
+            if (member == null) continue;
+            String normalizedCandidate = normalizeEmail(member.getEmail());
+            if (normalizedMemberEmail != null && normalizedMemberEmail.equals(normalizedCandidate)) {
+                member.setStatus(status);
+                updated = true;
+                break;
+            }
+        }
+        if (!updated) {
+            return Optional.empty();
+        }
+        project.setUpdatedAt(LocalDateTime.now());
+        projectRepository.save(project);
+        return Optional.of(status);
+    }
+
     private String normalizeKey(String key) {
         if (key == null) return null;
         return key.trim().toUpperCase();
@@ -197,6 +226,10 @@ public class ProjectService {
         if (text == null) return null;
         String trimmed = text.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 
     private String normalizeEmail(String email) {

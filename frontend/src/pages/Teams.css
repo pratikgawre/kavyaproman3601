@@ -1,7 +1,8 @@
 .team-container {
   padding: 30px;
-  background: #f5f7fa;
+  background: linear-gradient(180deg, #fffaf3 0%, #fff4de 100%);
   min-height: 100vh;
+  color: #111827;
 }
 
 /* Header */
@@ -740,6 +741,18 @@ html[data-theme='dark'] .active-tab::after {
   border-color: #93c5fd;
 }
 
+.project-status-badge.on-hold {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fcd34d;
+}
+
+.project-status-badge.archived {
+  background: #f1f5f9;
+  color: #475569;
+  border-color: #cbd5e1;
+}
+
 .edit-btn {
   padding: 8px 16px;
   border-radius: 8px;
@@ -1394,6 +1407,18 @@ html[data-theme='dark'] .project-status-badge.completed {
   color: #93c5fd;
 }
 
+html[data-theme='dark'] .project-status-badge.on-hold {
+  background: rgba(251, 191, 36, 0.2);
+  border-color: rgba(251, 191, 36, 0.6);
+  color: #fcd34d;
+}
+
+html[data-theme='dark'] .project-status-badge.archived {
+  background: rgba(148, 163, 184, 0.2);
+  border-color: rgba(148, 163, 184, 0.6);
+  color: #cbd5f5;
+}
+
 html[data-theme='dark'] .filters {
   background: #0b0b0b !important;
   border-color: #334155 !important;
@@ -1744,5 +1769,26 @@ html[data-theme='dark'] .verify-btn-verifying {
   to {
     transform: rotate(360deg);
   }
+}
+
+.team-filter-banner {
+  background: #e0f2fe;
+  border-radius: 16px;
+  padding: 0.75rem 1rem;
+  margin-top: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid rgba(14, 165, 233, 0.4);
+}
+
+.team-filter-banner strong {
+  color: #0a4c86;
+}
+
+
+.admin-users-error {
+  color: #b91c1c;
 }
 

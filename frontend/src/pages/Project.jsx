@@ -153,6 +153,7 @@ export default function Project() {
   const USERS_SEARCH_API_URL = `${API_BASE_URL}/api/users/search`
   const normalizedRole = normalizeRole(currentUser?.role)
   const isProjectManager = normalizedRole === 'admin' || normalizedRole === 'project manager'
+  const isAdminUser = normalizedRole === 'admin'
   const managerEmail = (currentUser?.email || '').trim().toLowerCase()
   const memberEmail = managerEmail
   const activeProjects = projects.filter((project) => !project.isArchived)
@@ -268,20 +269,24 @@ export default function Project() {
       setProjectsError('')
       try {
         const queryParams = new URLSearchParams()
-        if (isProjectManager && managerEmail) {
-          queryParams.set('managerEmail', managerEmail)
-        } else if (!isProjectManager && memberEmail) {
-          queryParams.set('memberEmail', memberEmail)
+        if (!isAdminUser) {
+          if (isProjectManager && managerEmail) {
+            queryParams.set('managerEmail', managerEmail)
+          } else if (!isProjectManager && memberEmail) {
+            queryParams.set('memberEmail', memberEmail)
+          }
         }
         const organizationId = selectedOrg?.id || selectedOrg?._id || ''
         const organizationUsername = selectedOrg?.username || selectedOrg?.slug || ''
         const organizationName = selectedOrg?.name || ''
-        if (organizationId) {
-          queryParams.set('organizationId', organizationId)
-        } else if (organizationUsername) {
-          queryParams.set('organizationUsername', organizationUsername)
-        } else if (organizationName) {
-          queryParams.set('organizationName', organizationName)
+        if (!isAdminUser) {
+          if (organizationId) {
+            queryParams.set('organizationId', organizationId)
+          } else if (organizationUsername) {
+            queryParams.set('organizationUsername', organizationUsername)
+          } else if (organizationName) {
+            queryParams.set('organizationName', organizationName)
+          }
         }
         const query = queryParams.toString()
         const response = await fetch(`${API_BASE_URL}/api/projects${query ? `?${query}` : ''}`, { signal: controller.signal })
@@ -314,6 +319,7 @@ export default function Project() {
     profileLoading,
     user?.id,
     isProjectManager,
+    isAdminUser,
     selectedOrg?.id,
     selectedOrg?._id,
     selectedOrg?.username,

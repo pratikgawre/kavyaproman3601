@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import './Dashboard.css'
-import { FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLogOut, FiMenu, FiSearch, FiBell, FiPlus, FiShare2, FiDownload, FiTrash2, FiFilter, FiTag, FiBookmark, FiClock, FiRepeat, FiArrowRight, FiUpload, FiAlignLeft, FiAlignCenter, FiAlignRight, FiAlignJustify } from 'react-icons/fi'
+import { FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLogOut, FiMenu, FiSearch, FiBell, FiPlus, FiShare2, FiDownload, FiTrash2, FiFilter, FiTag, FiBookmark, FiClock, FiRepeat, FiArrowRight, FiUpload, FiAlignLeft, FiAlignCenter, FiAlignRight, FiAlignJustify, FiShield, FiClipboard, FiChevronDown } from 'react-icons/fi'
 import { NavLink } from 'react-router-dom'
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { FiX } from 'react-icons/fi'
@@ -129,6 +129,24 @@ function preventLeadingSpace(e) {
 export default function Dashboard({ initialShowCreate = false }) {
   const API_BASE = (import.meta && import.meta.env && import.meta.env.VITE_API_BASE) || 'http://localhost:8080'
   const navigate = useNavigate()
+  const handleViewTeam = (email, name) => {
+    if (!email) return
+    const params = new URLSearchParams()
+    params.set('managerEmail', email)
+    if (name) {
+      params.set('managerName', name)
+    }
+    navigate(`/teams?${params.toString()}`)
+  }
+  const goToProjectsPage = () => navigate('/projects')
+  const goToTeamsPage = () => navigate('/teams')
+  const handleStatKeyDown = (event, clickHandler) => {
+    if (!clickHandler) return
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      clickHandler()
+    }
+  }
   const location = useLocation()
   const { user, clearUser } = useAuth()
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
@@ -168,6 +186,148 @@ export default function Dashboard({ initialShowCreate = false }) {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
   const [topSearchText, setTopSearchText] = useState('')
   const [dashboardSearchText, setDashboardSearchText] = useState('')
+  const [adminOverview, setAdminOverview] = useState(null)
+  const [adminLoading, setAdminLoading] = useState(false)
+  const [adminError, setAdminError] = useState('')
+  const isAdmin = normalizeRole(user?.role) === 'admin'
+  const [adminUserList, setAdminUserList] = useState([])
+  const [userManagementLoading, setUserManagementLoading] = useState(false)
+  const [userManagementError, setUserManagementError] = useState('')
+  const [activeUserAction, setActiveUserAction] = useState('manage')
+  const [managerTeams, setManagerTeams] = useState([])
+  const [managerTeamsLoading, setManagerTeamsLoading] = useState(false)
+  const [managerTeamsError, setManagerTeamsError] = useState('')
+  const [showManagerTeamsModal, setShowManagerTeamsModal] = useState(false)
+  const [roleUpdatedAt, setRoleUpdatedAt] = useState(0)
+  const handleAdminActionClick = (action, path) => () => {
+    setActiveUserAction(action)
+    if (path) {
+      navigate(path)
+    }
+  }
+  const handleCreateUserClick = () => {
+    setActiveUserAction('manage')
+    navigate('/teams?openInvite=1')
+  }
+
+  const loadManagerTeams = () => {
+    if (!user?.id) {
+      setManagerTeamsError('User session not ready')
+      return
+    }
+    setManagerTeamsLoading(true)
+    setManagerTeamsError('')
+    fetch(`${API_BASE}/api/admin/manager-teams`, {
+      headers: { 'X-USER-ID': String(user.id) }
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errorText = await res.text()
+          throw new Error(errorText || 'Unable to load team data')
+        }
+        return res.json()
+      })
+      .then((data) => {
+        setManagerTeams(Array.isArray(data) ? data : [])
+      })
+      .catch((err) => {
+        console.error('failed to load manager teams', err)
+        setManagerTeams([])
+        setManagerTeamsError(err?.message || 'Unable to load teams')
+      })
+      .finally(() => {
+        setManagerTeamsLoading(false)
+      })
+  }
+
+  const handleTeamsStatClick = () => {
+    if (!isAdmin) {
+      goToTeamsPage()
+      return
+    }
+    setShowManagerTeamsModal(true)
+    loadManagerTeams()
+  }
+  const handlePendingRequestsClick = () => {
+    if (!isAdmin) return
+    navigate('/pending-requests')
+  }
+
+  const closeManagerTeamsModal = () => {
+    setShowManagerTeamsModal(false)
+  }
+  useEffect(() => {
+    if (!isAdmin || activeUserAction !== 'manage' || !user?.id) {
+      setAdminOverview(null)
+      setAdminError('')
+      setAdminLoading(false)
+      return
+    }
+    const controller = new AbortController()
+    setAdminLoading(true)
+    setAdminError('')
+    fetch(`${API_BASE}/api/admin/dashboard`, {
+      headers: { 'X-USER-ID': String(user.id) },
+      signal: controller.signal
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(res.statusText || 'Unable to load admin overview')
+        return res.json()
+      })
+      .then((data) => {
+        setAdminOverview(data)
+      })
+      .catch((err) => {
+        if (err?.name === 'AbortError') return
+        console.error('failed to load admin dashboard', err)
+        setAdminError(err?.message || 'Unable to load admin overview')
+      })
+      .finally(() => {
+        setAdminLoading(false)
+      })
+    return () => controller.abort()
+  }, [API_BASE, activeUserAction, isAdmin, user?.id])
+
+  useEffect(() => {
+    if (!isAdmin || activeUserAction !== 'manage' || !user?.id) {
+      return
+    }
+    const controller = new AbortController()
+    setUserManagementLoading(true)
+    setUserManagementError('')
+    fetch(`${API_BASE}/api/admin/users?limit=16`, {
+      headers: { 'X-USER-ID': String(user.id) },
+      signal: controller.signal
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(res.statusText || 'Unable to load users')
+        return res.json()
+      })
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setAdminUserList(data)
+        } else {
+          setAdminUserList([])
+        }
+      })
+      .catch((err) => {
+        if (err?.name === 'AbortError') return
+        console.error('failed to load user list', err)
+        setUserManagementError(err?.message || 'Unable to load users')
+        setAdminUserList([])
+      })
+      .finally(() => {
+        setUserManagementLoading(false)
+    })
+    return () => controller.abort()
+  }, [API_BASE, activeUserAction, isAdmin, user?.id, roleUpdatedAt])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const handler = () => setRoleUpdatedAt(Date.now())
+    window.addEventListener('role:updated', handler)
+    return () => window.removeEventListener('role:updated', handler)
+  }, [])
   const {
     notifications,
     unreadCount,
@@ -1152,6 +1312,24 @@ export default function Dashboard({ initialShowCreate = false }) {
     runIssueSearch()
   }
 
+  const adminPendingApprovals = adminOverview?.pendingApprovals ?? []
+  const adminProjectOverview = adminOverview?.projectOverview ?? []
+  const adminProjectHighlights = adminOverview?.projectHighlights ?? []
+  const adminNotificationTitles =
+    (notifications && notifications.length > 0
+      ? notifications.slice(0, 4).map((n) => n.title)
+      : [
+        'Server backup completed',
+        'New software update available',
+        '5 support tickets unresolved',
+        'Database optimization successful'
+      ])
+  const adminAnnouncementItems = [
+    'Maintenance scheduled for Friday night',
+    'New security policies implemented',
+    'Team meeting on Monday at 10 AM'
+  ]
+
   return (
     <div className="dashboard-root d-flex">
       <aside className={`sidebar d-flex flex-column ${collapsed ? 'collapsed' : ''} ${mobileOpen ? 'open' : ''}`}>
@@ -1194,6 +1372,9 @@ export default function Dashboard({ initialShowCreate = false }) {
               </NavLink>
               <NavLink to="/subscription" className={({isActive})=> `nav-item d-flex align-items-center mb-2 ${isActive? 'active':''}`}>
                 <FiCreditCard className="me-3 nav-icon"/> <span className="nav-text">Subscription</span>
+              </NavLink>
+              <NavLink to="/role-management" className={({isActive})=> `nav-item d-flex align-items-center mb-2 ${isActive? 'active':''}`}>
+                <FiShield className="me-3 nav-icon"/> <span className="nav-text">Role Management</span>
               </NavLink>
               <NavLink to="/settings" className={({isActive})=> `nav-item d-flex align-items-center mb-2 ${isActive? 'active':''}`}>
                 <FiSettings className="me-3 nav-icon"/> <span className="nav-text">Settings</span>
@@ -1244,6 +1425,261 @@ export default function Dashboard({ initialShowCreate = false }) {
       <div className={`mobile-overlay ${mobileOpen ? 'show' : ''}`} onClick={() => { setMobileOpen(false); setCollapsed(true) }} />
 
       <main className={`content flex-grow-1 p-4 ${collapsed ? 'with-topbar' : ''}`}>
+        {isAdmin ? (
+          <div className="admin-dashboard-content">
+            <div className="admin-dashboard-header d-flex align-items-start justify-content-between flex-wrap">
+              <div>
+                <span className="admin-dashboard-label">Admin dashboard</span>
+                <h1 className="admin-dashboard-title mb-1">Dashboard</h1>
+                <p className="admin-dashboard-subtitle">Welcome back! Here's what's happening with your system.</p>
+              </div>
+              <div className="admin-dashboard-actions d-flex align-items-center gap-2 flex-wrap">
+                <div
+                  className={`input-group top-search-medium admin-search-input ${mobileSearchOpen ? 'mobile-open' : ''}`}
+                  onClick={() => {
+                    if (isMobileScreen() && !mobileSearchOpen) {
+                      setMobileSearchOpen(true)
+                      return
+                    }
+                    topSearchInputRef.current?.focus()
+                  }}
+                >
+                  <button type="button" className="input-group-text" onClick={handleTopSearchIconClick} aria-label="Search">
+                    <FiSearch />
+                  </button>
+                  <input
+                    ref={topSearchInputRef}
+                    className="form-control"
+                    placeholder="Search issues, projects..."
+                    aria-label="Search issues"
+                    value={topSearchText}
+                    onChange={(event) => setTopSearchText(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') runIssueSearch()
+                    }}
+                  />
+                </div>
+                <button className="admin-create-btn" type="button" onClick={handleCreateUserClick}>
+                  <FiPlus className="me-1" /> Create User
+                </button>
+              </div>
+            </div>
+            {adminLoading && <div className="admin-loading-state">Loading admin overview...</div>}
+            {adminError && <div className="admin-error-state">{adminError}</div>}
+            <div className="admin-stats-grid">
+              {[
+                { label: 'Users', value: adminOverview?.totalUsers ?? 0, Icon: FiUsers, variant: 'blue', clickHandler: goToTeamsPage },
+                { label: 'Active Projects', value: adminOverview?.activeProjects ?? 0, Icon: FiFolder, variant: 'green', clickHandler: goToProjectsPage },
+                { label: 'Teams', value: adminOverview?.totalTeams ?? 0, Icon: FiClipboard, variant: 'orange', clickHandler: handleTeamsStatClick },
+                { label: 'Pending Requests', value: adminOverview?.pendingRequests ?? 0, Icon: FiBell, variant: 'red', clickHandler: handlePendingRequestsClick }
+              ].map(({ label, value, Icon, variant, clickHandler }) => {
+                const isClickable = typeof clickHandler === 'function'
+                return (
+                  <article
+                    key={label}
+                    className={`admin-stat-card admin-stat-${variant}${isClickable ? ' admin-stat-clickable' : ''}`}
+                    role={isClickable ? 'button' : undefined}
+                    tabIndex={isClickable ? 0 : undefined}
+                    onClick={isClickable ? clickHandler : undefined}
+                    onKeyDown={isClickable ? (event) => handleStatKeyDown(event, clickHandler) : undefined}
+                  >
+                  <div className="admin-stat-icon">
+                    <Icon />
+                  </div>
+                  <div>
+                    <p className="admin-stat-label">{label}</p>
+                    <h3 className="admin-stat-value">{value}</h3>
+                  </div>
+                </article>
+              )
+            })}
+            </div>
+            <div className="admin-card-grid admin-card-grid-primary">
+              <section className="admin-card user-management-card">
+                <div className="admin-card-header">
+                  <h5>User Management</h5>
+                  <p className="small-muted">Quick access to controls</p>
+                </div>
+                <div className="admin-actions-grid">
+                  <button
+                    className={`admin-action primary ${activeUserAction === 'manage' ? 'active-action' : ''}`}
+                    type="button"
+                    onClick={handleAdminActionClick('manage', '/teams')}
+                    aria-pressed={activeUserAction === 'manage'}
+                  >
+                    <FiUsers className="me-2" /> Manage Users
+                    <FiChevronDown className="action-arrow" aria-hidden="true" />
+                  </button>
+                  <button
+                    className={`admin-action secondary ${activeUserAction === 'role' ? 'active-action' : ''}`}
+                    type="button"
+                    onClick={handleAdminActionClick('role', '/role-management')}
+                    aria-pressed={activeUserAction === 'role'}
+                  >
+                    <FiShield className="me-2" /> Role Management
+                    <FiChevronDown className="action-arrow" aria-hidden="true" />
+                  </button>
+                  <button
+                    className={`admin-action secondary ${activeUserAction === 'logs' ? 'active-action' : ''}`}
+                    type="button"
+                    onClick={handleAdminActionClick('logs', '/reports')}
+                    aria-pressed={activeUserAction === 'logs'}
+                  >
+                    <FiClipboard className="me-2" /> Activity Logs
+                    <FiChevronDown className="action-arrow" aria-hidden="true" />
+                  </button>
+                  <button
+                    className={`admin-action secondary ${activeUserAction === 'logs2' ? 'active-action' : ''}`}
+                    type="button"
+                    onClick={handleAdminActionClick('logs2', '/reports')}
+                    aria-pressed={activeUserAction === 'logs2'}
+                  >
+                    <FiClipboard className="me-2" /> Activity Logs
+                    <FiChevronDown className="action-arrow" aria-hidden="true" />
+                  </button>
+                </div>
+                {activeUserAction === 'manage' && (
+                  <div className="user-management-list">
+                    {userManagementLoading && (
+                      <div className="user-list-message">Loading users…</div>
+                    )}
+                    {!userManagementLoading && userManagementError && (
+                      <div className="user-list-message text-danger">{userManagementError}</div>
+                    )}
+                    {!userManagementLoading && !userManagementError && adminUserList.length === 0 && (
+                      <div className="user-list-message">No users found yet.</div>
+                    )}
+                    {!userManagementLoading && adminUserList.length > 0 && (
+                      <div className="user-rows">
+                        {adminUserList.map((usr) => (
+                          <div className="user-row" key={usr.id || usr.email}>
+                            <div>
+                              <div className="user-name">{usr.name || usr.email}</div>
+                              <div className="user-email">{usr.email}</div>
+                            </div>
+                            <span className="user-role-badge">{usr.role || 'Member'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+              <section className="admin-card project-overview-card">
+                <div className="admin-card-header">
+                  <h5>Project Overview</h5>
+                  <p className="small-muted">Status breakdown</p>
+                </div>
+                <div className="project-status-list">
+                  {(adminProjectOverview.length ? adminProjectOverview : [
+                    { label: 'Active Projects', count: adminOverview?.activeProjects ?? 0, ownerName: '' },
+                    { label: 'Completed Projects', count: adminOverview?.completedProjects ?? 0, ownerName: '' },
+                    { label: 'On Hold Projects', count: adminOverview?.onHoldProjects ?? 0, ownerName: '' }
+                  ]).map((status) => (
+                    <div className="project-status-row" key={status.label}>
+                      <div>
+                        <div className="project-status-label">{status.label}</div>
+                        {(status.ownerName || status.ownerEmail) && (
+                          <div className="project-status-owner">Managed by {status.ownerName || status.ownerEmail}</div>
+                        )}
+                      </div>
+                      <div className="project-status-meta">
+                        <span className="project-status-count">{status.count}</span>
+                      <div className="project-status-actions">
+                        <button className="admin-status-btn approve" type="button">Approve</button>
+                        <button className="admin-status-btn reject" type="button">Reject</button>
+                        {isAdmin && status.ownerEmail && (
+                          <button
+                            className="admin-status-btn view-team"
+                            type="button"
+                            onClick={() => handleViewTeam(status.ownerEmail, status.ownerName)}
+                          >
+                            View team
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="admin-card-footer">
+                  <button className="btn admin-ghost-btn" type="button" onClick={() => navigate('/projects')}>Manage Projects</button>
+                </div>
+              </section>
+            </div>
+            <div className="admin-card-grid admin-card-grid-secondary">
+              <section className="admin-card pending-card">
+                <div className="admin-card-header">
+                  <h5>Pending Approvals</h5>
+                  <p className="small-muted">Requests awaiting approval</p>
+                </div>
+                <ul className="pending-list">
+                  {adminPendingApprovals.length ? adminPendingApprovals.slice(0, 4).map((item, index) => (
+                    <li key={`${item.memberEmail || index}-${index}`}>
+                      <div className="pending-details">
+                        <strong>{item.memberName || item.memberEmail || 'Member'}</strong>
+                        <span>{item.projectName || item.projectKey}</span>
+                      </div>
+                      <span className="pending-status">{item.status}</span>
+                    </li>
+                  )) : (
+                    <li className="muted">No pending approvals yet.</li>
+                  )}
+                </ul>
+              </section>
+              <section className="admin-card notifications-card">
+                <div className="admin-card-header">
+                  <h5>System Notifications</h5>
+                  <p className="small-muted">Recent alerts</p>
+                </div>
+                <ul className="notification-list">
+                  {adminNotificationTitles.map((note, index) => (
+                    <li key={`${note}-${index}`}>{note}</li>
+                  ))}
+                </ul>
+              </section>
+            </div>
+            <div className="admin-card-grid admin-card-grid-secondary">
+              <section className="admin-card highlights-card">
+                <div className="admin-card-header">
+                  <h5>Project Highlights</h5>
+                  <p className="small-muted">Top performers</p>
+                </div>
+                <div className="highlight-list">
+                  {adminProjectHighlights.length ? adminProjectHighlights.map((highlight) => (
+                    <div className="highlight-row" key={highlight.projectId || highlight.projectKey}>
+                      <div>
+                        <div className="highlight-title">{highlight.name || highlight.projectKey}</div>
+                        <div className="muted">{highlight.status} · {highlight.managerName || highlight.leadName || 'Team'}</div>
+                      </div>
+                      <div className="highlight-progress-track">
+                        <div
+                          className="highlight-progress-fill"
+                          style={{ width: `${Math.min(Math.max(highlight.completionPct || 0, 0), 100)}%` }}
+                        />
+                      </div>
+                      <span className="highlight-pct">{highlight.completionPct ?? 0}%</span>
+                    </div>
+                  )) : (
+                    <div className="muted">Highlights appear once projects report status.</div>
+                  )}
+                </div>
+              </section>
+              <section className="admin-card announcements-card">
+                <div className="admin-card-header">
+                  <h5>Announcements</h5>
+                  <p className="small-muted">Important notes</p>
+                </div>
+                <ul className="announcement-list">
+                  {adminAnnouncementItems.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </section>
+            </div>
+          </div>
+        ) : (
+          <>
         <header className="dash-header mb-4">
           <div>
             <div className={`top-search-row mb-3 ${mobileSearchOpen ? 'mobile-search-open' : ''}`}>
@@ -2096,7 +2532,80 @@ export default function Dashboard({ initialShowCreate = false }) {
             </div>
           </div>
         </section>
+          </>
+        )}
       </main>
+
+      {showManagerTeamsModal && (
+        <div className="manager-teams-modal" role="dialog" aria-modal="true" aria-label="Project manager teams" onClick={closeManagerTeamsModal}>
+          <section className="manager-teams-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="manager-teams-header">
+              <div>
+                <p className="muted mb-1">Teams</p>
+                <h4 className="manager-teams-title">Project managers and their teams</h4>
+                <p className="muted">See each manager, their projects, and current members.</p>
+              </div>
+              <button className="btn btn-link manager-teams-close" type="button" onClick={closeManagerTeamsModal} aria-label="Close">
+                <FiX size={20} />
+              </button>
+            </div>
+            {managerTeamsLoading && (
+              <div className="manager-teams-loading">Loading teams…</div>
+            )}
+            {!managerTeamsLoading && managerTeamsError && (
+              <div className="manager-teams-error text-danger">{managerTeamsError}</div>
+            )}
+            {!managerTeamsLoading && !managerTeamsError && managerTeams.length === 0 && (
+              <div className="manager-teams-empty">No manager teams found.</div>
+            )}
+            {!managerTeamsLoading && managerTeams.length > 0 && (
+              <div className="manager-teams-grid">
+                {managerTeams.map((manager) => {
+                  const managerKey = manager.managerEmail || manager.managerName || Math.random().toString()
+                  return (
+                    <article key={`manager-${managerKey}`} className="manager-card">
+                      <div className="manager-card-head">
+                        <h5 className="manager-card-name">{manager.managerName || manager.managerEmail || 'Manager'}</h5>
+                        <p className="manager-card-email">{manager.managerEmail}</p>
+                      </div>
+                      {manager.projects && manager.projects.length > 0 ? (
+                        <div className="manager-projects">
+                          {manager.projects.map((project) => {
+                            const projectKey = project.projectId || project.projectKey || project.projectName || Math.random().toString()
+                            return (
+                              <details key={`project-${projectKey}`} className="manager-project">
+                                <summary>
+                                  <span className="manager-project-title">
+                                    {project.projectName || project.projectKey || 'Project'}
+                                  </span>
+                                </summary>
+                                <div className="manager-project-members">
+                                  {project.members && project.members.length ? (
+                                    project.members.map((member, index) => (
+                                      <div className="manager-project-member" key={`${projectKey}-${member.email || index}`}>
+                                        <span className="member-name">{member.name || member.email}</span>
+                                        <span className="member-role-badge">{member.role || 'Member'}</span>
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <div className="manager-project-empty">No members yet.</div>
+                                  )}
+                                </div>
+                              </details>
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        <p className="manager-no-projects muted">No projects assigned yet.</p>
+                      )}
+                    </article>
+                  )
+                })}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
     </div>
   )
 }
