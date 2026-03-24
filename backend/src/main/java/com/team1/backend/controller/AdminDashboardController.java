@@ -1,4 +1,4 @@
-﻿package com.team1.backend.controller;
+package com.team1.backend.controller;
 
 import com.team1.backend.dto.AdminDashboardResponse;
 import com.team1.backend.dto.ManagerTeamDto;
