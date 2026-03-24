@@ -762,7 +762,7 @@ export default function Dashboard({ initialShowCreate = false }) {
   }
   const descRef = useRef(null)
   const [formatState, setFormatState] = useState({ bold: false, italic: false, underline: false, align: 'left' })
-
+// this is for discription formatting toolbar to reflect the current selection's formatting state
   function updateFormatState() {
     if (typeof document === 'undefined') return
     const editor = descRef.current
