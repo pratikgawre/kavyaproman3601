@@ -291,6 +291,7 @@ const Reports = () => {
   const avatarInitials = getInitials(user?.name || displayName, user?.email)
   const userEmail = (user?.email || "").trim().toLowerCase();
   const normalizedRole = normalizeRole(user?.role)
+  const isAdmin = normalizedRole === "admin";
   const isProjectManager = ["admin", "project manager"].includes(normalizedRole);
   const isDeveloper = normalizedRole === 'developer'
   const isTester = normalizedRole === 'tester'
@@ -347,7 +348,7 @@ const Reports = () => {
 
     const email = (user?.email || "").trim();
     const queryParams = new URLSearchParams();
-    if (email) {
+    if (email && !isAdmin) {
       const key = isProjectManager ? "managerEmail" : "memberEmail";
       queryParams.set(key, email);
     }
@@ -400,6 +401,7 @@ const Reports = () => {
     };
   }, [
     API_BASE,
+    isAdmin,
     isProjectManager,
     selectedOrg?.id,
     selectedOrg?._id,

@@ -166,3 +166,84 @@
 .pending-header p {
   margin-bottom: 0;
 }
+
+/* Dark mode support */
+html[data-theme='dark'] .pending-page {
+  color: #e2e8f0;
+}
+
+html[data-theme='dark'] .pending-section {
+  background: #0f172a;
+  border-color: rgba(148, 163, 184, 0.2);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4);
+}
+
+html[data-theme='dark'] .pending-section-header h3,
+html[data-theme='dark'] .pending-section-header p,
+html[data-theme='dark'] .pending-card-head h4,
+html[data-theme='dark'] .pending-card-head p,
+html[data-theme='dark'] .pending-card-meta,
+html[data-theme='dark'] .pending-status,
+html[data-theme='dark'] .pending-empty,
+html[data-theme='dark'] .pending-loading,
+html[data-theme='dark'] .pending-action-note {
+  color: #e2e8f0;
+}
+
+html[data-theme='dark'] .pending-section-count {
+  background: rgba(67, 56, 202, 0.4);
+  color: #bfdbfe;
+}
+
+html[data-theme='dark'] .pending-card {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: linear-gradient(180deg, #111827 0%, #0b1226 100%);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6);
+}
+
+html[data-theme='dark'] .pending-card-head h4 {
+  color: #f8fafc;
+}
+
+html[data-theme='dark'] .pending-card-head p,
+html[data-theme='dark'] .pending-card-meta {
+  color: #cbd5e1;
+}
+
+html[data-theme='dark'] .pending-status {
+  background: rgba(59, 130, 246, 0.2);
+  color: #bfdbfe;
+}
+
+html[data-theme='dark'] .pending-status.warning {
+  background: rgba(245, 158, 11, 0.2);
+  color: #facc15;
+}
+
+html[data-theme='dark'] .pending-empty,
+html[data-theme='dark'] .pending-loading {
+  border-color: rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.7);
+}
+
+html[data-theme='dark'] .pending-action-note {
+  border-top-color: rgba(148, 163, 184, 0.3);
+  color: #93c5fd;
+}
+
+html[data-theme='dark'] .admin-ghost-btn {
+  background: #111827;
+  border-color: rgba(148, 163, 184, 0.22);
+  color: #e2e8f0;
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.55);
+}
+
+html[data-theme='dark'] .approve-btn,
+html[data-theme='dark'] .reject-btn {
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.45);
+}
+
+html[data-theme='dark'] .reject-btn {
+  background: rgba(254, 226, 226, 0.15);
+  color: #fecaca;
+}

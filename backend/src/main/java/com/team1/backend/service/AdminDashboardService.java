@@ -12,8 +12,11 @@ import com.team1.backend.dto.ProjectCreationRequestDto;
 import com.team1.backend.model.Project;
 import com.team1.backend.model.ProjectMember;
 import com.team1.backend.model.User;
+import com.team1.backend.model.Notification;
 import com.team1.backend.repository.ProjectRepository;
 import com.team1.backend.repository.UserRepository;
+import com.team1.backend.repository.NotificationRepository;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -31,10 +34,12 @@ public class AdminDashboardService {
 
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
+    private final NotificationRepository notificationRepository;
 
-    public AdminDashboardService(ProjectRepository projectRepository, UserRepository userRepository) {
+    public AdminDashboardService(ProjectRepository projectRepository, UserRepository userRepository, NotificationRepository notificationRepository) {
         this.projectRepository = projectRepository;
         this.userRepository = userRepository;
+        this.notificationRepository = notificationRepository;
     }
 
     public AdminDashboardResponse getOverview() {
@@ -69,6 +74,12 @@ public class AdminDashboardService {
         List<AdminPendingApprovalDto> pendingApprovals = buildPendingApprovals(projects);
         response.setPendingApprovals(pendingApprovals);
         response.setPendingRequests(pendingApprovals.size());
+
+        List<Notification> announcements = notificationRepository.findByTypeOrderByCreatedAtDesc("announcement", PageRequest.of(0, 5));
+        response.setAnnouncements(announcements.stream()
+                .map(Notification::getTitle)
+                .toList());
+
         return response;
     }
 

@@ -13,6 +13,7 @@ public class AdminDashboardResponse {
     private List<AdminProjectStatusDto> projectOverview;
     private List<AdminProjectHighlightDto> projectHighlights;
     private List<AdminPendingApprovalDto> pendingApprovals;
+    private List<String> announcements;
 
     public AdminDashboardResponse() {
     }
@@ -87,5 +88,13 @@ public class AdminDashboardResponse {
 
     public void setPendingApprovals(List<AdminPendingApprovalDto> pendingApprovals) {
         this.pendingApprovals = pendingApprovals;
+    }
+
+    public List<String> getAnnouncements() {
+        return announcements;
+    }
+
+    public void setAnnouncements(List<String> announcements) {
+        this.announcements = announcements;
     }
 }

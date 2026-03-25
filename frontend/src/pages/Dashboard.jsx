@@ -1270,6 +1270,20 @@ export default function Dashboard({ initialShowCreate = false }) {
     navigate(`/projects/${projectKey}/board?issue=${encodeURIComponent(issueKey)}`)
   }
 
+  function openAdminNotification(notificationText) {
+    if (!notificationText) return
+    const target = notificationText.toString().trim()
+    if (!target) return
+    navigate(`/all-my-issues?q=${encodeURIComponent(target)}`)
+  }
+
+  function openAdminAnnouncement(announcementText) {
+    if (!announcementText) return
+    const target = announcementText.toString().trim()
+    if (!target) return
+    navigate(`/all-my-issues?q=${encodeURIComponent(target)}`)
+  }
+
   function getInitials(name) {
     return (name || '')
       .split(' ')
@@ -1410,11 +1424,15 @@ export default function Dashboard({ initialShowCreate = false }) {
         '5 support tickets unresolved',
         'Database optimization successful'
       ])
-  const adminAnnouncementItems = [
-    'Maintenance scheduled for Friday night',
-    'New security policies implemented',
-    'Team meeting on Monday at 10 AM'
-  ]
+
+  const adminAnnouncementItems =
+    (adminOverview?.announcements && Array.isArray(adminOverview.announcements) && adminOverview.announcements.length > 0)
+      ? adminOverview.announcements
+      : [
+        'Maintenance scheduled for Friday night',
+        'New security policies implemented',
+        'Team meeting on Monday at 10 AM'
+      ]
 
   return (
     <div className="dashboard-root d-flex">
@@ -1615,12 +1633,12 @@ export default function Dashboard({ initialShowCreate = false }) {
                     <FiChevronDown className="action-arrow" aria-hidden="true" />
                   </button>
                   <button
-                    className={`admin-action secondary ${activeUserAction === 'logs2' ? 'active-action' : ''}`}
+                    className={`admin-action secondary ${activeUserAction === 'reports' ? 'active-action' : ''}`}
                     type="button"
-                    onClick={handleAdminActionClick('logs2', '/reports')}
-                    aria-pressed={activeUserAction === 'logs2'}
+                    onClick={handleAdminActionClick('reports', '/reports')}
+                    aria-pressed={activeUserAction === 'reports'}
                   >
-                    <FiClipboard className="me-2" /> Activity Logs
+                    <FiBarChart2 className="me-2" /> Reports
                     <FiChevronDown className="action-arrow" aria-hidden="true" />
                   </button>
                 </div>
@@ -1720,7 +1738,21 @@ export default function Dashboard({ initialShowCreate = false }) {
                 </div>
                 <ul className="notification-list">
                   {adminNotificationTitles.map((note, index) => (
-                    <li key={`${note}-${index}`}>{note}</li>
+                    <li
+                      key={`${note}-${index}`}
+                      role="button"
+                      tabIndex={0}
+                      className="clickable-item"
+                      onClick={() => openAdminNotification(note)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          openAdminNotification(note)
+                        }
+                      }}
+                    >
+                      {note}
+                    </li>
                   ))}
                 </ul>
               </section>
@@ -1758,7 +1790,21 @@ export default function Dashboard({ initialShowCreate = false }) {
                 </div>
                 <ul className="announcement-list">
                   {adminAnnouncementItems.map((item) => (
-                    <li key={item}>{item}</li>
+                    <li
+                      key={item}
+                      role="button"
+                      tabIndex={0}
+                      className="clickable-item"
+                      onClick={() => openAdminAnnouncement(item)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          openAdminAnnouncement(item)
+                        }
+                      }}
+                    >
+                      {item}
+                    </li>
                   ))}
                 </ul>
               </section>

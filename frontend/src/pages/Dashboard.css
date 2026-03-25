@@ -88,12 +88,78 @@
   border: 1px solid #ffe4a3;
 }
 
+html[data-theme='dark'] .manager-teams-panel {
+  background: linear-gradient(180deg, #0f172a 0%, #0b1427 60%, #091022 100%) !important;
+  border: 1px solid #334155 !important;
+  box-shadow: 0 35px 70px rgba(0, 0, 0, 0.65) !important;
+  color: var(--text) !important;
+}
+
+html[data-theme='dark'] .manager-teams-title,
+html[data-theme='dark'] .manager-project summary,
+html[data-theme='dark'] .manager-project-member,
+html[data-theme='dark'] .manager-card-name,
+html[data-theme='dark'] .manager-card-email,
+html[data-theme='dark'] .manager-project-title,
+html[data-theme='dark'] .project-status-label,
+html[data-theme='dark'] .project-status-owner,
+html[data-theme='dark'] .manager-card,
+html[data-theme='dark'] .manager-project,
+html[data-theme='dark'] .manager-project-members,
+html[data-theme='dark'] .manager-project-member {
+  color: var(--text) !important;
+}
+
+html[data-theme='dark'] .manager-card,
+html[data-theme='dark'] .manager-project,
+html[data-theme='dark'] .manager-project-members {
+  background: var(--surface) !important;
+  border-color: var(--border) !important;
+}
+
 .manager-teams-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 1rem;
   margin-bottom: 1.5rem;
+}
+
+.manager-teams-close {
+  border: 1px solid #dbe2e8;
+  background: #f9fafb;
+  color: #1f2937;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+  transition: background-color .2s ease, border-color .2s ease,
+    color .2s ease;
+}
+
+.manager-teams-close:hover,
+.manager-teams-close:focus {
+  background: #e2e8f0;
+  border-color: #cbd5e1;
+  color: #0f172a;
+  outline: none;
+}
+
+html[data-theme='dark'] .manager-teams-close {
+  background: #0f172a !important;
+  border: 1px solid #334155 !important;
+  color: #f8fafc !important;
+}
+
+html[data-theme='dark'] .manager-teams-close:hover,
+html[data-theme='dark'] .manager-teams-close:focus {
+  background: #1e293b !important;
+  border-color: #475569 !important;
+  color: #ffffff !important;
 }
 
 .manager-teams-title {
@@ -2213,14 +2279,19 @@ html[data-theme='light'][data-user-role='admin'] .sidebar-footer .logout-badge {
   box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
 }
 
+html[data-theme='dark'] .admin-stat-card{
+  background:#000000;
+  border:1px solid #1f2937;
+  box-shadow:0 18px 42px rgba(0,0,0,0.45);
+}
+
+html[data-theme='dark'] .admin-stat-card .admin-stat-label{
+  color:var(--muted) !important;
+}
+
 .admin-stat-clickable {
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.admin-stat-clickable:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.12);
 }
 
 .admin-stat-icon {
@@ -2279,6 +2350,44 @@ html[data-theme='light'][data-user-role='admin'] .sidebar-footer .logout-badge {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.admin-card,
+.admin-stat-card {
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  will-change: transform, box-shadow;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .admin-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 30px 70px rgba(15, 23, 42, 0.14), 0 0 0 1px rgba(37, 99, 235, 0.22);
+  }
+
+  .admin-stat-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 26px 60px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(37, 99, 235, 0.22);
+  }
+
+  html[data-theme='dark'] .admin-card:hover,
+  html[data-theme='dark'] .admin-stat-card:hover {
+    box-shadow: 0 30px 70px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(56, 189, 248, 0.62), 0 0 28px rgba(56, 189, 248, 0.16);
+  }
+}
+
+.admin-card:focus-within {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.22), 0 26px 60px rgba(15, 23, 42, 0.12);
+}
+
+.admin-stat-card:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.22), 0 26px 60px rgba(15, 23, 42, 0.12);
+}
+
+html[data-theme='dark'] .admin-card:focus-within,
+html[data-theme='dark'] .admin-stat-card:focus-visible {
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.42), 0 30px 70px rgba(0, 0, 0, 0.55), 0 0 28px rgba(56, 189, 248, 0.16);
 }
 
 .admin-card-header h5 {
@@ -2395,6 +2504,20 @@ html[data-theme='light'][data-user-role='admin'] .sidebar-footer .logout-badge {
   background: rgba(15, 23, 42, 0.05);
 }
 
+html[data-theme='dark'] .admin-dashboard-content .admin-action:not(.primary):not(.active-action){
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.28);
+}
+
+html[data-theme='dark'] .admin-dashboard-content .admin-action:not(.primary):not(.active-action):hover{
+  background: rgba(255, 255, 255, 0.12);
+}
+
+html[data-theme='dark'] .admin-dashboard-content .action-arrow{
+  color: var(--muted);
+}
+
 .admin-action.active-action,
 .admin-action.active-action .action-arrow {
   background: linear-gradient(135deg, #2563eb, #1d4ed8);
@@ -2432,9 +2555,17 @@ html[data-theme='light'][data-user-role='admin'] .sidebar-footer .logout-badge {
   color: #1f1f1f;
 }
 
+html[data-theme='dark'] .project-status-label{
+  color: var(--text);
+}
+
 .project-status-owner {
   font-size: 0.85rem;
   color: #6b7280;
+}
+
+html[data-theme='dark'] .project-status-owner{
+  color: var(--muted);
 }
 
 .project-status-meta {
@@ -2490,6 +2621,43 @@ html[data-theme='light'][data-user-role='admin'] .sidebar-footer .logout-badge {
   color: #1f1f1f;
 }
 
+html[data-theme='dark'] .admin-dashboard-content .admin-ghost-btn{
+  background: transparent;
+  box-shadow: none;
+  border-color: rgba(148, 163, 184, 0.35);
+  color: var(--text);
+}
+
+html[data-theme='dark'] .admin-dashboard-content .admin-ghost-btn:hover{
+  background: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme='dark'] .admin-dashboard-content .user-email,
+html[data-theme='dark'] .admin-dashboard-content .user-list-message{
+  color: var(--muted);
+}
+
+html[data-theme='dark'] .admin-dashboard-content .user-row,
+html[data-theme='dark'] .admin-dashboard-content .project-status-row{
+  border-bottom-color: rgba(148, 163, 184, 0.18);
+}
+
+html[data-theme='dark'] .admin-card {
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(148, 163, 184, 0.20);
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.6);
+}
+
+html[data-theme='dark'] .notification-list li,
+html[data-theme='dark'] .announcement-list li {
+  color: var(--text);
+}
+
+html[data-theme='dark'] .notification-list li.clickable-item,
+html[data-theme='dark'] .announcement-list li.clickable-item {
+  color: #7dd3fc;
+}
+
 .pending-list,
 .notification-list,
 .announcement-list {
@@ -2529,6 +2697,22 @@ html[data-theme='light'][data-user-role='admin'] .sidebar-footer .logout-badge {
 .announcement-list li {
   color: #4b3b1c;
   font-weight: 600;
+}
+
+.notification-list li.clickable-item,
+.announcement-list li.clickable-item {
+  cursor: pointer;
+  color: #0e7490;
+  transition: color 0.15s ease, text-decoration 0.15s ease;
+}
+
+.notification-list li.clickable-item:hover,
+.announcement-list li.clickable-item:hover,
+.notification-list li.clickable-item:focus,
+.announcement-list li.clickable-item:focus {
+  text-decoration: underline;
+  color: #075985;
+  outline: none;
 }
 
 .highlight-list {
