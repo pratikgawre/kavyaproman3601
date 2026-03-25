@@ -708,7 +708,38 @@ html[data-theme='light'][data-user-role='project-manager'] .mobile-toggle svg {
 .org-icon{width:36px;height:36px;border-radius:8px;background:#6b5bff;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
 .org-info .org-name{font-weight:700}
 .sidebar-footer{padding-top:12px;padding-bottom:6px;border-top:1px solid #f3f6f9;width:100%;margin-top:auto}
-.switch-org-btn{display:none !important}
+.switch-org-btn{
+  display:none;
+  width:100%;
+  border:1px solid rgba(13,110,253,0.18);
+  background:rgba(13,110,253,0.04);
+  color:var(--text);
+  padding:10px 12px;
+  border-radius:12px;
+  font-weight:800;
+  text-align:left;
+  cursor:pointer;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  transition:transform .12s ease,box-shadow .12s ease,background .12s ease,border-color .12s ease;
+}
+.switch-org-btn .switch-left{display:flex;align-items:center}
+.switch-org-btn .switch-text{flex:1;font-weight:800}
+.switch-org-btn .switch-arrow{opacity:0.85;flex-shrink:0}
+.switch-org-btn:hover{background:rgba(13,110,253,0.08);border-color:rgba(13,110,253,0.26);box-shadow:0 10px 24px rgba(13,110,253,0.12);transform:translateY(-1px)}
+.switch-org-btn:focus{outline:none;box-shadow:0 0 0 4px rgba(13,110,253,0.12)}
+
+html[data-theme='dark'] .switch-org-btn{border-color:rgba(148,163,184,0.25);background:rgba(148,163,184,0.08)}
+html[data-theme='dark'] .switch-org-btn:hover{background:rgba(148,163,184,0.14);box-shadow:0 10px 24px rgba(0,0,0,0.35)}
+html[data-theme='dark'] .switch-org-btn:focus{box-shadow:0 0 0 4px rgba(148,163,184,0.18)}
+
+html[data-user-role='project-manager'] .switch-org-btn,
+html[data-user-role='developer'] .switch-org-btn,
+html[data-user-role='tester'] .switch-org-btn,
+html[data-user-role='quality-analyst'] .switch-org-btn,
+html[data-user-role='quality-assurance'] .switch-org-btn,
+html[data-user-role='qa'] .switch-org-btn{display:flex}
 .sidebar-footer .profile{width:100%}
 .logout-badge{
   background:linear-gradient(180deg,#fff,#fff);
