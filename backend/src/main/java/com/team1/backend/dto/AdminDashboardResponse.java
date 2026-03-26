@@ -13,6 +13,7 @@ public class AdminDashboardResponse {
     private List<AdminProjectStatusDto> projectOverview;
     private List<AdminProjectHighlightDto> projectHighlights;
     private List<AdminPendingApprovalDto> pendingApprovals;
+    private List<String> systemNotifications;
     private List<String> announcements;
 
     public AdminDashboardResponse() {
@@ -88,6 +89,14 @@ public class AdminDashboardResponse {
 
     public void setPendingApprovals(List<AdminPendingApprovalDto> pendingApprovals) {
         this.pendingApprovals = pendingApprovals;
+    }
+
+    public List<String> getSystemNotifications() {
+        return systemNotifications;
+    }
+
+    public void setSystemNotifications(List<String> systemNotifications) {
+        this.systemNotifications = systemNotifications;
     }
 
     public List<String> getAnnouncements() {

@@ -13,6 +13,7 @@ import com.team1.backend.model.Project;
 import com.team1.backend.model.ProjectMember;
 import com.team1.backend.model.User;
 import com.team1.backend.model.Notification;
+import com.team1.backend.repository.IssueRepository;
 import com.team1.backend.repository.ProjectRepository;
 import com.team1.backend.repository.UserRepository;
 import com.team1.backend.repository.NotificationRepository;
@@ -32,14 +33,18 @@ import java.util.stream.Collectors;
 @Service
 public class AdminDashboardService {
 
+    private static final String ISSUE_DONE_STATUS = "done";
+
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
     private final NotificationRepository notificationRepository;
+    private final IssueRepository issueRepository;
 
-    public AdminDashboardService(ProjectRepository projectRepository, UserRepository userRepository, NotificationRepository notificationRepository) {
+    public AdminDashboardService(ProjectRepository projectRepository, UserRepository userRepository, NotificationRepository notificationRepository, IssueRepository issueRepository) {
         this.projectRepository = projectRepository;
         this.userRepository = userRepository;
         this.notificationRepository = notificationRepository;
+        this.issueRepository = issueRepository;
     }
 
     public AdminDashboardResponse getOverview() {
@@ -75,9 +80,18 @@ public class AdminDashboardService {
         response.setPendingApprovals(pendingApprovals);
         response.setPendingRequests(pendingApprovals.size());
 
+        List<Notification> systemNotifications = notificationRepository.findByTypeOrderByCreatedAtDesc("system", PageRequest.of(0, 5));
+        response.setSystemNotifications(systemNotifications.stream()
+                .map(Notification::getTitle)
+                .filter(this::hasText)
+                .map(String::trim)
+                .toList());
+
         List<Notification> announcements = notificationRepository.findByTypeOrderByCreatedAtDesc("announcement", PageRequest.of(0, 5));
         response.setAnnouncements(announcements.stream()
                 .map(Notification::getTitle)
+                .filter(this::hasText)
+                .map(String::trim)
                 .toList());
 
         return response;
@@ -138,8 +152,16 @@ public class AdminDashboardService {
     }
 
     private AdminProjectHighlightDto buildHighlight(Project project, String statusLabel, Map<String, String> cache) {
-        long totalIssues = project.getTotalIssues() != null ? project.getTotalIssues() : 0;
-        long completedIssues = project.getCompletedIssues() != null ? project.getCompletedIssues() : 0;
+        String projectKey = normalizeProjectKey(project.getProjectKey());
+        long totalIssues = 0;
+        long completedIssues = 0;
+        if (hasText(projectKey)) {
+            totalIssues = issueRepository.countByProject(projectKey);
+            completedIssues = issueRepository.countByProjectAndStatus(projectKey, ISSUE_DONE_STATUS);
+        } else {
+            totalIssues = project.getTotalIssues() != null ? project.getTotalIssues() : 0;
+            completedIssues = project.getCompletedIssues() != null ? project.getCompletedIssues() : 0;
+        }
         long activeIssues = Math.max(totalIssues - completedIssues, 0);
         int completionPct = totalIssues <= 0 ? 0 : (int) Math.round((double) completedIssues * 100d / totalIssues);
         String managerEmail = normalizeText(project.getManagerEmail());
@@ -160,6 +182,13 @@ public class AdminDashboardService {
                 completedIssues,
                 activeIssues
         );
+    }
+
+    private String normalizeProjectKey(String value) {
+        if (!hasText(value)) {
+            return null;
+        }
+        return value.trim().toUpperCase(Locale.ENGLISH);
     }
 
     private List<AdminPendingApprovalDto> buildPendingApprovals(List<Project> projects) {
