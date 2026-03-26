@@ -1415,24 +1415,13 @@ export default function Dashboard({ initialShowCreate = false }) {
   const adminPendingApprovals = adminOverview?.pendingApprovals ?? []
   const adminProjectOverview = adminOverview?.projectOverview ?? []
   const adminProjectHighlights = adminOverview?.projectHighlights ?? []
-  const adminNotificationTitles =
-    (notifications && notifications.length > 0
-      ? notifications.slice(0, 4).map((n) => n.title)
-      : [
-        'Server backup completed',
-        'New software update available',
-        '5 support tickets unresolved',
-        'Database optimization successful'
-      ])
+  const adminNotificationTitles = Array.isArray(adminOverview?.systemNotifications)
+    ? adminOverview.systemNotifications
+    : (Array.isArray(notifications) ? notifications.map((n) => n.title) : [])
 
-  const adminAnnouncementItems =
-    (adminOverview?.announcements && Array.isArray(adminOverview.announcements) && adminOverview.announcements.length > 0)
-      ? adminOverview.announcements
-      : [
-        'Maintenance scheduled for Friday night',
-        'New security policies implemented',
-        'Team meeting on Monday at 10 AM'
-      ]
+  const adminAnnouncementItems = Array.isArray(adminOverview?.announcements)
+    ? adminOverview.announcements
+    : []
 
   return (
     <div className="dashboard-root d-flex">
@@ -1737,23 +1726,29 @@ export default function Dashboard({ initialShowCreate = false }) {
                   <p className="small-muted">Recent alerts</p>
                 </div>
                 <ul className="notification-list">
-                  {adminNotificationTitles.map((note, index) => (
-                    <li
-                      key={`${note}-${index}`}
-                      role="button"
-                      tabIndex={0}
-                      className="clickable-item"
-                      onClick={() => openAdminNotification(note)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault()
-                          openAdminNotification(note)
-                        }
-                      }}
-                    >
-                      {note}
-                    </li>
-                  ))}
+                  {adminLoading ? (
+                    <li className="muted">Loading notifications...</li>
+                  ) : (adminNotificationTitles && adminNotificationTitles.length > 0) ? (
+                    adminNotificationTitles.filter(Boolean).slice(0, 4).map((note, index) => (
+                      <li
+                        key={`${note}-${index}`}
+                        role="button"
+                        tabIndex={0}
+                        className="clickable-item"
+                        onClick={() => openAdminNotification(note)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            openAdminNotification(note)
+                          }
+                        }}
+                      >
+                        {note}
+                      </li>
+                    ))
+                  ) : (
+                    <li className="muted">No system notifications yet.</li>
+                  )}
                 </ul>
               </section>
             </div>
@@ -1789,23 +1784,29 @@ export default function Dashboard({ initialShowCreate = false }) {
                   <p className="small-muted">Important notes</p>
                 </div>
                 <ul className="announcement-list">
-                  {adminAnnouncementItems.map((item) => (
-                    <li
-                      key={item}
-                      role="button"
-                      tabIndex={0}
-                      className="clickable-item"
-                      onClick={() => openAdminAnnouncement(item)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault()
-                          openAdminAnnouncement(item)
-                        }
-                      }}
-                    >
-                      {item}
-                    </li>
-                  ))}
+                  {adminLoading ? (
+                    <li className="muted">Loading announcements...</li>
+                  ) : (adminAnnouncementItems && adminAnnouncementItems.length > 0) ? (
+                    adminAnnouncementItems.filter(Boolean).slice(0, 4).map((item, index) => (
+                      <li
+                        key={`${item}-${index}`}
+                        role="button"
+                        tabIndex={0}
+                        className="clickable-item"
+                        onClick={() => openAdminAnnouncement(item)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            openAdminAnnouncement(item)
+                          }
+                        }}
+                      >
+                        {item}
+                      </li>
+                    ))
+                  ) : (
+                    <li className="muted">No announcements yet.</li>
+                  )}
                 </ul>
               </section>
             </div>
