@@ -454,6 +454,17 @@ export default function Settings() {
 // ============ Profile Section ============
 function ProfileSection() {
   const { user, setUser } = useAuth()
+  const normalizedUserRole = (user?.role || '')
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]/g, ' ')
+    .replace(/\s+/g, ' ')
+  const canEditRole = normalizedUserRole === 'admin'
+    || normalizedUserRole === 'project manager'
+    || normalizedUserRole === 'projectmanager'
+    || normalizedUserRole === 'pm'
+  const isRoleLocked = !canEditRole
   const [formData, setFormData] = useState(() => {
     const fullName = (user?.name || '').trim()
     const nameParts = fullName ? fullName.split(/\s+/) : []
@@ -549,6 +560,7 @@ function ProfileSection() {
 
   const handleChange = (e) => {
     const { name, value } = e.target
+    if (name === 'role' && isRoleLocked) return
     const nextValue = name === 'email' ? sanitizeEmail(value) : stripLeadingSpace(value)
     setFormData(prev => ({ ...prev, [name]: nextValue }))
     if (name === 'firstName' || name === 'lastName') {
@@ -813,12 +825,22 @@ function ProfileSection() {
         <div className="form-group mb-3">
           <label className="form-label">Role</label>
           <div className="settings-select-wrap">
-            <select className="form-control settings-select" name="role" value={formData.role} onChange={handleChange} disabled={profileLoading || profileSaving}>
+            <select
+              className="form-control settings-select"
+              name="role"
+              value={formData.role}
+              onChange={handleChange}
+              disabled={profileLoading || profileSaving || isRoleLocked}
+            >
               {roleOptions.map((role) => (
                 <option key={role} value={role}>{role}</option>
               ))}
             </select>
-            <FiChevronDown className="settings-select-icon" aria-hidden="true" />
+            {isRoleLocked ? (
+              <FiLock className="settings-select-icon" aria-hidden="true" />
+            ) : (
+              <FiChevronDown className="settings-select-icon" aria-hidden="true" />
+            )}
           </div>
         </div>
         <div className="form-group mb-3">

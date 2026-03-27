@@ -65,7 +65,19 @@ public class UserService {
             u.setAvatar(req.getAvatar());
         }
         if (req.getRole() != null) {
-            u.setRole(req.getRole().trim());
+            String requestedRole = req.getRole().trim();
+            String currentRole = u.getRole() == null ? "" : u.getRole().trim();
+            String normalizedCurrentRole = currentRole.toLowerCase().replace("_", " ").replace("-", " ").replaceAll("\\s+", " ").trim();
+            String normalizedRequestedRole = requestedRole.toLowerCase().replace("_", " ").replace("-", " ").replaceAll("\\s+", " ").trim();
+            boolean canChangeRole = "admin".equals(normalizedCurrentRole)
+                    || "project manager".equals(normalizedCurrentRole)
+                    || "projectmanager".equals(normalizedCurrentRole)
+                    || "pm".equals(normalizedCurrentRole);
+            if (canChangeRole) {
+                u.setRole(requestedRole);
+            } else if (!normalizedRequestedRole.equals(normalizedCurrentRole)) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You are not allowed to change role");
+            }
         }
         if (req.getTimezone() != null) {
             u.setTimezone(req.getTimezone().trim());
