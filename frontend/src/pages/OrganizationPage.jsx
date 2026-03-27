@@ -14,7 +14,23 @@ function OrganizationPage() {
   const [searchText, setSearchText] = useState('');
   const [activeMenuOrgId, setActiveMenuOrgId] = useState(null);
   const [deletingOrgId, setDeletingOrgId] = useState(null);
-  const isAdmin = (user?.role || '').toString().trim().toLowerCase() === 'admin'
+  const normalizedRole = (user?.role || '').toString().trim().toLowerCase()
+  const roleTokens = normalizedRole.split(/\s+/).filter(Boolean)
+  const roleKey = roleTokens.join(' ')
+  const roleHyphen = roleTokens.join('-')
+  const roleCompact = roleTokens.join('')
+  const restrictedCreateRoles = new Set([
+    'developer',
+    'tester',
+    'business analyst',
+    'business-analyst',
+    'businessanalyst',
+    'ba'
+  ])
+  const isRestrictedCreator = restrictedCreateRoles.has(roleKey)
+    || restrictedCreateRoles.has(roleHyphen)
+    || restrictedCreateRoles.has(roleCompact)
+  const isAdmin = normalizedRole === 'admin'
 
   useEffect(() => {
     if (isAdmin) {
@@ -207,7 +223,9 @@ function OrganizationPage() {
           <div className="org-list-empty">{error}</div>
         )}
         {!loading && !error && filteredOrganizations.length === 0 && (
-          <div className="org-list-empty">No organizations yet. Create one to get started.</div>
+          <div className="org-list-empty">
+            {isRestrictedCreator ? 'No organizations assigned yet.' : 'No organizations yet. Create one to get started.'}
+          </div>
         )}
         {!loading && !error && filteredOrganizations.map((org) => {
           const orgKey = getOrgKey(org);
@@ -326,16 +344,18 @@ function OrganizationPage() {
       </div>
 
       {/* Create Organization */}
-      <div
-        className="org-create-box"
-        onClick={() => navigate("/create")}
-      >
-        <div className="org-create-circle">+</div>
-        <h3>Create New Organization</h3>
-        <p>
-          Start managing your projects with a new workspace
-        </p>
-      </div>
+      {!isRestrictedCreator && (
+        <div
+          className="org-create-box"
+          onClick={() => navigate("/create")}
+        >
+          <div className="org-create-circle">+</div>
+          <h3>Create New Organization</h3>
+          <p>
+            Start managing your projects with a new workspace
+          </p>
+        </div>
+      )}
 
       <div className="org-support">
         Need help?{" "}

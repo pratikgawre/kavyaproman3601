@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import "./Auth.css";
 import { uploadFile } from "../utils/upload";
@@ -9,6 +9,22 @@ function CustomizeOrganization() {
   const location = useLocation();
   const { user } = useAuth();
   const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8080';
+  const normalizedRole = (user?.role || '').toString().trim().toLowerCase()
+  const roleTokens = normalizedRole.split(/\s+/).filter(Boolean)
+  const roleKey = roleTokens.join(' ')
+  const roleHyphen = roleTokens.join('-')
+  const roleCompact = roleTokens.join('')
+  const restrictedCreateRoles = new Set([
+    'developer',
+    'tester',
+    'business analyst',
+    'business-analyst',
+    'businessanalyst',
+    'ba'
+  ])
+  const isRestrictedCreator = restrictedCreateRoles.has(roleKey)
+    || restrictedCreateRoles.has(roleHyphen)
+    || restrictedCreateRoles.has(roleCompact)
 
   const { orgName = "", slug = "", desc = "" } = location.state || {};
 
@@ -16,6 +32,14 @@ function CustomizeOrganization() {
   const [logoUploading, setLogoUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+
+  useEffect(() => {
+    if (isRestrictedCreator) {
+      navigate('/organization', { replace: true })
+    }
+  }, [isRestrictedCreator, navigate])
+
+  if (isRestrictedCreator) return null
 
   const handleFileChange = async (e) => {
     const selectedFile = e.target.files[0];
