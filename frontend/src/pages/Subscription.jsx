@@ -3,7 +3,7 @@ import './Subscription.css'
 import './Dashboard.css'
 import { FiSearch, FiBell, FiPlus, FiZap, FiStar, FiCheck, FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLogOut, FiMenu, FiBriefcase, FiServer, FiDownload, FiArrowRight, FiChevronDown, FiX, FiRepeat } from 'react-icons/fi'
 import { GiCrown } from 'react-icons/gi'
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import API_BASE from '../config/api'
 import useIssueNotifications from '../hooks/useIssueNotifications'
@@ -17,6 +17,117 @@ const getAvatarInitials = (name, email) => {
   return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase()
 }
 const normalizeRole = (role) => (role || '').trim().toLowerCase()
+const DEFAULT_PLAN = 'free'
+const SUBSCRIPTION_STORAGE_KEY = 'kpm360.subscription.current'
+const PERIOD_STORAGE_KEY = 'kpm360.subscription.period'
+
+function normalizePlan(value) {
+  const key = String(value || '').trim().toLowerCase()
+  if (!key) return DEFAULT_PLAN
+  if (key === 'pro' || key.includes('professional')) return 'professional'
+  if (key.includes('business')) return 'business'
+  if (key.includes('enterprise')) return 'enterprise'
+  if (key.includes('free')) return 'free'
+  return DEFAULT_PLAN
+}
+
+function normalizeBilling(value) {
+  const key = String(value || '').trim().toLowerCase()
+  return key === 'yearly' ? 'yearly' : 'monthly'
+}
+
+function formatPlanLabel(value) {
+  const plan = normalizePlan(value)
+  return plan.charAt(0).toUpperCase() + plan.slice(1)
+}
+
+function addMonths(date, count) {
+  const next = new Date(date.getTime())
+  const day = next.getDate()
+  next.setMonth(next.getMonth() + count)
+  if (next.getDate() < day) {
+    next.setDate(0)
+  }
+  return next
+}
+
+function addYears(date, count) {
+  const next = new Date(date.getTime())
+  const day = next.getDate()
+  next.setFullYear(next.getFullYear() + count)
+  if (next.getDate() < day) {
+    next.setDate(0)
+  }
+  return next
+}
+
+function computeExpiryDate(purchasedAt, billingCycle, planValue) {
+  const planKey = normalizePlan(planValue)
+  if (planKey === 'free') return null
+  if (!purchasedAt) return null
+  const start = new Date(purchasedAt)
+  if (Number.isNaN(start.getTime())) return null
+  const cycle = normalizeBilling(billingCycle)
+  return cycle === 'yearly' ? addYears(start, 1) : addMonths(start, 1)
+}
+
+function readStoredSubscription() {
+  if (typeof window === 'undefined') {
+    return { plan: DEFAULT_PLAN, billing: 'monthly', manualTimestamp: 0 }
+  }
+  try {
+    const raw = window.localStorage.getItem(SUBSCRIPTION_STORAGE_KEY)
+    if (!raw) return { plan: DEFAULT_PLAN, billing: 'monthly', manualTimestamp: 0 }
+    const parsed = JSON.parse(raw)
+    const manualTimestamp = typeof parsed?.manualTimestamp === 'number' && !Number.isNaN(parsed.manualTimestamp)
+      ? parsed.manualTimestamp
+      : 0
+    return {
+      plan: normalizePlan(parsed?.plan),
+      billing: normalizeBilling(parsed?.billing || 'monthly'),
+      manualTimestamp
+    }
+  } catch {
+    return { plan: DEFAULT_PLAN, billing: 'monthly', manualTimestamp: 0 }
+  }
+}
+
+function persistCurrentSubscription(planValue, billingValue, manualTimestamp) {
+  if (typeof window === 'undefined') return
+  try {
+    const plan = normalizePlan(planValue)
+    const billing = normalizeBilling(billingValue)
+    let safeTimestamp = 0
+    if (typeof manualTimestamp === 'number' && !Number.isNaN(manualTimestamp)) {
+      safeTimestamp = manualTimestamp
+    } else {
+      const stored = readStoredSubscription()
+      safeTimestamp = stored.manualTimestamp || 0
+    }
+    window.localStorage.setItem(
+      SUBSCRIPTION_STORAGE_KEY,
+      JSON.stringify({ plan, billing, manualTimestamp: safeTimestamp })
+    )
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function readPeriodPreference() {
+  if (typeof window === 'undefined') return null
+  const stored = window.localStorage.getItem(PERIOD_STORAGE_KEY)
+  if (stored === 'monthly' || stored === 'yearly') return stored
+  return null
+}
+
+function persistPeriodPreference(value) {
+  if (typeof window === 'undefined') return
+  if (value === 'monthly' || value === 'yearly') {
+    window.localStorage.setItem(PERIOD_STORAGE_KEY, value)
+    return
+  }
+  window.localStorage.removeItem(PERIOD_STORAGE_KEY)
+}
 
 export default function Subscription() {
   const navigate = useNavigate()
@@ -25,115 +136,14 @@ export default function Subscription() {
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
   const avatarInitials = getAvatarInitials(user?.name, user?.email)
   const isDeveloper = normalizeRole(user?.role) === 'developer'
-  const DEFAULT_PLAN = 'free'
-  const normalizePlan = (value) => {
-    const key = String(value || '').trim().toLowerCase()
-    if (!key) return DEFAULT_PLAN
-    if (key === 'pro' || key.includes('professional')) return 'professional'
-    if (key.includes('business')) return 'business'
-    if (key.includes('enterprise')) return 'enterprise'
-    if (key.includes('free')) return 'free'
-    return DEFAULT_PLAN
-  }
-  const normalizeBilling = (value) => {
-    const key = String(value || '').trim().toLowerCase()
-    return key === 'yearly' ? 'yearly' : 'monthly'
-  }
-  const formatPlanLabel = (value) => {
-    const plan = normalizePlan(value)
-    return plan.charAt(0).toUpperCase() + plan.slice(1)
-  }
-  const SUBSCRIPTION_STORAGE_KEY = 'kpm360.subscription.current'
-  const readStoredSubscription = () => {
-    if (typeof window === 'undefined') {
-      return { plan: DEFAULT_PLAN, billing: 'monthly', manualTimestamp: 0 }
-    }
-    try {
-      const raw = window.localStorage.getItem(SUBSCRIPTION_STORAGE_KEY)
-      if (!raw) return { plan: DEFAULT_PLAN, billing: 'monthly', manualTimestamp: 0 }
-      const parsed = JSON.parse(raw)
-      const manualTimestamp = typeof parsed?.manualTimestamp === 'number' && !Number.isNaN(parsed.manualTimestamp)
-        ? parsed.manualTimestamp
-        : 0
-      return {
-        plan: normalizePlan(parsed?.plan),
-        billing: normalizeBilling(parsed?.billing || 'monthly'),
-        manualTimestamp
-      }
-    } catch (err) {
-      return { plan: DEFAULT_PLAN, billing: 'monthly', manualTimestamp: 0 }
-    }
-  }
-  const persistCurrentSubscription = (planValue, billingValue, manualTimestamp) => {
-    if (typeof window === 'undefined') return
-    try {
-      const plan = normalizePlan(planValue)
-      const billing = normalizeBilling(billingValue)
-      let safeTimestamp = 0
-      if (typeof manualTimestamp === 'number' && !Number.isNaN(manualTimestamp)) {
-        safeTimestamp = manualTimestamp
-      } else {
-        const stored = readStoredSubscription()
-        safeTimestamp = stored.manualTimestamp || 0
-      }
-      window.localStorage.setItem(
-        SUBSCRIPTION_STORAGE_KEY,
-        JSON.stringify({ plan, billing, manualTimestamp: safeTimestamp })
-      )
-    } catch (err) {
-      // ignore storage failures
-    }
-  }
-  const PERIOD_STORAGE_KEY = 'kpm360.subscription.period'
-  const readPeriodPreference = () => {
-    if (typeof window === 'undefined') return null
-    const stored = window.localStorage.getItem(PERIOD_STORAGE_KEY)
-    if (stored === 'monthly' || stored === 'yearly') return stored
-    return null
-  }
-  const persistPeriodPreference = (value) => {
-    if (typeof window === 'undefined') return
-    if (value === 'monthly' || value === 'yearly') {
-      window.localStorage.setItem(PERIOD_STORAGE_KEY, value)
-      return
-    }
-    window.localStorage.removeItem(PERIOD_STORAGE_KEY)
-  }
   const initialSubscription = readStoredSubscription()
   const periodPreference = readPeriodPreference()
   const lastManualPlanRef = useRef({
     plan: initialSubscription.plan,
     millis: initialSubscription.manualTimestamp || 0
   })
-  const addMonths = (date, count) => {
-    const next = new Date(date.getTime())
-    const day = next.getDate()
-    next.setMonth(next.getMonth() + count)
-    if (next.getDate() < day) {
-      next.setDate(0)
-    }
-    return next
-  }
-  const addYears = (date, count) => {
-    const next = new Date(date.getTime())
-    const day = next.getDate()
-    next.setFullYear(next.getFullYear() + count)
-    if (next.getDate() < day) {
-      next.setDate(0)
-    }
-    return next
-  }
-  const computeExpiryDate = (purchasedAt, billingCycle, planValue) => {
-    const planKey = normalizePlan(planValue)
-    if (planKey === 'free') return null
-    if (!purchasedAt) return null
-    const start = new Date(purchasedAt)
-    if (Number.isNaN(start.getTime())) return null
-    const cycle = normalizeBilling(billingCycle)
-    return cycle === 'yearly' ? addYears(start, 1) : addMonths(start, 1)
-  }
   const [selectedOrg, setSelectedOrg] = useState(() => {
-    try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null }
+    try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch { return null }
   })
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -261,7 +271,6 @@ export default function Subscription() {
     navigate('/login', { replace: true })
   }
 
-  const prices = { free: { monthly: 'Free', yearly: 'Free' }, pro: { monthly: '$12', yearly: '$120' } }
   const [openFaq, setOpenFaq] = useState(null)
 
   const faqs = [
@@ -291,7 +300,7 @@ export default function Subscription() {
     return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
   }
 
-  const applyCurrentSubscription = (planValue, billingValue, options = {}) => {
+  const applyCurrentSubscription = useCallback((planValue, billingValue, options = {}) => {
     const normalizedPlan = normalizePlan(planValue)
     const normalizedBilling = normalizeBilling(billingValue)
     setCurrentPlan(normalizedPlan)
@@ -304,7 +313,7 @@ export default function Subscription() {
       const referenceTimestamp = typeof manualTimestamp === 'number' ? manualTimestamp : Date.now()
       lastManualPlanRef.current = { plan: normalizedPlan, millis: referenceTimestamp }
     }
-  }
+  }, [])
 
   const updateCurrentSubscription = async (planValue, billingValue, purchasedAtOverride) => {
     const normalizedPlan = normalizePlan(planValue)
@@ -338,7 +347,7 @@ export default function Subscription() {
         )
         return
       }
-    } catch (err) {
+    } catch {
       // Ignore and fallback to local update for demo flow
     }
 
@@ -375,14 +384,14 @@ export default function Subscription() {
           lastManual.plan !== 'free'
         if (shouldSkipRemoteFree) return
         applyCurrentSubscription(data?.planName, data?.billingCycle, { source: 'remote' })
-      } catch (err) {
+      } catch {
         // Keep defaults if the API is unavailable
       }
     }
 
     loadCurrentSubscription()
     return () => { isMounted = false }
-  }, [user?.id])
+  }, [applyCurrentSubscription, user?.id])
 
   // load billing history
   useEffect(() => {
@@ -398,7 +407,7 @@ export default function Subscription() {
         const data = await res.json()
         if (!isMounted) return
         setPayments(Array.isArray(data) ? data : [])
-      } catch (err) {
+      } catch {
         // keep empty on error
       } finally {
         if (isMounted) setPaymentsLoading(false)
@@ -439,7 +448,7 @@ export default function Subscription() {
   useEffect(() => {
     if (!location?.state?.currentPlan) return
     applyCurrentSubscription(location.state.currentPlan, location.state.billingCycle || currentBillingCycle, { source: 'manual' })
-  }, [location?.state?.currentPlan, location?.state?.billingCycle])
+  }, [applyCurrentSubscription, currentBillingCycle, location?.state?.billingCycle, location?.state?.currentPlan])
 
   // listen for organization changes
   useEffect(() => {
@@ -447,7 +456,7 @@ export default function Subscription() {
       const org = e?.detail || null
       setSelectedOrg(org)
       try { if (org) localStorage.setItem('org', JSON.stringify(org)) }
-      catch (err) {}
+      catch { /* ignore storage write failures */ }
     }
     window.addEventListener('org:changed', onOrgChanged)
     return () => window.removeEventListener('org:changed', onOrgChanged)
@@ -516,7 +525,7 @@ export default function Subscription() {
       a.click()
       a.remove()
       window.URL.revokeObjectURL(url)
-    } catch (err) {
+    } catch {
       // ignore download errors
     }
   }

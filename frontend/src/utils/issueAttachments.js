@@ -43,7 +43,7 @@ function getAttachmentExtension(attachment, url = '') {
       const clean = url.split('?')[0].split('#')[0]
       const match = clean.match(/\.([a-z0-9]+)$/i)
       return match ? match[1].toLowerCase() : ''
-    } catch (error) {
+    } catch {
       return ''
     }
   })()
@@ -146,7 +146,7 @@ export async function openIssueAttachment(attachment) {
     }
 
     setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
-  } catch (error) {
+  } catch {
     if (shouldPreview) {
       const previewWindow = window.open(href, '_blank', 'noopener,noreferrer')
       if (!previewWindow) {

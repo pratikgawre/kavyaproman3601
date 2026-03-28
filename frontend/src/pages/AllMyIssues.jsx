@@ -152,9 +152,9 @@ export default function AllMyIssues(){
   }
   const isProjectManager = ['admin', 'project manager'].includes(normalizeRole(user?.role))
   const isDeveloper = normalizeRole(user?.role) === 'developer'
-  const [selectedOrg, setSelectedOrg] = useState(() => { try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null } })
+  const [selectedOrg, setSelectedOrg] = useState(() => { try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch { return null } })
   useEffect(() => {
-    function onOrgChanged(e){ const org = e?.detail || null; setSelectedOrg(org); try { if (org) localStorage.setItem('org', JSON.stringify(org)) } catch(err){} }
+    function onOrgChanged(e){ const org = e?.detail || null; setSelectedOrg(org); try { if (org) localStorage.setItem('org', JSON.stringify(org)) } catch { /* ignore storage write failures */ } }
     window.addEventListener('org:changed', onOrgChanged)
     return () => window.removeEventListener('org:changed', onOrgChanged)
   }, [])
@@ -271,10 +271,10 @@ export default function AllMyIssues(){
 
   const location = useLocation()
   const filterDifficulty = (() => {
-    try { const qp = new URLSearchParams(location.search); return qp.get('difficulty') } catch (e) { return null }
+    try { const qp = new URLSearchParams(location.search); return qp.get('difficulty') } catch { return null }
   })()
   const searchQuery = (() => {
-    try { const qp = new URLSearchParams(location.search); return (qp.get('q') || '').trim() } catch (e) { return '' }
+    try { const qp = new URLSearchParams(location.search); return (qp.get('q') || '').trim() } catch { return '' }
   })()
   const filterParams = (() => {
     try {
@@ -289,7 +289,7 @@ export default function AllMyIssues(){
         dueFrom: (qp.get('dueFrom') || '').trim(),
         dueTo: (qp.get('dueTo') || '').trim()
       }
-    } catch (e) {
+    } catch {
       return { status: [], issueType: [], sprint: [], priority: [], assignee: [], project: [], dueFrom: '', dueTo: '' }
     }
   })()
@@ -377,6 +377,7 @@ export default function AllMyIssues(){
   useEffect(() => {
     if (editingIndex < 0 || !editDescRef.current) return
     editDescRef.current.innerHTML = editFields.description || ''
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingIndex])
 
   function preventLeadingSpaceInEditDescription(e) {
@@ -519,6 +520,7 @@ export default function AllMyIssues(){
       }
     }
     load()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   },[API_BASE, location.search, projects, selectedOrg, userEmail, normalizedUserName, user?.id])
 
   function openEdit(idx){

@@ -35,7 +35,7 @@ export default function PaymentSuccess() {
         if (!isMounted) return
         if (dbUser?.name) setResolvedName(dbUser.name)
         if (dbUser?.email) setResolvedEmail(dbUser.email)
-      } catch (err) {
+      } catch {
         // Keep fallback values if fetch fails
       }
     }

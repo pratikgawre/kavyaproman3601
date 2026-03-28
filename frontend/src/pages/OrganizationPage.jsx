@@ -87,7 +87,7 @@ function OrganizationPage() {
     // notify other pages about the change
     try {
       window.dispatchEvent(new CustomEvent('org:changed', { detail: org }))
-    } catch (e) {
+    } catch {
       // ignore
     }
     navigate('/dashboard')

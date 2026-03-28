@@ -43,6 +43,22 @@ const getAvatarInitials = (name, email) => {
   if (parts.length === 1) return parts[0].charAt(0).toUpperCase()
   return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase()
 }
+
+function getNameFieldError(fieldName, value) {
+  const trimmedValue = stripLeadingSpace((value || '').toString()).trim()
+  if (!trimmedValue) return ''
+  const label = fieldName === 'lastName' ? 'Last name' : 'First name'
+  return ALPHABETIC_NAME_REGEX.test(trimmedValue)
+    ? ''
+    : `${label} should contain only alphabetic characters`
+}
+
+function getProfileNameErrors(values) {
+  return {
+    firstName: getNameFieldError('firstName', values?.firstName),
+    lastName: getNameFieldError('lastName', values?.lastName)
+  }
+}
 const REGISTRATION_ROLE_OPTIONS = ['Admin', 'Project Manager', 'Developer', 'Tester', 'Business Analyst']
 const COMMON_TIMEZONE_OPTIONS = [
   'UTC',
@@ -60,10 +76,11 @@ const COMMON_TIMEZONE_OPTIONS = [
 ]
 
 function SettingsSectionHeader({ icon: Icon, title, subtitle, children }) {
+  const IconComponent = Icon
   return (
     <div className="card-header">
       <div className="settings-title-with-icon">
-        <Icon className="settings-section-icon" aria-hidden="true" />
+        <IconComponent className="settings-section-icon" aria-hidden="true" />
         <div className="settings-title-copy">
           <h2>{title}</h2>
           {subtitle && <p className="text-muted">{subtitle}</p>}
@@ -87,9 +104,9 @@ export default function Settings() {
   const navigate = useNavigate()
 
   // placeholders for values that would normally come from context or props
-  const [selectedOrg, setSelectedOrg] = useState(() => { try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null } })
+  const [selectedOrg, setSelectedOrg] = useState(() => { try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch { return null } })
   useEffect(() => {
-    function onOrgChanged(e){ const org = e?.detail || null; setSelectedOrg(org); try { if (org) localStorage.setItem('org', JSON.stringify(org)) } catch(err){} }
+    function onOrgChanged(e){ const org = e?.detail || null; setSelectedOrg(org); try { if (org) localStorage.setItem('org', JSON.stringify(org)) } catch { /* ignore storage write failures */ } }
     window.addEventListener('org:changed', onOrgChanged)
     return () => window.removeEventListener('org:changed', onOrgChanged)
   }, [])
@@ -454,6 +471,7 @@ export default function Settings() {
 // ============ Profile Section ============
 function ProfileSection() {
   const { user, setUser } = useAuth()
+  const userId = user?.id
   const normalizedUserRole = (user?.role || '')
     .toString()
     .trim()
@@ -492,32 +510,16 @@ function ProfileSection() {
   const [profileFieldErrors, setProfileFieldErrors] = useState({ firstName: '', lastName: '' })
   const fileInputRef = useRef(null)
 
-  function getNameFieldError(fieldName, value) {
-    const trimmedValue = stripLeadingSpace((value || '').toString()).trim()
-    if (!trimmedValue) return ''
-    const label = fieldName === 'lastName' ? 'Last name' : 'First name'
-    return ALPHABETIC_NAME_REGEX.test(trimmedValue)
-      ? ''
-      : `${label} should contain only alphabetic characters`
-  }
-
-  function getProfileNameErrors(values) {
-    return {
-      firstName: getNameFieldError('firstName', values?.firstName),
-      lastName: getNameFieldError('lastName', values?.lastName)
-    }
-  }
-
   useEffect(() => {
     let cancelled = false
 
     async function loadProfile() {
-      if (!user?.id) return
+      if (!userId) return
       setProfileError('')
       setProfileLoading(true)
       try {
         const res = await fetch(`${API_BASE}/api/user`, {
-          headers: { 'X-USER-ID': String(user.id) }
+          headers: { 'X-USER-ID': String(userId) }
         })
         const body = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(body.message || 'Failed to load profile')
@@ -539,13 +541,12 @@ function ProfileSection() {
         setAvatar(body?.avatar || '')
 
         setUser({
-          ...(user || {}),
-          id: body?.id || user.id,
-          name: body?.name,
-          email: body?.email,
-          avatar: body?.avatar,
-          role: body?.role,
-          timezone: body?.timezone
+          id: body?.id || userId,
+          name: body?.name || '',
+          email: body?.email || '',
+          avatar: body?.avatar || '',
+          role: body?.role || 'Member',
+          timezone: body?.timezone || 'UTC'
         })
       } catch (err) {
         if (!cancelled) setProfileError(err.message || 'Failed to load profile')
@@ -556,7 +557,7 @@ function ProfileSection() {
 
     loadProfile()
     return () => { cancelled = true }
-  }, [setUser, user?.id])
+  }, [setUser, userId])
 
   const handleChange = (e) => {
     const { name, value } = e.target

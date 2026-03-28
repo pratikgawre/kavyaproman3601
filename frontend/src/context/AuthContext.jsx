@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 
+/* eslint-disable react-refresh/only-export-components */
+
 const AuthContext = createContext(null)
 const USER_STORAGE_KEY = 'kpm360.authUser'
 
@@ -15,10 +17,18 @@ function readStoredSession() {
     const id = parsed.id
     if (id === null || id === undefined || id === '') return null
     const session = { id: String(id) }
-    try { window.localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(session)) } catch {}
+    try {
+      window.localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(session))
+    } catch {
+      // Ignore storage write failures.
+    }
     return session
   } catch {
-    try { window.localStorage.removeItem(USER_STORAGE_KEY) } catch {}
+    try {
+      window.localStorage.removeItem(USER_STORAGE_KEY)
+    } catch {
+      // Ignore storage cleanup failures.
+    }
     return null
   }
 }

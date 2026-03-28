@@ -69,7 +69,7 @@ export default function RoleManagement() {
       setSelectedOrg(org)
       try {
         if (org) localStorage.setItem('org', JSON.stringify(org))
-      } catch {}
+      } catch { /* ignore storage write failures */ }
     }
     window.addEventListener('org:changed', onOrgChanged)
     return () => window.removeEventListener('org:changed', onOrgChanged)

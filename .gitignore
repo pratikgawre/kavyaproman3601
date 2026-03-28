@@ -1,6 +1,9 @@
 .env
 .env.*
+.m2/
 backend/target/
 backend/.m2/
 frontend/node_modules/
 maven_home/
+.codex_backups/
+debug.log

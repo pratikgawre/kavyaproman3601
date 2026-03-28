@@ -3,6 +3,9 @@ import './ContactSales.css'
 import { FiX, FiUser, FiMail, FiPhone, FiEdit3, FiServer, FiPaperclip } from 'react-icons/fi'
 import { useNavigate } from 'react-router-dom'
 
+const API_BASE_ROOT = import.meta.env.VITE_API_BASE || 'http://localhost:8080'
+const API_BASE = `${API_BASE_ROOT}/api/contact`
+
 const stripLeadingSpace = (value) => value.replace(/^\s+/, '')
 const sanitizeEmail = (value) => stripLeadingSpace(value).replace(/[^A-Za-z@.]/g, '')
 const SALES_EMAIL_DOMAIN = 'kavyainfoweb.com'
@@ -19,8 +22,6 @@ const preventLeadingSpace = (e) => {
 }
 
 export default function ContactSales(){
-  const API_BASE_ROOT = import.meta.env.VITE_API_BASE || 'http://localhost:8080'
-  const API_BASE = API_BASE_ROOT + '/api/contact'
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
@@ -71,7 +72,7 @@ export default function ContactSales(){
           }
         })();
       }
-    } catch (err) { /* ignore */ }
+    } catch { /* ignore */ }
   }, []);
 
   function validateAll() {
@@ -220,6 +221,7 @@ export default function ContactSales(){
             }}>Verify Email</button>
           </label>
           {emailError && <div className="contact-error">{emailError}</div>}
+          {apiError && <div className="contact-error">{apiError}</div>}
 
           {verificationSent && !verified && (
             <label className="field">
@@ -288,7 +290,9 @@ export default function ContactSales(){
           )}
           {fileError && <div className="contact-error">{fileError}</div>}
 
-          <button className="submit-btn" type="submit">Submit</button>
+          <button className="submit-btn" type="submit" disabled={sending}>
+            {sending ? 'Submitting...' : 'Submit'}
+          </button>
           <div className="help-text">We'll get back to you shortly.</div>
         </form>
       </div>
