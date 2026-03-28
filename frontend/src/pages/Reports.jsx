@@ -44,6 +44,7 @@ const normalizeEmail = (value) => {
   const normalized = (value || "").toString().trim().toLowerCase();
   return normalized || "";
 };
+const EMPTY_ISSUES = Object.freeze([]);
 const EMPTY_REPORT_DATA = Object.freeze({
   summary: {
     totalIssues: 0,
@@ -451,14 +452,6 @@ const Reports = () => {
     });
     return set;
   }, [isTester, projects, userEmail]);
-  const isTesterInProjectKey = (projectKey) => {
-    if (!isTester) return false;
-    const normalizedKey = normalizeProjectKey(projectKey);
-    if (!normalizedKey || normalizedKey === ALL_PROJECTS_KEY) return false;
-    if (!projectsWithTeamMembers.has(normalizedKey)) return Boolean(userEmail);
-    return testerProjectKeys.has(normalizedKey);
-  };
-
   useEffect(() => {
     if (!activeProjectKey) return;
     try {
@@ -488,17 +481,31 @@ const Reports = () => {
   const [projectIssues, setProjectIssues] = useState([]);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState("");
+  const reportIssueSource = useMemo(
+    () => (
+      activeProjectKey && !(activeProjectKey === ALL_PROJECTS_KEY && availableProjectKeySet.size === 0)
+        ? projectIssues
+        : EMPTY_ISSUES
+    ),
+    [activeProjectKey, availableProjectKeySet.size, projectIssues]
+  );
+  const effectiveReportLoading = Boolean(reportIssueSource === projectIssues && reportLoading);
+  const effectiveReportError = reportIssueSource === projectIssues ? reportError : "";
 
   useEffect(() => {
     if (!activeProjectKey || (activeProjectKey === ALL_PROJECTS_KEY && availableProjectKeySet.size === 0)) {
-      setProjectIssues([]);
-      setReportError("");
-      setReportLoading(false);
       return undefined;
     }
 
     const controller = new AbortController();
     let ignore = false;
+    const isTesterInProjectKey = (projectKey) => {
+      if (!isTester) return false;
+      const normalizedKey = normalizeProjectKey(projectKey);
+      if (!normalizedKey || normalizedKey === ALL_PROJECTS_KEY) return false;
+      if (!projectsWithTeamMembers.has(normalizedKey)) return Boolean(userEmail);
+      return testerProjectKeys.has(normalizedKey);
+    };
     const queryParams = new URLSearchParams();
     if (activeProjectKey !== ALL_PROJECTS_KEY) {
       queryParams.set("project", activeProjectKey);
@@ -573,8 +580,8 @@ const Reports = () => {
   ]);
 
   const reportData = useMemo(
-    () => buildReportDataFromIssues(projectIssues),
-    [projectIssues]
+    () => buildReportDataFromIssues(reportIssueSource),
+    [reportIssueSource]
   );
 
   const summary = reportData?.summary || EMPTY_REPORT_DATA.summary;
@@ -891,12 +898,12 @@ const Reports = () => {
           </select>
         </div>
 
-        {(projectsError || reportError) && (
+        {(projectsError || effectiveReportError) && (
           <p className="text-danger mt-2 mb-0">
-            {projectsError || reportError}
+            {projectsError || effectiveReportError}
           </p>
         )}
-        {(projectsLoading || reportLoading) && (
+        {(projectsLoading || effectiveReportLoading) && (
           <p className="text-muted mt-2 mb-0">
             {projectsLoading ? "Loading projects..." : "Loading report data..."}
           </p>

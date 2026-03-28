@@ -7,12 +7,11 @@ import com.team1.backend.repository.SprintRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -180,9 +179,9 @@ public class SprintService {
         if (sprint == null || sprint.getId() == null || sprint.getId().isBlank()) {
             if (sprint != null) {
                 sprint.setIssueCount(0);
-                sprint.setIssueSummary(Collections.emptyList());
-                sprint.setIssueStatusCounts(Collections.emptyMap());
-                sprint.setAssigneeCounts(Collections.emptyMap());
+                sprint.setIssueSummary(List.of());
+                sprint.setIssueStatusCounts(Map.of());
+                sprint.setAssigneeCounts(Map.of());
             }
             return;
         }
@@ -196,33 +195,37 @@ public class SprintService {
 
     private void attachIssueSummaries(List<Sprint> sprints) {
         if (sprints == null || sprints.isEmpty()) return;
-        List<String> sprintIds = new ArrayList<>();
-        for (Sprint sprint : sprints) {
-            if (sprint == null) continue;
-            String id = sprint.getId();
-            if (id == null || id.isBlank()) continue;
-            sprintIds.add(id);
-        }
+        
+        // Extract valid sprint IDs using Stream API for better readability
+        List<String> sprintIds = sprints.stream()
+                .filter(Objects::nonNull)
+                .map(Sprint::getId)
+                .filter(id -> id != null && !id.isBlank())
+                .toList();
+        
         if (sprintIds.isEmpty()) {
-            for (Sprint sprint : sprints) {
-                if (sprint == null) continue;
-                sprint.setIssueCount(0);
-                sprint.setIssueSummary(Collections.emptyList());
-                sprint.setIssueStatusCounts(Collections.emptyMap());
-                sprint.setAssigneeCounts(Collections.emptyMap());
-            }
+            sprints.forEach(sprint -> {
+                if (sprint != null) {
+                    sprint.setIssueCount(0);
+                    sprint.setIssueSummary(List.of());
+                    sprint.setIssueStatusCounts(Map.of());
+                    sprint.setAssigneeCounts(Map.of());
+                }
+            });
             return;
         }
+        
         List<Issue> issues = issueRepository.findBySprintIdIn(sprintIds);
         Map<String, List<Issue>> issuesBySprint = new HashMap<>();
         for (Issue issue : issues) {
             if (issue == null) continue;
-            String sprintId = normalizeText(issue.getSprintId());
-            if (sprintId == null || sprintId.isBlank()) continue;
-            issuesBySprint.computeIfAbsent(sprintId, (key) -> new ArrayList<>()).add(issue);
+            String issueSprintId = normalizeText(issue.getSprintId());
+            if (issueSprintId == null || issueSprintId.isBlank()) continue;
+            issuesBySprint.computeIfAbsent(issueSprintId, key -> new ArrayList<>()).add(issue);
         }
-        for (Sprint sprint : sprints) {
-            if (sprint == null) continue;
+        
+        sprints.forEach(sprint -> {
+            if (sprint == null) return;
             String sprintId = sprint.getId();
             List<Issue> sprintIssues = sprintId != null ? issuesBySprint.get(sprintId) : null;
             List<Sprint.SprintIssueInfo> summary = buildIssueSummary(sprintIssues);
@@ -230,51 +233,59 @@ public class SprintService {
             sprint.setIssueCount(summary.size());
             sprint.setIssueStatusCounts(buildIssueStatusCounts(sprintIssues));
             sprint.setAssigneeCounts(buildAssigneeCounts(sprintIssues));
-        }
+        });
     }
 
     private List<Sprint.SprintIssueInfo> buildIssueSummary(List<Issue> issues) {
-        if (issues == null || issues.isEmpty()) return Collections.emptyList();
-        List<Sprint.SprintIssueInfo> summary = new ArrayList<>();
-        for (Issue issue : issues) {
-            if (issue == null) continue;
-            Sprint.SprintIssueInfo info = new Sprint.SprintIssueInfo();
-            info.setIssueId(issue.getId());
-            info.setIssueKey(normalizeText(issue.getIssueKey()));
-            info.setStatus(normalizeIssueStatus(issue.getStatus()));
-            info.setAssigneeName(normalizeText(issue.getAssigneeName()));
-            info.setAssigneeEmail(normalizeEmail(issue.getAssigneeEmail()));
-            summary.add(info);
-        }
-        return summary;
+        if (issues == null || issues.isEmpty()) return List.of();
+        return issues.stream()
+                .filter(Objects::nonNull)
+                .map(this::toSprintIssueInfo)
+                .toList();
+    }
+
+    private Sprint.SprintIssueInfo toSprintIssueInfo(Issue issue) {
+        Sprint.SprintIssueInfo info = new Sprint.SprintIssueInfo();
+        info.setIssueId(issue.getId());
+        info.setIssueKey(normalizeText(issue.getIssueKey()));
+        info.setStatus(normalizeIssueStatus(issue.getStatus()));
+        info.setAssigneeName(normalizeText(issue.getAssigneeName()));
+        info.setAssigneeEmail(normalizeEmail(issue.getAssigneeEmail()));
+        return info;
     }
 
     private Map<String, Integer> buildIssueStatusCounts(List<Issue> issues) {
-        if (issues == null || issues.isEmpty()) return Collections.emptyMap();
+        if (issues == null || issues.isEmpty()) return Map.of();
         Map<String, Integer> counts = new LinkedHashMap<>();
         for (Issue issue : issues) {
             if (issue == null) continue;
             String status = normalizeIssueStatus(issue.getStatus());
-            counts.merge(status, 1, Integer::sum);
+            counts.put(status, counts.getOrDefault(status, 0) + 1);
         }
         return counts;
     }
 
     private Map<String, Integer> buildAssigneeCounts(List<Issue> issues) {
-        if (issues == null || issues.isEmpty()) return Collections.emptyMap();
+        if (issues == null || issues.isEmpty()) return Map.of();
         Map<String, Integer> counts = new LinkedHashMap<>();
         for (Issue issue : issues) {
             if (issue == null) continue;
-            String assignee = normalizeText(issue.getAssigneeName());
-            if (assignee == null || assignee.isBlank()) {
-                assignee = normalizeEmail(issue.getAssigneeEmail());
-            }
-            if (assignee == null || assignee.isBlank()) {
-                assignee = UNASSIGNED_LABEL;
-            }
-            counts.merge(assignee, 1, Integer::sum);
+            String assignee = resolveAssignee(issue);
+            if (assignee == null || assignee.isBlank()) continue;
+            counts.put(assignee, counts.getOrDefault(assignee, 0) + 1);
         }
         return counts;
+    }
+
+    private String resolveAssignee(Issue issue) {
+        String assignee = normalizeText(issue.getAssigneeName());
+        if (assignee == null || assignee.isBlank()) {
+            assignee = normalizeEmail(issue.getAssigneeEmail());
+        }
+        if (assignee == null || assignee.isBlank()) {
+            assignee = UNASSIGNED_LABEL;
+        }
+        return assignee;
     }
 
     private <T extends Comparable<T>> int compareNullable(T left, T right) {

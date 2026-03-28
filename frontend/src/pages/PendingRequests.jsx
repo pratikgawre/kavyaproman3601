@@ -74,7 +74,7 @@ export default function PendingRequests() {
     function onOrgChanged(e) {
       const org = e?.detail || null
       setSelectedOrg(org)
-      try { if (org) localStorage.setItem('org', JSON.stringify(org)) } catch {}
+      try { if (org) localStorage.setItem('org', JSON.stringify(org)) } catch { /* ignore storage write failures */ }
     }
     window.addEventListener('org:changed', onOrgChanged)
     return () => window.removeEventListener('org:changed', onOrgChanged)
@@ -208,11 +208,14 @@ export default function PendingRequests() {
         <div className="sidebar-inner d-flex flex-column mt-3">
           <div className="nav-scroll">
             <nav className="nav flex-column">
-              {sidebarNav.map(({ to, label, Icon }) => (
-                <NavLink key={label} to={to} className={({ isActive }) => `nav-item d-flex align-items-center mb-2 ${isActive ? 'active' : ''}`}>
-                  <Icon className="me-3 nav-icon" /> <span className="nav-text">{label}</span>
-                </NavLink>
-              ))}
+              {sidebarNav.map(({ to, label, Icon }) => {
+                const IconComponent = Icon
+                return (
+                  <NavLink key={label} to={to} className={({ isActive }) => `nav-item d-flex align-items-center mb-2 ${isActive ? 'active' : ''}`}>
+                    <IconComponent className="me-3 nav-icon" /> <span className="nav-text">{label}</span>
+                  </NavLink>
+                )
+              })}
             </nav>
           </div>
 

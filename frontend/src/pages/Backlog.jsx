@@ -264,9 +264,9 @@ export default function Backlog() {
   const canUseFilters = !isDeveloper && !isTester
   const userId = currentUser?.id || user?.id
   const API_BASE = (import.meta?.env?.VITE_API_BASE || 'http://localhost:8080')
-  const [selectedOrg, setSelectedOrg] = useState(() => { try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null } })
+  const [selectedOrg, setSelectedOrg] = useState(() => { try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch { return null } })
   useEffect(() => {
-    function onOrgChanged(e){ const org = e?.detail || null; setSelectedOrg(org); try { if (org) localStorage.setItem('org', JSON.stringify(org)) } catch(err){} }
+    function onOrgChanged(e){ const org = e?.detail || null; setSelectedOrg(org); try { if (org) localStorage.setItem('org', JSON.stringify(org)) } catch { /* ignore storage write failures */ } }
     window.addEventListener('org:changed', onOrgChanged)
     return () => window.removeEventListener('org:changed', onOrgChanged)
   }, [])
@@ -319,7 +319,10 @@ export default function Backlog() {
       name: baseProject?.name || projectKeyRaw || activeProjectKey || 'Project'
     }
   }, [activeProjectKey, projectDetails, projectFromState, projectKeyRaw, routeProjectToken])
-  const projectTeamMembers = Array.isArray(activeProject?.teamMembers) ? activeProject.teamMembers : []
+  const projectTeamMembers = useMemo(
+    () => (Array.isArray(activeProject?.teamMembers) ? activeProject.teamMembers : []),
+    [activeProject?.teamMembers]
+  )
   const [issues, setIssues] = useState([])
   const [issuesLoading, setIssuesLoading] = useState(true)
   const [issuesError, setIssuesError] = useState('')
@@ -597,11 +600,6 @@ export default function Backlog() {
       return true
     })
   }, [mappedIssues, projectSprints, activeSprint?.id, plannedSprint?.id])
-
-  const developerMembers = useMemo(
-    () => projectTeamMembers.filter((member) => isDeveloperRole(member?.role)),
-    [projectTeamMembers]
-  )
 
   const developerTesterMembers = useMemo(
     () => projectTeamMembers.filter((member) => isDeveloperRole(member?.role) || isTesterRole(member?.role)),

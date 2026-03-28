@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, NavLink } from 'react-router-dom'
 import './Dashboard.css'
 import './Project.css'
@@ -103,8 +103,8 @@ export default function Project() {
   const currentUser = profileUser || user || {}
   const displayName = currentUser?.name || (currentUser?.email ? currentUser.email.split('@')[0] : 'Guest')
   const avatarInitials = getAvatarInitials(currentUser?.name, currentUser?.email)
-  const [selectedOrg, setSelectedOrg] = useState(() => {
-    try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null }
+  const [selectedOrg] = useState(() => {
+    try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch { return null }
   })
   const [projects, setProjects] = useState([])
   const [projectsLoading, setProjectsLoading] = useState(true)
@@ -327,6 +327,18 @@ export default function Project() {
     selectedOrg?.name
   ])
 
+  const fetchTeamMembers = useCallback(async (query, signal) => {
+    const response = await fetch(
+      `${USERS_SEARCH_API_URL}?query=${encodeURIComponent(query)}&limit=8`,
+      { signal }
+    )
+    if (!response.ok) {
+      throw new Error('Failed to fetch users')
+    }
+    const data = await response.json()
+    return Array.isArray(data) ? data : []
+  }, [USERS_SEARCH_API_URL])
+
   useEffect(() => {
     if (!showCreateModal) return
     const searchTerm = memberSearch.trim()
@@ -357,7 +369,7 @@ export default function Project() {
       clearTimeout(debounceId)
       controller.abort()
     }
-  }, [showCreateModal, memberSearch, USERS_SEARCH_API_URL])
+  }, [showCreateModal, memberSearch, fetchTeamMembers])
 
 
   function handleLogout() {
@@ -395,10 +407,6 @@ export default function Project() {
   function handleCloseCreateModal() {
     setShowCreateModal(false)
     resetCreateForm()
-  }
-
-  function formatCreatedOn(date) {
-    return formatDateValue(date)
   }
 
   function getUniqueProjectKey(currentProjects, keyBase, excludedId = null) {
@@ -622,18 +630,6 @@ export default function Project() {
 
   const scopeMembersForUser = (list) => {
     return Array.isArray(list) ? list : []
-  }
-
-  const fetchTeamMembers = async (query, signal) => {
-    const response = await fetch(
-      `${USERS_SEARCH_API_URL}?query=${encodeURIComponent(query)}&limit=8`,
-      { signal }
-    )
-    if (!response.ok) {
-      throw new Error('Failed to fetch users')
-    }
-    const data = await response.json()
-    return Array.isArray(data) ? data : []
   }
 
   const selectMemberSuggestion = (member) => {

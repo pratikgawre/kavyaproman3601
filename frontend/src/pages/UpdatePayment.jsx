@@ -35,7 +35,7 @@ export default function UpdatePayment() {
         const data = await res.json()
         if (!isMounted) return
         setPayments(Array.isArray(data) ? data : [])
-      } catch (err) {
+      } catch {
         // ignore
       } finally {
         if (isMounted) setPaymentsLoading(false)
@@ -58,7 +58,7 @@ export default function UpdatePayment() {
         const data = await res.json()
         if (!isMounted) return
         setMethods(Array.isArray(data) ? data : [])
-      } catch (err) {
+      } catch {
         // ignore
       } finally {
         if (isMounted) setMethodsLoading(false)
@@ -182,7 +182,7 @@ export default function UpdatePayment() {
     try {
       await fetch(`${API_BASE}/api/payment-methods/${id}`, { method: 'DELETE' })
       setMethods(prev => prev.filter(m => m.id !== id))
-    } catch (err) {
+    } catch {
       // ignore
     }
   }

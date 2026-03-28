@@ -1,6 +1,5 @@
 // HTTP Client for API calls
-import API_BASE, { getAxiosConfig } from '../config/api';
-import { clearAuth, handleApiError, getAuthToken } from './helpers';
+import { clearAuth, getAuthToken } from './helpers';
 
 /**
  * Make HTTP request with error handling

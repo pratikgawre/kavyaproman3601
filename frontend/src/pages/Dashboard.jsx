@@ -2,7 +2,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import './Dashboard.css'
 import { FiGrid, FiFolder, FiUsers, FiBarChart2, FiCreditCard, FiSettings, FiLogOut, FiMenu, FiSearch, FiBell, FiPlus, FiShare2, FiDownload, FiTrash2, FiFilter, FiTag, FiBookmark, FiClock, FiRepeat, FiArrowRight, FiUpload, FiAlignLeft, FiAlignCenter, FiAlignRight, FiAlignJustify, FiShield, FiClipboard, FiChevronDown } from 'react-icons/fi'
 import { NavLink } from 'react-router-dom'
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FiX } from 'react-icons/fi'
 import { useAuth } from '../context/AuthContext'
 import useIssueNotifications from '../hooks/useIssueNotifications'
@@ -64,19 +64,6 @@ const PRIORITY_FILTER_ORDER = ['critical', 'high', 'medium', 'low']
 
 function normalizeProjectMatchValue(value) {
   return (value || '').toString().trim().toLowerCase()
-}
-
-function getProjectMatchKeys(projectItem) {
-  if (!projectItem) return new Set()
-  return new Set(
-    [
-      projectItem?.projectKey,
-      projectItem?.id,
-      projectItem?.name
-    ]
-      .map(normalizeProjectMatchValue)
-      .filter(Boolean)
-  )
 }
 
 function formatProjectLabel(projectItem) {
@@ -260,24 +247,24 @@ export default function Dashboard({ initialShowCreate = false }) {
   const isProjectManager = ['admin', 'project manager'].includes(normalizeRole(user?.role))
   const isDeveloper = normalizeRole(user?.role) === 'developer'
   const isTester = normalizeRole(user?.role) === 'tester'
-  const isAssignedToUser = (issue) => {
+  const isAssignedToUser = useCallback((issue) => {
     if (!issue) return false
     const assigneeEmail = (issue.assigneeEmail || '').toString().toLowerCase()
     if (assigneeEmail && userEmail && assigneeEmail === userEmail) return true
     const assigneeName = (issue.assigneeName || issue.assignee || '').toString().trim().toLowerCase()
     if (assigneeName && normalizedUserName && assigneeName === normalizedUserName) return true
     return false
-  }
-  const isCreatedByUser = (issue) => {
+  }, [normalizedUserName, userEmail])
+  const isCreatedByUser = useCallback((issue) => {
     if (!issue) return false
     const creatorEmail = (issue.creatorEmail || '').toString().toLowerCase()
     if (creatorEmail && userEmail && creatorEmail === userEmail) return true
     const creatorName = (issue.creatorName || issue.creator || '').toString().trim().toLowerCase()
     if (creatorName && normalizedUserName && creatorName === normalizedUserName) return true
     return false
-  }
+  }, [normalizedUserName, userEmail])
   const [selectedOrg, setSelectedOrg] = useState(() => {
-    try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null }
+    try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch { return null }
   })
   const organizationId = selectedOrg?.id || selectedOrg?._id || ''
   const organizationUsername = selectedOrg?.username || selectedOrg?.slug || ''
@@ -450,7 +437,6 @@ export default function Dashboard({ initialShowCreate = false }) {
   const avatar = user?.avatar || ''
   const projectKeyFrom = (projectItem) => (projectItem?.projectKey || projectItem?.id || '').toString().trim()
   const issueProjectKeyFrom = (issueItem) => (issueItem?.project || issueItem?.projectKey || issueItem?.projectId || '').toString().trim().toUpperCase()
-  const projectLabel = formatProjectLabel
 
   // sync sidebar state from global controller
   useEffect(() => {
@@ -469,7 +455,7 @@ export default function Dashboard({ initialShowCreate = false }) {
       const org = e?.detail || null
       setSelectedOrg(org)
       try { if (org) localStorage.setItem('org', JSON.stringify(org)) }
-      catch (err) {}
+      catch { /* ignore storage write failures */ }
     }
     window.addEventListener('org:changed', onOrgChanged)
     return () => window.removeEventListener('org:changed', onOrgChanged)
@@ -627,13 +613,6 @@ export default function Dashboard({ initialShowCreate = false }) {
     setShowNotifications(prev => !prev)
   }
 
-  function markAsRead(id) {
-    setNotifications(prev => prev.map(n => (n.id === id ? { ...n, read: true } : n)))
-  }
-
-  function markAllAsRead() {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })))
-  }
   function attachmentFromUpload(file, upload) {
     return {
       name: file.name,
@@ -667,7 +646,6 @@ export default function Dashboard({ initialShowCreate = false }) {
   }
   
   function validateForm(){
-    const desc = descRef.current ? descRef.current.innerText.trim() : ''
     const errs = {}
     if(!project || project.trim() === '') errs.project = 'Project is required'
     if(!issueType || issueType.trim() === '') errs.issueType = 'Issue type is required'
@@ -1046,7 +1024,7 @@ export default function Dashboard({ initialShowCreate = false }) {
         if (!value) return null
         return {
           value,
-          label: projectLabel(projectItem),
+          label: formatProjectLabel(projectItem),
           count: counts.get(value) || 0
         }
       })
@@ -1226,7 +1204,7 @@ export default function Dashboard({ initialShowCreate = false }) {
       }catch(e){ console.error('load dashboard counts failed', e) }
     }
     loadCounts()
-  },[API_BASE, isProjectManager, isTester, normalizedUserName, projects, projectsLoading, selectedOrg, userEmail, user?.id])
+  },[API_BASE, isAssignedToUser, isCreatedByUser, isProjectManager, isTester, normalizedUserName, projects, projectsLoading, selectedOrg, userEmail, user?.id])
 
   function handleLogout() {
     // clear user and force replace to login so back won't return to protected page
@@ -1282,15 +1260,6 @@ export default function Dashboard({ initialShowCreate = false }) {
     const target = announcementText.toString().trim()
     if (!target) return
     navigate(`/all-my-issues?q=${encodeURIComponent(target)}`)
-  }
-
-  function getInitials(name) {
-    return (name || '')
-      .split(' ')
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase())
-      .join('')
   }
 
   function toggleSidebarForScreen() {
@@ -1352,20 +1321,6 @@ export default function Dashboard({ initialShowCreate = false }) {
       console.error('failed to save filter', err)
     }
     setShowFilters(false)
-  }
-
-  function applySavedFilter(criteria) {
-    setSelectedFilters(normalizeFilterCriteria(criteria))
-  }
-
-  function deleteSavedFilter(id) {
-    const updated = savedFilters.filter((item) => item.id !== id)
-    setSavedFilters(updated)
-    try {
-      localStorage.setItem('dashboardSavedFilters', JSON.stringify(updated))
-    } catch (err) {
-      console.error('failed to delete saved filter', err)
-    }
   }
 
   function closeCreateModal() {
@@ -1567,6 +1522,7 @@ export default function Dashboard({ initialShowCreate = false }) {
                 { label: 'Pending Requests', value: adminOverview?.pendingRequests ?? 0, Icon: FiBell, variant: 'red', clickHandler: handlePendingRequestsClick }
               ].map(({ label, value, Icon, variant, clickHandler }) => {
                 const isClickable = typeof clickHandler === 'function'
+                const IconComponent = Icon
                 return (
                   <article
                     key={label}
@@ -1577,7 +1533,7 @@ export default function Dashboard({ initialShowCreate = false }) {
                     onKeyDown={isClickable ? (event) => handleStatKeyDown(event, clickHandler) : undefined}
                   >
                   <div className="admin-stat-icon">
-                    <Icon />
+                    <IconComponent />
                   </div>
                   <div>
                     <p className="admin-stat-label">{label}</p>
@@ -2178,7 +2134,7 @@ export default function Dashboard({ initialShowCreate = false }) {
                           if (!key) return null
                           return (
                             <option key={key} value={key}>
-                              {projectLabel(projectItem)}
+                              {formatProjectLabel(projectItem)}
                             </option>
                           )
                         })}

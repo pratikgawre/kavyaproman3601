@@ -4,6 +4,21 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import API_BASE from '../config/api'
 
+function luhnCheck(digits) {
+  let sum = 0
+  let shouldDouble = false
+  for (let i = digits.length - 1; i >= 0; i -= 1) {
+    let digit = Number(digits[i])
+    if (shouldDouble) {
+      digit *= 2
+      if (digit > 9) digit -= 9
+    }
+    sum += digit
+    shouldDouble = !shouldDouble
+  }
+  return sum % 10 === 0
+}
+
 export default function PaymentMethod(){
   const navigate = useNavigate()
   const location = useLocation()
@@ -53,21 +68,6 @@ export default function PaymentMethod(){
     return `${digits.slice(0, 2)}/${digits.slice(2)}`
   }
 
-  const luhnCheck = (digits) => {
-    let sum = 0
-    let shouldDouble = false
-    for (let i = digits.length - 1; i >= 0; i -= 1) {
-      let digit = Number(digits[i])
-      if (shouldDouble) {
-        digit *= 2
-        if (digit > 9) digit -= 9
-      }
-      sum += digit
-      shouldDouble = !shouldDouble
-    }
-    return sum % 10 === 0
-  }
-
   const cardDigits = cardNumber.replace(/\D/g, '')
   const nameError = useMemo(() => {
     const value = cardHolderName.trim()
@@ -79,6 +79,7 @@ export default function PaymentMethod(){
   const cardNumberError = useMemo(() => {
     if (!cardDigits) return 'Card number is required.'
     if (cardDigits.length !== 16) return 'Card number must be exactly 16 digits.'
+    if (!luhnCheck(cardDigits)) return 'Card number is invalid.'
     return ''
   }, [cardDigits])
 
@@ -128,7 +129,7 @@ export default function PaymentMethod(){
         const data = await res.json()
         if (!isMounted) return
         setSavedMethods(Array.isArray(data) ? data : [])
-      } catch (err) {
+      } catch {
         // ignore
       } finally {
         if (isMounted) setSavedLoading(false)

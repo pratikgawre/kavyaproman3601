@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, useLocation, useNavigate, useParams } from 'react-router-dom'
 import './Dashboard.css'
 import './Board.css'
@@ -171,10 +171,10 @@ export default function Board() {
   const isDeveloper = normalizeRole(currentUser?.role) === 'developer'
   const isTester = normalizeRole(currentUser?.role) === 'tester'
   const userId = currentUser?.id || user?.id
-  const [selectedOrg, setSelectedOrg] = useState(() => { try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null } })
+  const [selectedOrg, setSelectedOrg] = useState(() => { try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch { return null } })
   const [directoryMembers, setDirectoryMembers] = useState([])
   useEffect(() => {
-    function onOrgChanged(e){ const org = e?.detail || null; setSelectedOrg(org); try { if (org) localStorage.setItem('org', JSON.stringify(org)) } catch(err){} }
+    function onOrgChanged(e){ const org = e?.detail || null; setSelectedOrg(org); try { if (org) localStorage.setItem('org', JSON.stringify(org)) } catch { /* ignore storage write failures */ } }
     window.addEventListener('org:changed', onOrgChanged)
     return () => window.removeEventListener('org:changed', onOrgChanged)
   }, [])
@@ -241,7 +241,10 @@ export default function Board() {
       name: baseProject?.name || projectKeyRaw || activeProjectKey || 'Project'
     }
   }, [activeProjectKey, projectDetails, projectFromState, projectKeyRaw, routeProjectToken])
-  const projectTeamMembers = Array.isArray(activeProject?.teamMembers) ? activeProject.teamMembers : []
+  const projectTeamMembers = useMemo(
+    () => (Array.isArray(activeProject?.teamMembers) ? activeProject.teamMembers : []),
+    [activeProject?.teamMembers]
+  )
   const memberOrganizationId = activeProject?.organizationId || selectedOrg?.id || selectedOrg?._id || ''
   const memberOrganizationUsername = activeProject?.organizationUsername || selectedOrg?.username || selectedOrg?.slug || ''
   const memberOrganizationName = activeProject?.organizationName || selectedOrg?.name || ''
@@ -264,17 +267,6 @@ export default function Board() {
     if (projectManagerName) byName.set(projectManagerName, 'Project Manager')
     return { byEmail, byName }
   }, [activeProject?.managerEmail, activeProject?.teamLead, roleDirectoryMembers])
-  const findMemberRole = (email, name) => {
-    const emailKey = (email || '').trim().toLowerCase()
-    if (emailKey && projectMemberRoles.byEmail.has(emailKey)) {
-      return projectMemberRoles.byEmail.get(emailKey) || ''
-    }
-    const nameKey = normalizeLookupName(name)
-    if (nameKey && projectMemberRoles.byName.has(nameKey)) {
-      return projectMemberRoles.byName.get(nameKey) || ''
-    }
-    return ''
-  }
   const testerMembershipKnown = projectTeamMembers.length > 0
   const isTesterInProject = isTester
     ? (!testerMembershipKnown
@@ -535,8 +527,20 @@ export default function Board() {
     })
   }, [activeSprint?.id, issueQuery, visibleIssues])
 
-  const mappedIssues = useMemo(() => (
-    (sprintScopedIssues || []).map((issue) => {
+  const mappedIssues = useMemo(() => {
+    const findMemberRole = (email, name) => {
+      const emailKey = (email || '').trim().toLowerCase()
+      if (emailKey && projectMemberRoles.byEmail.has(emailKey)) {
+        return projectMemberRoles.byEmail.get(emailKey) || ''
+      }
+      const nameKey = normalizeLookupName(name)
+      if (nameKey && projectMemberRoles.byName.has(nameKey)) {
+        return projectMemberRoles.byName.get(nameKey) || ''
+      }
+      return ''
+    }
+
+    return (sprintScopedIssues || []).map((issue) => {
       const issueTypeRaw = (issue.issueType || issue.type || 'task').toString()
       const issueType = issueTypeRaw.toLowerCase().trim() || 'task'
       const labels = Array.isArray(issue.labels) ? issue.labels : []
@@ -574,7 +578,7 @@ export default function Board() {
         status: normalizeStatus(issue.status)
         }
       })
-  ), [projectMemberRoles, sprintScopedIssues])
+  }, [projectMemberRoles, sprintScopedIssues])
 
   useEffect(() => {
     if (!isTester || !isTesterInProject || !soleTester?.email) return
@@ -588,7 +592,7 @@ export default function Board() {
       autoAssignRef.current.add(key)
       handleAssignReviewer(issue, soleTester.email)
     })
-  }, [isTester, isTesterInProject, soleTester?.email, mappedIssues])
+  }, [handleAssignReviewer, isTester, isTesterInProject, soleTester?.email, mappedIssues])
 
   const issueIdentity = (issue) => (
     (issue?.id || issue?.dbId || issue?.issueKey || issue?.key || issue?.displayKey || '').toString()
@@ -836,7 +840,7 @@ export default function Board() {
     })
   )
 
-  const updateIssueReviewer = async (issueId, reviewerEmail, reviewerName) => {
+  const updateIssueReviewer = useCallback(async (issueId, reviewerEmail, reviewerName) => {
     if (!userId) {
       throw new Error('Missing user session. Please log in again.')
     }
@@ -853,7 +857,7 @@ export default function Board() {
       throw new Error(errorText || 'Failed to assign tester')
     }
     return res.json()
-  }
+  }, [API_BASE, userId])
 
   const updateIssueStatus = async (issueId, status) => {
     if (!userId) {
@@ -874,7 +878,7 @@ export default function Board() {
     return res.json()
   }
 
-  const handleAssignReviewer = async (issue, reviewerEmail) => {
+  const handleAssignReviewer = useCallback(async (issue, reviewerEmail) => {
     if (!issue) return
     if (isTester && reviewerEmail && reviewerEmail.toLowerCase() !== userEmail) {
       alert('You can only select yourself as tester.')
@@ -906,7 +910,7 @@ export default function Board() {
       )))
       alert(err?.message || 'Failed to assign tester')
     }
-  }
+  }, [isTester, projectTesters, updateIssueReviewer, userEmail])
 
   const handleMoveIssueStatus = async (issue, targetStatus) => {
     if (!issue) return
@@ -1034,7 +1038,7 @@ export default function Board() {
       }
       await handleAddComment(commentFormIssue, commentText, attachments)
       closeCommentForm()
-    } catch (err) {
+    } catch {
       // error already surfaced
     } finally {
       setCommentSubmitting(false)

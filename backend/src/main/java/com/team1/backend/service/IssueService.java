@@ -159,8 +159,10 @@ public class IssueService {
                 }
             }
         }
-        updated.setCreatorEmail(existing.getCreatorEmail());
-        updated.setCreatorName(existing.getCreatorName());
+        if (updated != null) {
+            updated.setCreatorEmail(existing.getCreatorEmail());
+            updated.setCreatorName(existing.getCreatorName());
+        }
         Issue saved = update(id, updated);
         notifyIssueUpdate(user, saved, previousAssigneeEmail, previousReviewerEmail, previousStatus);
         if (!previousStatus.equals(nextStatus)) {
@@ -504,68 +506,6 @@ public class IssueService {
             return "ISSUE";
         }
         return project.trim().toUpperCase();
-    }
-
-    private Issue applyUpdates(Issue existing, Issue updated) {
-        if (updated.getCreatorName() != null) {
-            existing.setCreatorName(normalizeText(updated.getCreatorName()));
-        }
-        if (updated.getCreatorEmail() != null) {
-            existing.setCreatorEmail(normalizeEmail(updated.getCreatorEmail()));
-        }
-        if (updated.getProject() != null) {
-            existing.setProject(normalizeProjectKey(updated.getProject()));
-        }
-        if (updated.getIssueType() != null) {
-            existing.setIssueType(normalizeText(updated.getIssueType()));
-        }
-        if (updated.getEpicName() != null) {
-            existing.setEpicName(normalizeText(updated.getEpicName()));
-        }
-        if (updated.getSummary() != null) {
-            existing.setSummary(normalizeText(updated.getSummary()));
-        }
-        if (updated.getDescription() != null) {
-            existing.setDescription(normalizeText(updated.getDescription()));
-        }
-        if (updated.getAttachmentsJson() != null) {
-            existing.setAttachmentsJson(updated.getAttachmentsJson());
-        }
-        if (updated.getDifficulty() != null) {
-            existing.setDifficulty(updated.getDifficulty());
-        }
-        if (updated.getIssueKey() != null && !updated.getIssueKey().trim().isEmpty()) {
-            existing.setIssueKey(updated.getIssueKey().trim());
-        }
-        if (updated.getStatus() != null && !updated.getStatus().trim().isEmpty()) {
-            existing.setStatus(normalizeStatus(updated.getStatus()));
-        }
-        if (updated.getPriority() != null && !updated.getPriority().trim().isEmpty()) {
-            existing.setPriority(normalizePriority(updated.getPriority()));
-        }
-        if (updated.getPoints() != null) {
-            existing.setPoints(updated.getPoints());
-        }
-        if (updated.getAssigneeName() != null) {
-            existing.setAssigneeName(normalizeText(updated.getAssigneeName()));
-        }
-        if (updated.getAssigneeEmail() != null) {
-            existing.setAssigneeEmail(normalizeEmail(updated.getAssigneeEmail()));
-        }
-        if (updated.getAssignDate() != null) {
-            existing.setAssignDate(normalizeText(updated.getAssignDate()));
-        }
-        if (updated.getDeadlineDate() != null) {
-            existing.setDeadlineDate(normalizeText(updated.getDeadlineDate()));
-        }
-        if (updated.getLabels() != null) {
-            existing.setLabels(updated.getLabels());
-        }
-        if (updated.getSprintId() != null) {
-            existing.setSprintId(normalizeText(updated.getSprintId()));
-        }
-        existing.setUpdatedAt(LocalDateTime.now());
-        return repo.save(existing);
     }
 
     private void notifyIssueUpdate(

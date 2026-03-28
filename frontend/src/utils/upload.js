@@ -12,7 +12,7 @@ export async function uploadFile(file, { folder } = {}) {
   })
   const text = await res.text().catch(() => '')
   let body = {}
-  try { body = text ? JSON.parse(text) : {} } catch (e) { body = {} }
+  try { body = text ? JSON.parse(text) : {} } catch { body = {} }
   if (!res.ok) {
     const message =
       body.message ||

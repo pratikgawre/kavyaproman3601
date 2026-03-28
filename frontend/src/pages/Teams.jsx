@@ -74,32 +74,6 @@ function calculateStats(data, totalIssuesCount = 0, activeProjectCount = 0) {
   };
 }
 
-const isProjectOnHold = (project) => {
-  if (!project) return false;
-  const type = (project?.projectType || '').toLowerCase();
-  if (type.includes('hold') || type.includes('pause') || type.includes('freeze')) return true;
-  const name = (project?.name || '').toLowerCase();
-  return name.includes('hold');
-};
-
-const getProjectStatusMetadata = (project) => {
-  if (!project) {
-    return { label: 'Unknown', className: 'unknown' };
-  }
-  if (project?.isArchived) {
-    return { label: 'Archived', className: 'archived' };
-  }
-  if (isProjectOnHold(project)) {
-    return { label: 'On Hold', className: 'on-hold' };
-  }
-  const total = Number(project?.totalIssues ?? 0);
-  const completed = Number(project?.completedIssues ?? 0);
-  if (total > 0 && completed >= total) {
-    return { label: 'Completed', className: 'completed' };
-  }
-  return { label: 'Active', className: 'active' };
-};
-
 export default function Teams() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -107,16 +81,16 @@ export default function Teams() {
   const [selectedManagerEmail, setSelectedManagerEmail] = useState('')
   const [selectedManagerName, setSelectedManagerName] = useState('')
   const [profileUser, setProfileUser] = useState(null)
-  const [profileLoading, setProfileLoading] = useState(false)
+  const [, setProfileLoading] = useState(false)
   const currentUser = profileUser || user || {}
   const displayName = currentUser?.name || (currentUser?.email ? currentUser.email.split('@')[0] : 'Guest')
   const avatarInitials = getAvatarInitials(currentUser?.name, currentUser?.email)
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [selectedOrg, setSelectedOrg] = useState(() => { try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch (e) { return null } })
+  const [selectedOrg, setSelectedOrg] = useState(() => { try { return typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('org') || 'null') : null } catch { return null } })
 
   useEffect(() => {
-    function onOrgChanged(e){ const org = e?.detail || null; setSelectedOrg(org); try { if (org) localStorage.setItem('org', JSON.stringify(org)) } catch(err){} }
+    function onOrgChanged(e){ const org = e?.detail || null; setSelectedOrg(org); try { if (org) localStorage.setItem('org', JSON.stringify(org)) } catch { /* ignore storage write failures */ } }
     window.addEventListener('org:changed', onOrgChanged)
     return () => window.removeEventListener('org:changed', onOrgChanged)
   }, [])
@@ -130,10 +104,10 @@ export default function Teams() {
   const [projectsError, setProjectsError] = useState('');
   const [globalProjects, setGlobalProjects] = useState([]);
   const [globalProjectsLoading, setGlobalProjectsLoading] = useState(false);
-  const [globalProjectsError, setGlobalProjectsError] = useState('');
+  const [, setGlobalProjectsError] = useState('');
   const [adminUsers, setAdminUsers] = useState([]);
-  const [adminUsersLoading, setAdminUsersLoading] = useState(false);
-  const [adminUsersError, setAdminUsersError] = useState('');
+  const [, setAdminUsersLoading] = useState(false);
+  const [, setAdminUsersError] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState('all');
 
   useEffect(() => {
@@ -169,7 +143,6 @@ export default function Teams() {
     error: notificationsError,
     markAsRead,
     markAllAsRead,
-    addNotification,
     dismissNotification,
     clearAllNotifications
   } = useIssueNotifications({ limit: 6 })
@@ -300,8 +273,72 @@ export default function Teams() {
   };
   // Fetch team members and stats on component mount
   useEffect(() => {
-    fetchTeamMembers();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1500);
+
+    async function loadMembers() {
+      try {
+        const managerFilterEmail = selectedManagerEmail;
+        if (isAdmin && !managerFilterEmail) {
+          const adminMemberList = adminUsers.map((member, index) => ({
+            id: member.id || `admin-${index}`,
+            name: member.name || member.email || `User ${index + 1}`,
+            email: member.email || '',
+            role: member.role || 'Member',
+            managerEmail: member.email || '',
+            projects: member.projects ?? 0,
+            completedProjects: member.completedProjects ?? 0,
+            activeIssues: member.activeIssues ?? 0
+          }));
+          setMembers(adminMemberList);
+          setUsingFallbackData(false);
+          return;
+        }
+
+        const queryParams = new URLSearchParams();
+        if (managerFilterEmail) {
+          queryParams.set('managerEmail', managerFilterEmail);
+        } else if (!isAdmin) {
+          if (isProjectManager && managerEmail) {
+            queryParams.set('managerEmail', managerEmail);
+          } else if (!isProjectManager && userEmail) {
+            queryParams.set('memberEmail', userEmail);
+          }
+        }
+        if (organizationId) {
+          queryParams.set('organizationId', organizationId);
+        } else if (organizationUsername) {
+          queryParams.set('organizationUsername', organizationUsername);
+        } else if (organizationName) {
+          queryParams.set('organizationName', organizationName);
+        }
+        const query = queryParams.toString();
+        const response = await fetch(`${MEMBERS_API_URL}${query ? `?${query}` : ''}`, { signal: controller.signal });
+        if (!response.ok) {
+          throw new Error('Failed to fetch members');
+        }
+        const data = await response.json();
+        setMembers(Array.isArray(data) ? data : []);
+        setUsingFallbackData(false);
+      } catch {
+        const fallbackMembers = FALLBACK_MEMBERS.map((member) => ({
+          ...member,
+          managerEmail: managerEmail || null
+        }));
+        setMembers(fallbackMembers);
+        setUsingFallbackData(true);
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+
+    loadMembers();
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, [
+    MEMBERS_API_URL,
     managerEmail,
     userEmail,
     isProjectManager,
@@ -315,17 +352,102 @@ export default function Teams() {
   ]);
 
   useEffect(() => {
-    fetchIssues();
-  }, []);
+    if (!user?.id) {
+      setIssues([]);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+    async function loadIssues() {
+      try {
+        const response = await fetch(ISSUES_API_URL, {
+          signal: controller.signal,
+          headers: { 'X-USER-ID': String(user.id) }
+        });
+        if (!response.ok) {
+          console.error('Issues API response not ok:', response.status);
+          throw new Error('Failed to fetch issues');
+        }
+        const data = await response.json();
+        const issuesArray = Array.isArray(data)
+          ? data
+          : (Array.isArray(data?.data)
+            ? data.data
+            : (Array.isArray(data?.issues) ? data.issues : []));
+        setIssues(issuesArray);
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        console.error('Error fetching issues:', err);
+        setIssues([]);
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+
+    loadIssues();
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [ISSUES_API_URL, user?.id]);
 
   useEffect(() => {
-    fetchIssues();
-  }, [user?.id]);
+    const queryParams = new URLSearchParams();
+    if (!isAdmin) {
+      if (isProjectManager && managerEmail) {
+        queryParams.set('managerEmail', managerEmail);
+      } else if (!isProjectManager && userEmail) {
+        queryParams.set('memberEmail', userEmail);
+      }
+      if (organizationId) {
+        queryParams.set('organizationId', organizationId);
+      } else if (organizationUsername) {
+        queryParams.set('organizationUsername', organizationUsername);
+      } else if (organizationName) {
+        queryParams.set('organizationName', organizationName);
+      }
+    }
+    const query = queryParams.toString();
+    const shouldFetchProjects = isAdmin || Boolean(query);
+    if (!shouldFetchProjects) {
+      setProjects([]);
+      return undefined;
+    }
 
-  // sync sidebar state from global controller
-  useEffect(() => {
-    fetchProjects();
-  }, [managerEmail, userEmail, isProjectManager, organizationId, organizationUsername, organizationName, isAdmin]);
+    projectsFetchStarted.current = true;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    setProjectsLoading(true);
+    setProjectsError('');
+
+    async function loadProjects() {
+      try {
+        const requestUrl = `${PROJECTS_API_URL}${(!isAdmin && query) ? `?${query}` : ''}`;
+        const response = await fetch(requestUrl, { signal: controller.signal });
+        if (!response.ok) {
+          throw new Error('Failed to fetch projects');
+        }
+        const data = await response.json();
+        const list = Array.isArray(data) ? data : [];
+        setProjects(list);
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        setProjects([]);
+        setProjectsError(err.message || 'Unable to load projects');
+      } finally {
+        clearTimeout(timeoutId);
+        setProjectsLoading(false);
+      }
+    }
+
+    loadProjects();
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [PROJECTS_API_URL, isAdmin, isProjectManager, managerEmail, organizationId, organizationName, organizationUsername, userEmail]);
 
   useEffect(() => {
     setSelectedProjectId('all');
@@ -411,110 +533,6 @@ export default function Teams() {
     setShowNotifications((prev) => !prev);
   };
 
-
-  const buildAdminMembers = () => adminUsers.map((member, index) => ({
-    id: member.id || `admin-${index}`,
-    name: member.name || member.email || `User ${index + 1}`,
-    email: member.email || '',
-    role: member.role || 'Member',
-    managerEmail: member.email || '',
-    projects: member.projects ?? 0,
-    completedProjects: member.completedProjects ?? 0,
-    activeIssues: member.activeIssues ?? 0
-  }))
-
-  const fetchTeamMembers = async () => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1500);
-    try {
-      const managerFilterEmail = selectedManagerEmail;
-      if (isAdmin && !managerFilterEmail) {
-        setMembers(buildAdminMembers());
-        setUsingFallbackData(false);
-        return;
-      }
-      const queryParams = new URLSearchParams();
-      if (managerFilterEmail) {
-        queryParams.set('managerEmail', managerFilterEmail);
-      } else if (!isAdmin) {
-        if (isProjectManager && managerEmail) {
-          queryParams.set('managerEmail', managerEmail);
-        } else if (!isProjectManager && userEmail) {
-          queryParams.set('memberEmail', userEmail);
-        }
-      }
-      if (organizationId) {
-        queryParams.set('organizationId', organizationId);
-      } else if (organizationUsername) {
-        queryParams.set('organizationUsername', organizationUsername);
-      } else if (organizationName) {
-        queryParams.set('organizationName', organizationName);
-      }
-      const query = queryParams.toString();
-      const response = await fetch(`${MEMBERS_API_URL}${query ? `?${query}` : ''}`, { signal: controller.signal });
-      if (!response.ok) {
-        throw new Error('Failed to fetch members');
-      }
-      const data = await response.json();
-      setMembers(Array.isArray(data) ? data : []);
-      setUsingFallbackData(false);
-    } catch (err) {
-      const fallbackMembers = FALLBACK_MEMBERS.map((member) => ({
-        ...member,
-        managerEmail: currentUser?.email || null
-      }));
-      setMembers(fallbackMembers);
-      setUsingFallbackData(true);
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  };
-
-  const fetchProjects = async () => {
-    const queryParams = new URLSearchParams();
-    if (!isAdmin) {
-      if (isProjectManager && managerEmail) {
-        queryParams.set('managerEmail', managerEmail);
-      } else if (!isProjectManager && userEmail) {
-        queryParams.set('memberEmail', userEmail);
-      }
-      if (organizationId) {
-        queryParams.set('organizationId', organizationId);
-      } else if (organizationUsername) {
-        queryParams.set('organizationUsername', organizationUsername);
-      } else if (organizationName) {
-        queryParams.set('organizationName', organizationName);
-      }
-    }
-    const query = queryParams.toString();
-    const shouldFetchProjects = isAdmin || Boolean(query);
-    if (!shouldFetchProjects) {
-      setProjects([]);
-      return;
-    }
-    projectsFetchStarted.current = true;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
-    setProjectsLoading(true);
-    setProjectsError('');
-    try {
-      const requestUrl = `${PROJECTS_API_URL}${(!isAdmin && query) ? `?${query}` : ''}`;
-      const response = await fetch(requestUrl, { signal: controller.signal });
-      if (!response.ok) {
-        throw new Error('Failed to fetch projects');
-      }
-      const data = await response.json();
-      const list = Array.isArray(data) ? data : [];
-      setProjects(list);
-    } catch (err) {
-      setProjects([]);
-      setProjectsError(err.message || 'Unable to load projects');
-    } finally {
-      clearTimeout(timeoutId);
-      setProjectsLoading(false);
-    }
-  };
-
   const fetchAllProjects = useCallback(async () => {
     globalProjectsAbortController.current?.abort();
     const controller = new AbortController();
@@ -543,50 +561,6 @@ export default function Teams() {
       globalProjectsFetchRequested.current = false;
     }
   }, [PROJECTS_API_URL]);
-
-  const fetchIssues = async () => {
-    if (!user?.id) {
-      setIssues([]);
-      return;
-    }
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
-    try {
-      const response = await fetch(ISSUES_API_URL, {
-        signal: controller.signal,
-        headers: { 'X-USER-ID': String(user.id) }
-      });
-      if (!response.ok) {
-        console.error('Issues API response not ok:', response.status);
-        throw new Error('Failed to fetch issues');
-      }
-      const data = await response.json();
-      const issuesArray = Array.isArray(data)
-        ? data
-        : (Array.isArray(data?.data)
-          ? data.data
-          : (Array.isArray(data?.issues) ? data.issues : []));
-      setIssues(issuesArray);
-    } catch (err) {
-      console.error('Error fetching issues:', err);
-      setIssues([]);
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  };
-
-  const updateMembersWithActiveIssues = (membersData, issuesData) => {
-    return membersData.map(member => {
-      const memberIssues = issuesData.filter(issue => 
-        issue.creatorEmail && 
-        issue.creatorEmail.toLowerCase() === member.email.toLowerCase()
-      );
-      return {
-        ...member,
-        activeIssues: memberIssues.length
-      };
-    });
-  };
 
   const handleEdit = (member) => {
     if (!isProjectManager) return;
@@ -1326,7 +1300,7 @@ export default function Teams() {
         role: member?.role || 'Developer',
         projects: selectedProjectActiveCount,
         completedProjects: selectedProjectCompletedCount,
-        activeIssues: getActiveIssuesForMember(member?.email || '', projectFilterKeys),
+        activeIssues: getActiveIssuesForMember(email, projectFilterKeys),
         image: member?.avatar || ''
       };
     })
@@ -1392,6 +1366,7 @@ export default function Teams() {
       0
     );
     setStats(calculateStats(membersForStats, totalIssues, statsActiveProjectCount));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [members, issues, userEmail, isProjectManager, projects, selectedProjectId, statsActiveProjectCount, statsCompletedProjectCount]);
 
   function handleLogout() {
