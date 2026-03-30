@@ -580,20 +580,6 @@ export default function Board() {
       })
   }, [projectMemberRoles, sprintScopedIssues])
 
-  useEffect(() => {
-    if (!isTester || !isTesterInProject || !soleTester?.email) return
-    mappedIssues.forEach((issue) => {
-      if (normalizeStatus(issue?.status) !== 'review') return
-      if ((issue?.reviewerEmail || '').toString().trim()) return
-      const issueId = issue.id || issue.dbId
-      if (!issueId) return
-      const key = String(issueId)
-      if (autoAssignRef.current.has(key)) return
-      autoAssignRef.current.add(key)
-      handleAssignReviewer(issue, soleTester.email)
-    })
-  }, [handleAssignReviewer, isTester, isTesterInProject, soleTester?.email, mappedIssues])
-
   const issueIdentity = (issue) => (
     (issue?.id || issue?.dbId || issue?.issueKey || issue?.key || issue?.displayKey || '').toString()
   )
@@ -911,6 +897,20 @@ export default function Board() {
       alert(err?.message || 'Failed to assign tester')
     }
   }, [isTester, projectTesters, updateIssueReviewer, userEmail])
+
+  useEffect(() => {
+    if (!isTester || !isTesterInProject || !soleTester?.email) return
+    mappedIssues.forEach((issue) => {
+      if (normalizeStatus(issue?.status) !== 'review') return
+      if ((issue?.reviewerEmail || '').toString().trim()) return
+      const issueId = issue.id || issue.dbId
+      if (!issueId) return
+      const key = String(issueId)
+      if (autoAssignRef.current.has(key)) return
+      autoAssignRef.current.add(key)
+      handleAssignReviewer(issue, soleTester.email)
+    })
+  }, [handleAssignReviewer, isTester, isTesterInProject, soleTester?.email, mappedIssues])
 
   const handleMoveIssueStatus = async (issue, targetStatus) => {
     if (!issue) return
