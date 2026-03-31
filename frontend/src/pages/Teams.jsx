@@ -1889,6 +1889,7 @@ export default function Teams() {
                     role="button"
                     tabIndex={0}
                     aria-label={`View details for ${member.name || 'team member'}`}
+                    title={`View details for ${member.name || 'team member'}`}
                   >
                     <div className="member-left">
                       <img
@@ -1928,6 +1929,7 @@ export default function Teams() {
                               </span>
                             </h3>
                             <p>{member.email}</p>
+                            <span className="member-click-hint">View details</span>
                           </>
                         )}
                       </div>
