@@ -1,4 +1,62 @@
 {
     "java.compile.nullAnalysis.mode": "automatic",
-    "java.configuration.updateBuildConfiguration": "interactive"
+    "java.configuration.updateBuildConfiguration": "interactive",
+    "files.associations": {
+        "*.properties": "properties"
+    },
+    "editor.semanticHighlighting.enabled": true,
+    "editor.tokenColorCustomizations": {
+        "textMateRules": [
+            {
+                "name": "Properties Keys",
+                "scope": [
+                    "keyword.other.key.properties",
+                    "keyword.other.key.java-properties",
+                    "variable.other.key.properties",
+                    "variable.other.key.java-properties",
+                    "meta.key.properties",
+                    "meta.key.java-properties"
+                ],
+                "settings": {
+                    "foreground": "#4FC3F7",
+                    "fontStyle": "bold"
+                }
+            },
+            {
+                "name": "Properties Separators",
+                "scope": [
+                    "punctuation.separator.key-value.properties",
+                    "punctuation.separator.key-value.java-properties",
+                    "keyword.operator.assignment.properties",
+                    "keyword.operator.assignment.java-properties"
+                ],
+                "settings": {
+                    "foreground": "#BDBDBD"
+                }
+            },
+            {
+                "name": "Properties Values",
+                "scope": [
+                    "string.unquoted.properties",
+                    "string.unquoted.java-properties",
+                    "constant.other.value.properties",
+                    "constant.other.value.java-properties"
+                ],
+                "settings": {
+                    "foreground": "#FFB74D"
+                }
+            },
+            {
+                "name": "Properties Comments",
+                "scope": [
+                    "comment.line.number-sign.properties",
+                    "comment.line.number-sign.java-properties"
+                ],
+                "settings": {
+                    "foreground": "#81C784",
+                    "fontStyle": "italic"
+                }
+            }
+        ]
+    }
 }
