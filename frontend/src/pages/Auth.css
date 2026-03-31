@@ -677,6 +677,58 @@ html[data-theme='dark'] .org-url input::placeholder {
   gap: 10px;
 }
 
+.org-list-header-actions {
+  position: absolute;
+  right: 40px;
+  top: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.org-list-user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px 5px 5px;
+  border-radius: 999px;
+  border: 1px solid #dbe5f2;
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
+.org-list-user-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #2563eb, #4f46e5);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.org-list-user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.org-list-user-name {
+  max-width: 150px;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .org-list-logo {
   width: 38px;
   height: 38px;
@@ -704,9 +756,6 @@ html[data-theme='dark'] .org-url input::placeholder {
 }
 
 .org-list-logout {
-  position: absolute;
-  right: 40px;
-  top: 8px;
   padding: 7px 14px;
   border-radius: 10px;
   border: 1px solid #f87171;
@@ -735,6 +784,15 @@ html[data-theme='dark'] .org-list-logout {
 
 html[data-theme='dark'] .org-list-logout:hover {
   background: #111827 !important;
+}
+
+html[data-theme='dark'] .org-list-user-chip {
+  background: #000000 !important;
+  border-color: #334155 !important;
+}
+
+html[data-theme='dark'] .org-list-user-name {
+  color: #ffffff !important;
 }
 
 .org-logout-icon svg {
@@ -1164,11 +1222,26 @@ html[data-theme='dark'] .org-list-role {
   }
 
   .org-list-logout {
+    display: flex;
+    margin: 0;
+    width: 100%;
+    max-width: none;
+    justify-content: center;
+  }
+
+  .org-list-header-actions {
     position: static;
-    display: block;
     margin: 10px auto 0;
     width: 100%;
-    max-width: 220px;
-    text-align: center;
+    max-width: 320px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .org-list-user-chip {
+    justify-content: center;
+    width: 100%;
   }
 }

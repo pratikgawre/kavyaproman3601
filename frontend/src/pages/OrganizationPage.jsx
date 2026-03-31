@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import './Auth.css'
 import { useAuth } from '../context/AuthContext'
+import { getInitials } from '../utils/initials'
 
 
 function OrganizationPage() {
@@ -31,6 +32,8 @@ function OrganizationPage() {
     || restrictedCreateRoles.has(roleHyphen)
     || restrictedCreateRoles.has(roleCompact)
   const isAdmin = normalizedRole === 'admin'
+  const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'User')
+  const avatarInitials = getInitials(user?.name || displayName, user?.email)
 
   useEffect(() => {
     if (isAdmin) {
@@ -176,21 +179,29 @@ function OrganizationPage() {
           </span>
           <h1 className="org-list-title">KavyaProMan 360</h1>
         </div>
-        <button className="org-list-logout" onClick={() => {
-          // permanently clear session and selected org, then go to login
-          clearUser()
-          localStorage.removeItem('org')
-          navigate('/login', { replace: true })
-        }}>
-          <span className="org-logout-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path d="M14 7V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-1" />
-              <path d="M11 12h9" />
-              <path d="m17 9 3 3-3 3" />
-            </svg>
-          </span>
-          Logout
-        </button>
+        <div className="org-list-header-actions">
+          <div className="org-list-user-chip" title={displayName}>
+            <span className="org-list-user-avatar" aria-hidden="true">
+              {user?.avatar ? <img src={user.avatar} alt={displayName} /> : avatarInitials}
+            </span>
+            <span className="org-list-user-name">{displayName}</span>
+          </div>
+          <button className="org-list-logout" onClick={() => {
+            // permanently clear session and selected org, then go to login
+            clearUser()
+            localStorage.removeItem('org')
+            navigate('/login', { replace: true })
+          }}>
+            <span className="org-logout-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M14 7V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-1" />
+                <path d="M11 12h9" />
+                <path d="m17 9 3 3-3 3" />
+              </svg>
+            </span>
+            Logout
+          </button>
+        </div>
       </div>
 
       {/* Subtitle */}

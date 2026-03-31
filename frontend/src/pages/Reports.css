@@ -60,12 +60,8 @@
   background: #ffffff;
   border: 1px solid #e5e7eb;
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.report-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  transition: transform 0.16s ease, box-shadow 0.18s ease, border-color 0.12s ease, background 0.18s ease;
+  will-change: transform, box-shadow;
 }
 
 .report-card-top {
@@ -106,6 +102,42 @@
 .green-icon { color: #2da44e; }
 .purple-icon { color: #8250df; }
 .orange-icon { color: #f97316; }
+
+.report-card-total {
+  --report-card-hover-border: rgba(9, 105, 218, 0.5);
+  --report-card-hover-glow: rgba(9, 105, 218, 0.2);
+  --report-card-hover-bg: linear-gradient(135deg, rgba(9, 105, 218, 0.1), rgba(9, 105, 218, 0.02));
+  --report-card-hover-border-dark: rgba(96, 165, 250, 0.9);
+  --report-card-hover-glow-dark: rgba(59, 130, 246, 0.42);
+  --report-card-hover-bg-dark: linear-gradient(135deg, rgba(30, 64, 175, 0.35), rgba(15, 23, 42, 0.92));
+}
+
+.report-card-completion {
+  --report-card-hover-border: rgba(45, 164, 78, 0.52);
+  --report-card-hover-glow: rgba(45, 164, 78, 0.2);
+  --report-card-hover-bg: linear-gradient(135deg, rgba(45, 164, 78, 0.1), rgba(45, 164, 78, 0.02));
+  --report-card-hover-border-dark: rgba(74, 222, 128, 0.9);
+  --report-card-hover-glow-dark: rgba(34, 197, 94, 0.38);
+  --report-card-hover-bg-dark: linear-gradient(135deg, rgba(21, 128, 61, 0.34), rgba(15, 23, 42, 0.92));
+}
+
+.report-card-estimated {
+  --report-card-hover-border: rgba(130, 80, 223, 0.5);
+  --report-card-hover-glow: rgba(130, 80, 223, 0.2);
+  --report-card-hover-bg: linear-gradient(135deg, rgba(130, 80, 223, 0.1), rgba(130, 80, 223, 0.02));
+  --report-card-hover-border-dark: rgba(167, 139, 250, 0.9);
+  --report-card-hover-glow-dark: rgba(139, 92, 246, 0.42);
+  --report-card-hover-bg-dark: linear-gradient(135deg, rgba(88, 28, 135, 0.42), rgba(15, 23, 42, 0.9));
+}
+
+.report-card-logged {
+  --report-card-hover-border: rgba(249, 115, 22, 0.52);
+  --report-card-hover-glow: rgba(249, 115, 22, 0.2);
+  --report-card-hover-bg: linear-gradient(135deg, rgba(249, 115, 22, 0.1), rgba(249, 115, 22, 0.02));
+  --report-card-hover-border-dark: rgba(251, 146, 60, 0.92);
+  --report-card-hover-glow-dark: rgba(251, 146, 60, 0.42);
+  --report-card-hover-bg-dark: linear-gradient(135deg, rgba(154, 52, 18, 0.44), rgba(15, 23, 42, 0.9));
+}
 
 /* ===========================
    TABS
@@ -157,6 +189,8 @@
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
   margin-top: 25px;
   padding: 20px;
+  transition: transform 0.16s ease, box-shadow 0.18s ease, border-color 0.12s ease;
+  will-change: transform, box-shadow;
 }
 
 .chart-panel-header {
@@ -188,14 +222,85 @@
 
 .distribution-card {
   background: #ffffff;
+  border: 1px solid #e5e7eb;
   padding: 25px;
   border-radius: 18px;
   box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+  transition: transform 0.16s ease, box-shadow 0.18s ease, border-color 0.12s ease;
+  will-change: transform, box-shadow;
 }
 
 .distribution-card h4 {
   margin-bottom: 4px;
   font-size: 18px;
+}
+
+.report-card[role="button"],
+.distribution-card[role="button"] {
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .report-card:hover {
+    transform: translateY(-6px);
+    box-shadow:
+      0 12px 30px rgba(2, 6, 23, 0.08),
+      0 0 0 1px var(--report-card-hover-border, rgb(120, 194, 255)),
+      0 0 28px var(--report-card-hover-glow, rgba(120, 194, 255, 0.22));
+    border-color: var(--report-card-hover-border, rgb(120, 194, 255));
+    background: var(--report-card-hover-bg, #ffffff);
+  }
+
+  .distribution-card:hover,
+  .reports-chart:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 12px 30px rgba(2, 6, 23, 0.08);
+    border-color: rgb(120, 194, 255);
+  }
+
+  html[data-theme='dark'] .report-card:hover {
+    box-shadow:
+      0 14px 34px rgba(2, 6, 23, 0.55),
+      0 0 0 1px var(--report-card-hover-border-dark, rgba(120, 194, 255, 0.85)),
+      0 0 28px var(--report-card-hover-glow-dark, rgba(120, 194, 255, 0.36));
+    border-color: var(--report-card-hover-border-dark, rgba(120, 194, 255, 0.85)) !important;
+    background: var(--report-card-hover-bg-dark, var(--surface)) !important;
+  }
+
+  html[data-theme='dark'] .distribution-card:hover,
+  html[data-theme='dark'] .reports-chart:hover {
+    box-shadow: 0 14px 34px rgba(2, 6, 23, 0.55);
+    border-color: rgba(120, 194, 255, 0.85) !important;
+  }
+}
+
+.report-card:active,
+.distribution-card:active {
+  transform: translateY(-1px);
+}
+
+.report-card:focus-visible,
+.distribution-card:focus-visible {
+  outline: none;
+  border-color: #0969da;
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.2), 0 12px 26px rgba(15, 23, 42, 0.1);
+}
+
+.reports-chart .recharts-default-tooltip {
+  border-radius: 10px !important;
+  border: 1px solid #d0d7de !important;
+  box-shadow: 0 10px 20px rgba(2, 6, 23, 0.12) !important;
+}
+
+html[data-theme='dark'] .reports-chart .recharts-default-tooltip {
+  background-color: #0f172a !important;
+  border: 1px solid #334155 !important;
+  box-shadow: 0 12px 24px rgba(2, 6, 23, 0.55) !important;
+}
+
+html[data-theme='dark'] .reports-chart .recharts-tooltip-label,
+html[data-theme='dark'] .reports-chart .recharts-tooltip-item {
+  color: #e5e7eb !important;
 }
 
 @media (max-width: 1200px) {

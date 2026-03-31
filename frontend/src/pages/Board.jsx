@@ -14,7 +14,6 @@ import {
   FiSearch,
   FiBell,
   FiPlus,
-  FiUser,
   FiRepeat,
   FiArrowRight,
   FiFilter,
@@ -77,6 +76,29 @@ const pointsFromDifficulty = (difficulty) => {
 }
 
 const normalizeProjectKey = (value) => (value || '').trim().toUpperCase()
+const getProjectVisual = (project) => {
+  const candidates = [
+    project?.icon,
+    project?.image,
+    project?.imageUrl,
+    project?.iconUrl,
+    project?.logoUrl
+  ]
+  for (const candidate of candidates) {
+    const value = (candidate || '').toString().trim()
+    if (value) return value
+  }
+  return ''
+}
+const isImageProjectVisual = (value) => {
+  const normalized = (value || '').toString().trim().toLowerCase()
+  if (!normalized) return false
+  return normalized.startsWith('http://')
+    || normalized.startsWith('https://')
+    || normalized.startsWith('data:image/')
+    || normalized.startsWith('blob:')
+    || normalized.startsWith('/')
+}
 const normalizeRole = (role) => (role || '').trim().toLowerCase()
 const normalizeLookupName = (value) => (value || '').trim().replace(/\s+/g, ' ').toLowerCase()
 const formatRoleLabel = (role) => {
@@ -165,6 +187,8 @@ export default function Board() {
   const [profileUser, setProfileUser] = useState(null)
   const currentUser = profileUser || user || {}
   const displayName = currentUser?.name || (currentUser?.email ? currentUser.email.split('@')[0] : 'Guest')
+  const avatar = currentUser?.avatar || ''
+  const avatarInitials = getInitials(displayName || 'Guest')
   const userEmail = (currentUser?.email || '').trim().toLowerCase()
   const managerEmail = (currentUser?.email || '').trim().toLowerCase()
   const isProjectManager = ['admin', 'project manager'].includes(normalizeRole(currentUser?.role))
@@ -241,6 +265,8 @@ export default function Board() {
       name: baseProject?.name || projectKeyRaw || activeProjectKey || 'Project'
     }
   }, [activeProjectKey, projectDetails, projectFromState, projectKeyRaw, routeProjectToken])
+  const projectVisual = useMemo(() => getProjectVisual(activeProject), [activeProject])
+  const projectVisualIsImage = isImageProjectVisual(projectVisual)
   const projectTeamMembers = useMemo(
     () => (Array.isArray(activeProject?.teamMembers) ? activeProject.teamMembers : []),
     [activeProject?.teamMembers]
@@ -1147,7 +1173,7 @@ export default function Board() {
 
           <div className="sidebar-footer mt-3 d-flex flex-column align-items-start">
             <div className="profile d-flex align-items-center w-100">
-              <div className="avatar-icon"><FiUser size={20} /></div>
+              <div className="avatar-icon">{avatar ? <img src={avatar} alt="avatar" /> : avatarInitials}</div>
                 <div className="ms-2 user-info">
                   <div className="user-name">{displayName}</div>
                   <div className="user-role">{currentUser?.role || 'Member'}</div>
@@ -1339,12 +1365,28 @@ export default function Board() {
               className="board-breadcrumb-link current"
               onClick={() => navigate('/projects')}
             >
-              {activeProject.name || activeProjectKey || 'Project'}
+              <span className="board-breadcrumb-project">
+                <span className={`board-breadcrumb-project-icon ${projectVisualIsImage ? 'is-image' : ''}`} aria-hidden="true">
+                  {projectVisualIsImage ? (
+                    <img src={projectVisual} alt="" />
+                  ) : (
+                    projectVisual || '📁'
+                  )}
+                </span>
+                <span className="board-breadcrumb-project-label">{activeProject.name || activeProjectKey || 'Project'}</span>
+              </span>
             </button>
           </div>
 
           <div className="board-title-row">
-            <div>
+            <div className="board-project-heading">
+              <span className={`board-project-icon ${projectVisualIsImage ? 'is-image' : ''}`} aria-hidden="true">
+                {projectVisualIsImage ? (
+                  <img src={projectVisual} alt="" />
+                ) : (
+                  projectVisual || '📁'
+                )}
+              </span>
               <h1>{activeProject.name || activeProjectKey || 'Project Board'}</h1>
             </div>
               <div className="board-title-actions">

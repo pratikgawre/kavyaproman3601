@@ -131,6 +131,7 @@ export default function AllMyIssues(){
   const navigate = useNavigate()
   const { user, clearUser } = useAuth()
   const displayName = user?.name || (user?.email ? user.email.split('@')[0] : 'Guest')
+  const avatar = user?.avatar || ''
   const avatarInitials = getInitials(user?.name || displayName, user?.email)
   const userEmail = (user?.email || '').trim().toLowerCase()
   const normalizedUserName = (user?.name || displayName || '').trim().toLowerCase()
@@ -709,7 +710,7 @@ export default function AllMyIssues(){
 
           <div className="sidebar-footer mt-3 d-flex flex-column align-items-start">
             <div className="profile d-flex align-items-center w-100">
-              <div className="avatar-icon">{avatarInitials}</div>
+              <div className="avatar-icon">{avatar ? <img src={avatar} alt="avatar" /> : avatarInitials}</div>
               <div className="ms-2 user-info">
                 <div className="user-name">{displayName}</div>
                 <div className="user-role">{user?.role || 'Member'}</div>

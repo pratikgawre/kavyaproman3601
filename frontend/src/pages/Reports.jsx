@@ -598,6 +598,14 @@ const Reports = () => {
   const statusDistributionData = Array.isArray(reportData?.statusDistributionData)
     ? reportData.statusDistributionData
     : EMPTY_REPORT_DATA.statusDistributionData;
+  const issueTypeFilters = useMemo(
+    () => Array.from(new Set(issueTypeDistributionData.map((item) => normalizeIssueType(item?.type)).filter(Boolean))),
+    [issueTypeDistributionData]
+  );
+  const statusFilters = useMemo(
+    () => Array.from(new Set(statusDistributionData.map((item) => normalizeStatus(item?.status)).filter(Boolean))),
+    [statusDistributionData]
+  );
   // Notifications state for topbar
   const [showNotifications, setShowNotifications] = useState(false);
   const {
@@ -661,6 +669,34 @@ const Reports = () => {
     }
 
     runIssueSearch();
+  };
+
+  const handleCardKeyDown = (event, action) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      action();
+    }
+  };
+
+  const openIssuesFromReportCard = (filters = {}) => {
+    const queryParams = new URLSearchParams();
+
+    if (activeProjectKey && activeProjectKey !== ALL_PROJECTS_KEY) {
+      queryParams.set("project", activeProjectKey);
+    }
+
+    Object.entries(filters).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        if (value.length > 0) queryParams.set(key, value.join(","));
+        return;
+      }
+      if (value !== undefined && value !== null && value !== "") {
+        queryParams.set(key, String(value));
+      }
+    });
+
+    const query = queryParams.toString();
+    navigate(`/all-my-issues${query ? `?${query}` : ""}`);
   };
 
   return (
@@ -912,7 +948,13 @@ const Reports = () => {
         {/* ===== SUMMARY CARDS WITH ICONS ===== */}
         <div className="reports-cards">
 
-          <div className="report-card">
+          <div
+            className="report-card report-card-total"
+            role="button"
+            tabIndex={0}
+            onClick={() => openIssuesFromReportCard()}
+            onKeyDown={(event) => handleCardKeyDown(event, () => openIssuesFromReportCard())}
+          >
             <div className="report-card-top">
               <h4>Total Issues</h4>
               <FiActivity className="card-icon blue-icon" />
@@ -921,7 +963,13 @@ const Reports = () => {
             <p className="card-subtext">Across all statuses</p>
           </div>
 
-          <div className="report-card">
+          <div
+            className="report-card report-card-completion"
+            role="button"
+            tabIndex={0}
+            onClick={() => openIssuesFromReportCard({ status: "done" })}
+            onKeyDown={(event) => handleCardKeyDown(event, () => openIssuesFromReportCard({ status: "done" }))}
+          >
             <div className="report-card-top">
               <h4>Completion Rate</h4>
               <FiTarget className="card-icon green-icon" />
@@ -930,7 +978,13 @@ const Reports = () => {
             <p className="card-subtext">{completedIssues} of {totalIssues} completed</p>
           </div>
 
-          <div className="report-card">
+          <div
+            className="report-card report-card-estimated"
+            role="button"
+            tabIndex={0}
+            onClick={() => openIssuesFromReportCard({ status: ["todo", "progress", "review"] })}
+            onKeyDown={(event) => handleCardKeyDown(event, () => openIssuesFromReportCard({ status: ["todo", "progress", "review"] }))}
+          >
             <div className="report-card-top">
               <h4>Estimated Hours</h4>
               <FiClock className="card-icon purple-icon" />
@@ -939,7 +993,13 @@ const Reports = () => {
             <p className="card-subtext">Total estimated time</p>
           </div>
 
-          <div className="report-card">
+          <div
+            className="report-card report-card-logged"
+            role="button"
+            tabIndex={0}
+            onClick={() => openIssuesFromReportCard({ status: ["progress", "review", "done"] })}
+            onKeyDown={(event) => handleCardKeyDown(event, () => openIssuesFromReportCard({ status: ["progress", "review", "done"] }))}
+          >
             <div className="report-card-top">
               <h4>Logged Hours</h4>
               <FiTrendingUp className="card-icon orange-icon" />
@@ -971,8 +1031,8 @@ const Reports = () => {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="period" tick={{ fontSize: isCompactViewport ? 11 : 12 }} />
                   <YAxis width={isCompactViewport ? 30 : 44} />
-                  <Tooltip />
-                  <Bar dataKey="points" fill="#0969da" />
+                  <Tooltip cursor={{ fill: "rgba(148, 163, 184, 0.14)" }} />
+                  <Bar dataKey="points" fill="#0969da" activeBar={{ stroke: "none" }} />
                 </BarChart>
               </ResponsiveContainer>
             </>
@@ -989,7 +1049,7 @@ const Reports = () => {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="day" tick={{ fontSize: isCompactViewport ? 11 : 12 }} />
                   <YAxis width={isCompactViewport ? 30 : 44} />
-                  <Tooltip />
+                  <Tooltip cursor={{ stroke: "rgba(148, 163, 184, 0.5)", strokeWidth: 1 }} />
                   <Line type="monotone" dataKey="remaining" stroke="#2da44e" />
                 </LineChart>
               </ResponsiveContainer>
@@ -1000,7 +1060,13 @@ const Reports = () => {
   <div className="distribution-grid">
 
     {/* ===== Issue Type Distribution ===== */}
-    <div className="distribution-card">
+    <div
+      className="distribution-card"
+      role="button"
+      tabIndex={0}
+      onClick={() => openIssuesFromReportCard({ issueType: issueTypeFilters })}
+      onKeyDown={(event) => handleCardKeyDown(event, () => openIssuesFromReportCard({ issueType: issueTypeFilters }))}
+    >
       <h4>Issue Type Distribution</h4>
       <p className="text-muted">Breakdown by issue type</p>
 
@@ -1012,14 +1078,20 @@ const Reports = () => {
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="type" tick={{ fontSize: isCompactViewport ? 11 : 12 }} />
           <YAxis width={isCompactViewport ? 30 : 44} />
-          <Tooltip />
-          <Bar dataKey="value" fill="#8250df" radius={[6, 6, 0, 0]} />
+          <Tooltip cursor={{ fill: "rgba(148, 163, 184, 0.14)" }} />
+          <Bar dataKey="value" fill="#8250df" radius={[6, 6, 0, 0]} activeBar={{ stroke: "none" }} />
         </BarChart>
       </ResponsiveContainer>
     </div>
 
     {/* ===== Status Distribution ===== */}
-    <div className="distribution-card">
+    <div
+      className="distribution-card"
+      role="button"
+      tabIndex={0}
+      onClick={() => openIssuesFromReportCard({ status: statusFilters })}
+      onKeyDown={(event) => handleCardKeyDown(event, () => openIssuesFromReportCard({ status: statusFilters }))}
+    >
       <h4>Status Distribution</h4>
       <p className="text-muted">Issues by workflow status</p>
 
@@ -1038,8 +1110,8 @@ const Reports = () => {
             height={isCompactViewport ? 52 : 30}
           />
           <YAxis width={isCompactViewport ? 30 : 44} />
-          <Tooltip />
-          <Bar dataKey="value" fill="#2da44e" radius={[6, 6, 0, 0]} />
+          <Tooltip cursor={{ fill: "rgba(148, 163, 184, 0.14)" }} />
+          <Bar dataKey="value" fill="#2da44e" radius={[6, 6, 0, 0]} activeBar={{ stroke: "none" }} />
         </BarChart>
       </ResponsiveContainer>
     </div>
