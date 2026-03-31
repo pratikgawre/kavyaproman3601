@@ -132,6 +132,8 @@
 }
 
 .project-card-panel {
+  --project-accent-rgb: 37, 99, 235;
+  --project-accent-soft-rgb: 56, 189, 248;
   background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
   border: 1px solid #dde4ee;
   border-radius: 16px;
@@ -142,8 +144,28 @@
   min-height: 352px;
   padding: 20px;
   position: relative;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.25s ease;
   overflow: hidden;
+}
+
+.projects-grid .project-card-panel:nth-child(4n + 1) {
+  --project-accent-rgb: 37, 99, 235;
+  --project-accent-soft-rgb: 56, 189, 248;
+}
+
+.projects-grid .project-card-panel:nth-child(4n + 2) {
+  --project-accent-rgb: 5, 150, 105;
+  --project-accent-soft-rgb: 20, 184, 166;
+}
+
+.projects-grid .project-card-panel:nth-child(4n + 3) {
+  --project-accent-rgb: 217, 119, 6;
+  --project-accent-soft-rgb: 249, 115, 22;
+}
+
+.projects-grid .project-card-panel:nth-child(4n + 4) {
+  --project-accent-rgb: 225, 29, 72;
+  --project-accent-soft-rgb: 236, 72, 153;
 }
 
 .project-card-panel[role="button"] {
@@ -156,20 +178,48 @@
 }
 
 .project-card-panel::before {
-  background: linear-gradient(90deg, #2563eb, #38bdf8);
+  background: linear-gradient(90deg, rgb(var(--project-accent-rgb)), rgb(var(--project-accent-soft-rgb)));
   content: '';
   height: 4px;
   left: 0;
   position: absolute;
   right: 0;
   top: 0;
+  z-index: 1;
+}
+
+.project-card-panel::after {
+  background: radial-gradient(circle at 15% 12%, rgba(var(--project-accent-rgb), 0.24), transparent 58%);
+  content: '';
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  transition: opacity 0.25s ease;
+  z-index: 0;
+}
+
+.project-card-panel > * {
+  position: relative;
+  z-index: 1;
 }
 
 .project-card-panel:hover,
 .project-card-panel:focus-within {
-  border-color: #c7d2fe;
+  background: linear-gradient(
+    180deg,
+    rgba(var(--project-accent-rgb), 0.14) 0%,
+    rgba(var(--project-accent-soft-rgb), 0.08) 44%,
+    #ffffff 100%
+  );
+  border-color: rgba(var(--project-accent-rgb), 0.4);
   box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
   transform: translateY(-2px);
+}
+
+.project-card-panel:hover::after,
+.project-card-panel:focus-within::after {
+  opacity: 1;
 }
 
 .project-card-head {
@@ -334,7 +384,7 @@
 }
 
 .project-progress-fill {
-  background: linear-gradient(90deg, #2563eb, #0ea5e9);
+  background: linear-gradient(90deg, rgb(var(--project-accent-rgb)), rgb(var(--project-accent-soft-rgb)));
   height: 100%;
 }
 
@@ -1165,12 +1215,28 @@
 }
 
 html[data-theme='dark'] .project-card-panel {
-  background: #000000 !important;
+  background: linear-gradient(180deg, #050505 0%, #000000 100%) !important;
   border: 1px solid #ffffff !important;
 }
 
 html[data-theme='dark'] .project-card-panel::before {
-  background: linear-gradient(90deg, #38bdf8, #22d3ee);
+  background: linear-gradient(90deg, rgba(var(--project-accent-rgb), 0.95), rgba(var(--project-accent-soft-rgb), 0.95));
+}
+
+html[data-theme='dark'] .project-card-panel::after {
+  background: radial-gradient(circle at 15% 12%, rgba(var(--project-accent-rgb), 0.34), transparent 62%);
+}
+
+html[data-theme='dark'] .project-card-panel:hover,
+html[data-theme='dark'] .project-card-panel:focus-within {
+  background: linear-gradient(
+    180deg,
+    rgba(var(--project-accent-rgb), 0.26) 0%,
+    rgba(15, 23, 42, 0.9) 52%,
+    #000000 100%
+  ) !important;
+  border-color: rgba(var(--project-accent-rgb), 0.72) !important;
+  box-shadow: 0 16px 34px rgba(2, 6, 23, 0.5);
 }
 
 html[data-theme='dark'] .project-emoji {
@@ -1199,7 +1265,7 @@ html[data-theme='dark'] .project-progress-track {
 }
 
 html[data-theme='dark'] .project-progress-fill {
-  background: #ffffff !important;
+  background: linear-gradient(90deg, rgb(var(--project-accent-rgb)), rgb(var(--project-accent-soft-rgb))) !important;
 }
 
 html[data-theme='dark'] .project-action-btn {

@@ -738,9 +738,6 @@ export default function Teams() {
   };
 
   const handleCardClick = (member) => {
-    if (!isProjectManager) {
-      return;
-    }
     if (!member || editingId === member?.id) {
       return;
     }
@@ -1881,16 +1878,17 @@ export default function Teams() {
                 prioritizedMembers.map((member) => (
                   <div 
                     key={member.id}
-                    className={`member-card ${!isProjectManager ? 'member-card-readonly' : ''} ${isProjectManager && isSelfMember(member) ? 'manager-highlight' : ''}`}
-                    onClick={isProjectManager ? () => handleCardClick(member) : undefined}
-                    onKeyDown={isProjectManager ? (event) => {
+                    className={`member-card member-role-${normalizeRole(member?.role || 'member').replace(/\s+/g, '-')} ${isProjectManager && isSelfMember(member) ? 'manager-highlight' : ''}`}
+                    onClick={() => handleCardClick(member)}
+                    onKeyDown={(event) => {
                       if (event.key === 'Enter' || event.key === ' ') {
                         event.preventDefault();
                         handleCardClick(member);
                       }
-                    } : undefined}
-                    role={isProjectManager ? "button" : undefined}
-                    tabIndex={isProjectManager ? "0" : undefined}
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`View details for ${member.name || 'team member'}`}
                   >
                     <div className="member-left">
                       <img
@@ -1925,7 +1923,7 @@ export default function Teams() {
                           <>
                             <h3>
                               {member.name} 
-                              <span className={`role ${member.role.toLowerCase()}`}>
+                              <span className={`role ${(member.role || '').toLowerCase()}`}>
                                 {getRoleLabel(member.role)}
                               </span>
                             </h3>
@@ -2301,7 +2299,7 @@ export default function Teams() {
                 <div className="member-detail-info">
                   <div className="member-detail-name-row">
                     <h3>{selectedMember.name}</h3>
-                    <span className={`role ${selectedMember.role.toLowerCase()}`}>
+                    <span className={`role ${(selectedMember.role || '').toLowerCase()}`}>
                       {getRoleLabel(selectedMember.role)}
                     </span>
                   </div>

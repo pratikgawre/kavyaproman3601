@@ -385,6 +385,9 @@ html[data-theme='dark'] .active-tab::after {
 
 /* Member Card */
 .member-card {
+  --member-hover-bg: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+  --member-hover-border: #93c5fd;
+  --member-hover-shadow: 0 10px 24px rgba(37, 99, 235, 0.16);
   background: white;
   margin-bottom: 15px;
   padding: 20px;
@@ -395,27 +398,65 @@ html[data-theme='dark'] .active-tab::after {
   align-items: center;
   border: 1px solid #e2e8f0;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease, background 0.25s ease;
 }
 
-.member-card:hover {
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+.member-card:hover,
+.member-card:focus-visible {
+  background: var(--member-hover-bg);
+  border-color: var(--member-hover-border);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.22), var(--member-hover-shadow);
   transform: translateY(-2px);
 }
 
-.member-card.member-card-readonly {
-  cursor: default;
+.member-card:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.35);
+  outline-offset: 2px;
 }
 
-.member-card.member-card-readonly:hover {
-  box-shadow: none;
-  transform: none;
+.member-card.member-role-admin {
+  --member-hover-bg: linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%);
+  --member-hover-border: #fb7185;
+  --member-hover-shadow: 0 10px 24px rgba(244, 63, 94, 0.22);
+}
+
+.member-card.member-role-project-manager {
+  --member-hover-bg: linear-gradient(135deg, #f5f3ff 0%, #eef2ff 100%);
+  --member-hover-border: #a78bfa;
+  --member-hover-shadow: 0 10px 24px rgba(124, 58, 237, 0.22);
+}
+
+.member-card.member-role-developer {
+  --member-hover-bg: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  --member-hover-border: #60a5fa;
+  --member-hover-shadow: 0 10px 24px rgba(59, 130, 246, 0.22);
+}
+
+.member-card.member-role-tester {
+  --member-hover-bg: linear-gradient(135deg, #fefce8 0%, #fef3c7 100%);
+  --member-hover-border: #f59e0b;
+  --member-hover-shadow: 0 10px 24px rgba(245, 158, 11, 0.24);
+}
+
+.member-card.member-role-business-analyst {
+  --member-hover-bg: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+  --member-hover-border: #fb923c;
+  --member-hover-shadow: 0 10px 24px rgba(249, 115, 22, 0.22);
+}
+
+.member-card.member-role-viewer {
+  --member-hover-bg: linear-gradient(135deg, #ecfeff 0%, #cffafe 100%);
+  --member-hover-border: #06b6d4;
+  --member-hover-shadow: 0 10px 24px rgba(6, 182, 212, 0.24);
 }
 
 .member-card.manager-highlight {
   background: linear-gradient(135deg, #eef2ff 0%, #ecfeff 100%);
   border: 1px solid #c7d2fe;
   box-shadow: 0 12px 28px rgba(99, 102, 241, 0.18);
+  --member-hover-bg: linear-gradient(135deg, #eef2ff 0%, #e0f2fe 100%);
+  --member-hover-border: #818cf8;
+  --member-hover-shadow: 0 12px 28px rgba(99, 102, 241, 0.24);
 }
 
 .member-card.manager-highlight .member-left h3 {
@@ -1427,6 +1468,42 @@ html[data-theme='dark'] .filters {
 
 html[data-theme='dark'] .project-filter-hint {
   color: #fca5a5 !important;
+}
+
+html[data-theme='dark'] .member-card {
+  --member-hover-bg: linear-gradient(135deg, #0b1320 0%, #111827 100%);
+  --member-hover-border: #334155;
+  --member-hover-shadow: 0 12px 28px rgba(15, 23, 42, 0.55);
+}
+
+html[data-theme='dark'] .member-card.member-role-admin {
+  --member-hover-bg: linear-gradient(135deg, #2f1017 0%, #4c1d2f 100%);
+  --member-hover-border: #fb7185;
+}
+
+html[data-theme='dark'] .member-card.member-role-project-manager {
+  --member-hover-bg: linear-gradient(135deg, #1f1447 0%, #312e81 100%);
+  --member-hover-border: #a78bfa;
+}
+
+html[data-theme='dark'] .member-card.member-role-developer {
+  --member-hover-bg: linear-gradient(135deg, #0c1f3f 0%, #1d4ed8 100%);
+  --member-hover-border: #60a5fa;
+}
+
+html[data-theme='dark'] .member-card.member-role-tester {
+  --member-hover-bg: linear-gradient(135deg, #422006 0%, #78350f 100%);
+  --member-hover-border: #fbbf24;
+}
+
+html[data-theme='dark'] .member-card.member-role-business-analyst {
+  --member-hover-bg: linear-gradient(135deg, #431407 0%, #7c2d12 100%);
+  --member-hover-border: #fb923c;
+}
+
+html[data-theme='dark'] .member-card.member-role-viewer {
+  --member-hover-bg: linear-gradient(135deg, #042f2e 0%, #155e75 100%);
+  --member-hover-border: #22d3ee;
 }
 
 html[data-theme='dark'] .member-card.manager-highlight {

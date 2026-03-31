@@ -14,7 +14,6 @@ import {
   FiSearch,
   FiBell,
   FiPlus,
-  FiUser,
   FiRepeat,
   FiArrowRight,
   FiFilter,
@@ -65,6 +64,29 @@ const isManagerRole = (role) => {
     || normalized === 'admin'
 }
 const normalizeProjectKey = (value) => (value || '').trim().toUpperCase()
+const getProjectVisual = (project) => {
+  const candidates = [
+    project?.icon,
+    project?.image,
+    project?.imageUrl,
+    project?.iconUrl,
+    project?.logoUrl
+  ]
+  for (const candidate of candidates) {
+    const value = (candidate || '').toString().trim()
+    if (value) return value
+  }
+  return ''
+}
+const isImageProjectVisual = (value) => {
+  const normalized = (value || '').toString().trim().toLowerCase()
+  if (!normalized) return false
+  return normalized.startsWith('http://')
+    || normalized.startsWith('https://')
+    || normalized.startsWith('data:image/')
+    || normalized.startsWith('blob:')
+    || normalized.startsWith('/')
+}
 const matchesProjectToken = (project, token) => {
   const rawToken = (token || '').toString().trim()
   if (!rawToken) return false
@@ -257,6 +279,8 @@ export default function Backlog() {
   const [profileUser, setProfileUser] = useState(null)
   const currentUser = profileUser || user || {}
   const displayName = currentUser?.name || (currentUser?.email ? currentUser.email.split('@')[0] : 'Guest')
+  const avatar = currentUser?.avatar || ''
+  const avatarInitials = getInitials(displayName || 'Guest')
   const roleValue = normalizeRole(currentUser?.role)
   const isDeveloper = roleValue === 'developer'
   const isTester = roleValue === 'tester'
@@ -319,6 +343,8 @@ export default function Backlog() {
       name: baseProject?.name || projectKeyRaw || activeProjectKey || 'Project'
     }
   }, [activeProjectKey, projectDetails, projectFromState, projectKeyRaw, routeProjectToken])
+  const projectVisual = useMemo(() => getProjectVisual(activeProject), [activeProject])
+  const projectVisualIsImage = isImageProjectVisual(projectVisual)
   const projectTeamMembers = useMemo(
     () => (Array.isArray(activeProject?.teamMembers) ? activeProject.teamMembers : []),
     [activeProject?.teamMembers]
@@ -1155,7 +1181,7 @@ export default function Backlog() {
 
           <div className="sidebar-footer mt-3 d-flex flex-column align-items-start">
             <div className="profile d-flex align-items-center w-100">
-              <div className="avatar-icon"><FiUser size={20} /></div>
+              <div className="avatar-icon">{avatar ? <img src={avatar} alt="avatar" /> : avatarInitials}</div>
               <div className="ms-2 user-info">
                 <div className="user-name">{displayName}</div>
                 <div className="user-role">{currentUser?.role || 'Member'}</div>
@@ -1326,11 +1352,29 @@ export default function Backlog() {
           <div className="backlog-breadcrumb">
             <span>Projects</span>
             <span>/</span>
-            <span>{activeProject.name}</span>
+            <span className="backlog-breadcrumb-project">
+              <span className={`backlog-breadcrumb-project-icon ${projectVisualIsImage ? 'is-image' : ''}`} aria-hidden="true">
+                {projectVisualIsImage ? (
+                  <img src={projectVisual} alt="" />
+                ) : (
+                  projectVisual || '📁'
+                )}
+              </span>
+              <span className="backlog-breadcrumb-project-label">{activeProject.name}</span>
+            </span>
           </div>
 
           <div className="backlog-title-row">
-            <h1>Backlog</h1>
+            <div className="backlog-title-heading">
+              <span className={`backlog-project-icon ${projectVisualIsImage ? 'is-image' : ''}`} aria-hidden="true">
+                {projectVisualIsImage ? (
+                  <img src={projectVisual} alt="" />
+                ) : (
+                  projectVisual || '📁'
+                )}
+              </span>
+              <h1>Backlog</h1>
+            </div>
             <div className="backlog-title-actions">
               <button className="btn backlog-outline-btn" onClick={() => navigate(`/projects/${activeProjectKey}/board`, { state: { project: activeProject } })}>
                 View Board
