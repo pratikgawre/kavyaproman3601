@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate, useLocation } from 'react-router-dom'
 import "./Teams.css";
 import "./Dashboard.css";
@@ -50,6 +50,52 @@ const getTeamAvatar = (image) => {
   const trimmed = (image || '').trim()
   return trimmed ? trimmed : DEFAULT_TEAM_AVATAR
 }
+const CLOSED_ISSUE_STATUSES = new Set(['done', 'completed', 'closed', 'resolved', 'cancelled', 'archived'])
+const normalizeIssueStatus = (status) => (status || '').toString().trim().toLowerCase()
+const isActiveIssueStatus = (status) => !CLOSED_ISSUE_STATUSES.has(normalizeIssueStatus(status))
+const getIssueProjectMatchKeys = (issue) => {
+  const keys = new Set()
+  const addKey = (value) => {
+    const normalized = (value || '').toString().trim().toLowerCase()
+    if (normalized) keys.add(normalized)
+  }
+  const issueProject = issue?.project
+  if (issueProject && typeof issueProject === 'object') {
+    addKey(issueProject?.projectKey)
+    addKey(issueProject?.id)
+    addKey(issueProject?.name)
+  } else {
+    addKey(issueProject)
+  }
+  addKey(issue?.projectKey)
+  addKey(issue?.projectId)
+  addKey(issue?.projectName)
+  return keys
+}
+const getIssueDisplayTitle = (issue) => (
+  issue?.summary || issue?.title || issue?.issueKey || issue?.key || issue?.id || 'Untitled issue'
+)
+const getIssueDisplayKey = (issue) => (
+  (issue?.issueKey || issue?.key || issue?.id || '').toString().trim()
+)
+const getProjectDisplayName = (project) => (
+  project?.name || project?.projectName || project?.projectKey || 'Untitled Project'
+)
+const getProjectDisplayKey = (project) => (
+  (project?.projectKey || project?.key || project?.id || '').toString().trim()
+)
+const getMemberCardId = (member, fallbackIndex = null) => {
+  const rawId = member?.id ?? member?._id ?? member?.memberId ?? member?.memberRecordId
+  if (rawId !== null && rawId !== undefined) {
+    const normalized = String(rawId).trim()
+    if (normalized) return normalized
+  }
+  const email = (member?.email || '').trim().toLowerCase()
+  if (email) return email
+  if (typeof fallbackIndex === 'number') return `member-${fallbackIndex}`
+  return ''
+}
+const matchesMemberId = (member, memberId) => getMemberCardId(member) === String(memberId ?? '')
 
 const FALLBACK_MEMBERS = [
   { id: 1, name: 'Sarah Johnson', email: 'sarah.johnson@kavyapro.com', role: 'Admin', projects: 3, activeIssues: 8, image: '' },
@@ -132,6 +178,7 @@ export default function Teams() {
   const [memberToRemove, setMemberToRemove] = useState(null);
   const [showMemberModal, setShowMemberModal] = useState(false);
   const [selectedMember, setSelectedMember] = useState(null);
+  const [selectedMemberDetailMetric, setSelectedMemberDetailMetric] = useState('active-projects');
   const [showNotifications, setShowNotifications] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [topSearchText, setTopSearchText] = useState("");
@@ -564,8 +611,13 @@ export default function Teams() {
 
   const handleEdit = (member) => {
     if (!isProjectManager) return;
-    setEditingId(member.id);
-    setEditingMember({ ...member });
+    const memberCardId = getMemberCardId(member);
+    if (!memberCardId) return;
+    setEditingId(memberCardId);
+    setEditingMember({
+      ...member,
+      memberRecordId: member?.memberRecordId || member?.id || member?._id || member?.memberId || null
+    });
   };
 
   const updateProjectTeamMembers = async (nextTeamMembers, projectOverride = null) => {
@@ -715,14 +767,14 @@ export default function Teams() {
       }
 
       const updatedMember = await response.json();
-      setMembers((prev) => prev.map(m => m.id === memberRecordId ? updatedMember : m));
+      setMembers((prev) => prev.map((m) => (matchesMemberId(m, memberRecordId) ? updatedMember : m)));
       setEditingId(null);
       setEditingMember(null);
       alert('Member updated successfully');
     } catch (err) {
       if (usingFallbackData) {
-        const localUpdatedMember = { ...editingMember, id: memberId };
-        setMembers(members.map(m => m.id === memberId ? localUpdatedMember : m));
+        const localUpdatedMember = { ...editingMember, id: editingMember?.id || memberId };
+        setMembers(members.map((m) => (matchesMemberId(m, memberId) ? localUpdatedMember : m)));
         setEditingId(null);
         setEditingMember(null);
         return;
@@ -737,15 +789,25 @@ export default function Teams() {
     setEditingMember(null);
   };
 
+  const triggerCardAction = (event, action) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      action();
+    }
+  };
+
   const handleCardClick = (member) => {
-    if (!member || editingId === member?.id) {
+    const memberCardId = getMemberCardId(member);
+    if (!member || !memberCardId || editingId === memberCardId) {
       return;
     }
+    setSelectedMemberDetailMetric('active-projects');
     setSelectedMember(member);
     setShowMemberModal(true);
   };
 
   const handleCloseMemberModal = () => {
+    setSelectedMemberDetailMetric('active-projects');
     setShowMemberModal(false);
     setSelectedMember(null);
   };
@@ -1039,14 +1101,18 @@ export default function Teams() {
     if (!memberEmail) return 0;
     const normalizedEmail = memberEmail.toLowerCase();
     const issueList = Array.isArray(issues) ? issues : [];
-    return issueList.filter(issue => {
+    return issueList.filter((issue) => {
       const assigneeEmail = (issue?.assigneeEmail || issue?.assignee || issue?.creatorEmail || '').toLowerCase();
       if (!assigneeEmail || assigneeEmail !== normalizedEmail) {
         return false;
       }
+      if (!isActiveIssueStatus(issue?.status)) {
+        return false;
+      }
       if (projectKeys && projectKeys.size > 0) {
-        const issueProject = (issue?.project || '').toString().trim().toLowerCase();
-        if (!projectKeys.has(issueProject)) return false;
+        const issueProjectKeys = getIssueProjectMatchKeys(issue);
+        const matchesScope = Array.from(issueProjectKeys).some((key) => projectKeys.has(key));
+        if (!matchesScope) return false;
       }
       return true;
     }).length;
@@ -1129,11 +1195,11 @@ export default function Teams() {
         throw new Error('Failed to delete member');
       }
 
-      setMembers(members.filter(m => m.id !== memberId));
+      setMembers(members.filter((m) => !matchesMemberId(m, memberId)));
       alert('Member deleted successfully');
     } catch (err) {
       if (usingFallbackData) {
-        setMembers(members.filter(m => m.id !== memberId));
+        setMembers(members.filter((m) => !matchesMemberId(m, memberId)));
         return;
       }
       alert('Error deleting member: ' + err.message);
@@ -1179,6 +1245,87 @@ export default function Teams() {
   const inviteProjectsLoading = isAdmin
     ? (adminProjectSource.length === 0 ? globalProjectsLoading : false)
     : projectsLoading;
+  const memberProjectSource = isAdmin ? adminProjectSource : projects;
+  const memberDetailData = useMemo(() => {
+    const emptyDetails = {
+      activeProjects: [],
+      completedProjects: [],
+      activeIssues: []
+    };
+    if (!selectedMember) return emptyDetails;
+
+    const selectedMemberEmail = (selectedMember?.email || '').trim().toLowerCase();
+    if (!selectedMemberEmail) return emptyDetails;
+
+    const projectsInScope = selectedProject ? [selectedProject] : (Array.isArray(memberProjectSource) ? memberProjectSource : []);
+    const isManagerSelf = Boolean(
+      isProjectManager
+      && managerEmailNormalized
+      && selectedMemberEmail === managerEmailNormalized
+    );
+
+    const memberProjects = projectsInScope.filter((project) => {
+      if (!project) return false;
+      if (isManagerSelf) return true;
+      const teamMembers = Array.isArray(project?.teamMembers) ? project.teamMembers : [];
+      return teamMembers.some((member) => {
+        const teamMemberEmail = (member?.email || '').trim().toLowerCase();
+        return teamMemberEmail && teamMemberEmail === selectedMemberEmail;
+      });
+    });
+
+    const activeProjectsForMember = memberProjects.filter((project) => !isProjectCompleted(project));
+    const completedProjectsForMember = memberProjects.filter((project) => isProjectCompleted(project));
+    const memberProjectKeys = memberProjects.reduce((keys, project) => {
+      getProjectMatchKeys(project).forEach((key) => keys.add(key));
+      return keys;
+    }, new Set());
+    const activeIssuesForMember = (Array.isArray(issues) ? issues : []).filter((issue) => {
+      const assigneeEmail = (issue?.assigneeEmail || issue?.assignee || issue?.creatorEmail || '').toLowerCase();
+      if (!assigneeEmail || assigneeEmail !== selectedMemberEmail) {
+        return false;
+      }
+      if (!isActiveIssueStatus(issue?.status)) {
+        return false;
+      }
+      if (memberProjectKeys.size > 0) {
+        const issueProjectKeys = getIssueProjectMatchKeys(issue);
+        return Array.from(issueProjectKeys).some((key) => memberProjectKeys.has(key));
+      }
+      return !selectedProject;
+    });
+
+    return {
+      activeProjects: activeProjectsForMember,
+      completedProjects: completedProjectsForMember,
+      activeIssues: activeIssuesForMember
+    };
+  }, [
+    selectedMember,
+    selectedProject,
+    memberProjectSource,
+    issues,
+    isProjectManager,
+    managerEmailNormalized
+  ]);
+  const memberDetailTabs = {
+    'active-projects': {
+      label: 'Active Projects',
+      items: memberDetailData.activeProjects,
+      emptyText: 'No active projects assigned to this member.'
+    },
+    'completed-projects': {
+      label: 'Completed Projects',
+      items: memberDetailData.completedProjects,
+      emptyText: 'No completed projects assigned to this member.'
+    },
+    'active-issues': {
+      label: 'Active Issues',
+      items: memberDetailData.activeIssues,
+      emptyText: 'No active issues assigned to this member.'
+    }
+  };
+  const selectedMemberDetailTab = memberDetailTabs[selectedMemberDetailMetric] || memberDetailTabs['active-projects'];
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -1682,8 +1829,9 @@ export default function Teams() {
             <div 
               className="card stat-card"
               onClick={() => handleStatClick('Total Members')}
+              onKeyDown={(event) => triggerCardAction(event, () => handleStatClick('Total Members'))}
               role="button"
-              tabIndex="0"
+              tabIndex={0}
             >
               <h4>Total Members</h4>
               <h2>{stats.totalMembers}</h2>
@@ -1692,8 +1840,9 @@ export default function Teams() {
             <div 
               className="card stat-card"
               onClick={() => handleStatClick('Active Projects')}
+              onKeyDown={(event) => triggerCardAction(event, () => handleStatClick('Active Projects'))}
               role="button"
-              tabIndex="0"
+              tabIndex={0}
             >
               <h4>Active Projects</h4>
               <h2>{stats.activeProjects}</h2>
@@ -1702,8 +1851,9 @@ export default function Teams() {
             <div 
               className="card stat-card"
               onClick={() => handleStatClick('Avg. Workload')}
+              onKeyDown={(event) => triggerCardAction(event, () => handleStatClick('Avg. Workload'))}
               role="button"
-              tabIndex="0"
+              tabIndex={0}
             >
               <h4>Avg. Workload</h4>
               <h2>{stats.avgWorkload}</h2>
@@ -1713,8 +1863,9 @@ export default function Teams() {
             <div 
               className="card stat-card"
               onClick={() => handleStatClick('Project Managers')}
+              onKeyDown={(event) => triggerCardAction(event, () => handleStatClick('Project Managers'))}
               role="button"
-              tabIndex="0"
+              tabIndex={0}
             >
               <h4>Project Managers</h4>
               <h2>{stats.admins}</h2>
@@ -1875,19 +2026,17 @@ export default function Teams() {
           {visibleTab === "Members" && (
             <div className="member-cards" ref={memberListRef}>
               {prioritizedMembers.length > 0 ? (
-                prioritizedMembers.map((member) => (
+                prioritizedMembers.map((member, index) => {
+                  const memberCardId = getMemberCardId(member, index);
+                  const isEditingMember = editingId === memberCardId;
+                  return (
                   <div 
-                    key={member.id}
+                    key={memberCardId}
                     className={`member-card member-role-${normalizeRole(member?.role || 'member').replace(/\s+/g, '-')} ${isProjectManager && isSelfMember(member) ? 'manager-highlight' : ''}`}
                     onClick={() => handleCardClick(member)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        handleCardClick(member);
-                      }
-                    }}
+                    onKeyDown={(event) => triggerCardAction(event, () => handleCardClick(member))}
                     role="button"
-                    tabIndex={0}
+                    tabIndex={isEditingMember ? -1 : 0}
                     aria-label={`View details for ${member.name || 'team member'}`}
                     title={`View details for ${member.name || 'team member'}`}
                   >
@@ -1897,7 +2046,7 @@ export default function Teams() {
                         alt={member.name}
                       />
                       <div>
-                        {editingId === member.id ? (
+                        {isEditingMember ? (
                           <div className="edit-form">
                             <input
                               type="text"
@@ -1937,14 +2086,14 @@ export default function Teams() {
 
                     {isProjectManager && (
                       <div className="member-right">
-                        {editingId === member.id ? (
+                        {isEditingMember ? (
                         <div className="edit-actions">
                           <button
                             type="button"
                             className="save-btn"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleSaveEdit(member.id);
+                              handleSaveEdit(memberCardId);
                             }}
                           >
                             <FiCheck size={14} className="me-1" /> Save
@@ -2016,7 +2165,7 @@ export default function Teams() {
                       </div>
                     )}
                 </div>
-              ))
+              )})
             ) : (
               <div style={{ textAlign: 'center', padding: '40px' }}>
                 <p>
@@ -2067,7 +2216,7 @@ export default function Teams() {
                 type="button"
                 onClick={() => {
                   if (!memberToRemove) return;
-                  handleDeleteMember(memberToRemove.id);
+                  handleDeleteMember(getMemberCardId(memberToRemove));
                   closeRemoveModal();
                 }}
               >
@@ -2310,27 +2459,85 @@ export default function Teams() {
               </div>
 
               <div className="member-detail-stats">
-                {isProjectFilterActive ? (
-                  <div className="member-detail-stat">
-                    <strong>{selectedProjectIsCompleted ? 'Completed' : 'Active'}</strong>
-                    <span>Project Status</span>
-                  </div>
-                ) : (
-                  <>
-                    <div className="member-detail-stat">
-                      <strong>{selectedMember.projects || 0}</strong>
-                      <span>Active Projects</span>
-                    </div>
-                    <div className="member-detail-stat">
-                      <strong>{selectedMember.completedProjects || 0}</strong>
-                      <span>Completed Projects</span>
-                    </div>
-                  </>
-                )}
-                <div className="member-detail-stat">
-                  <strong>{selectedMember.activeIssues || 0}</strong>
+                <button
+                  type="button"
+                  className={`member-detail-stat member-detail-stat-action ${selectedMemberDetailMetric === 'active-projects' ? 'is-active' : ''}`}
+                  onClick={() => setSelectedMemberDetailMetric('active-projects')}
+                  aria-pressed={selectedMemberDetailMetric === 'active-projects'}
+                >
+                  <strong>{memberDetailData.activeProjects.length}</strong>
+                  <span>Active Projects</span>
+                </button>
+                <button
+                  type="button"
+                  className={`member-detail-stat member-detail-stat-action ${selectedMemberDetailMetric === 'completed-projects' ? 'is-active' : ''}`}
+                  onClick={() => setSelectedMemberDetailMetric('completed-projects')}
+                  aria-pressed={selectedMemberDetailMetric === 'completed-projects'}
+                >
+                  <strong>{memberDetailData.completedProjects.length}</strong>
+                  <span>Completed Projects</span>
+                </button>
+                <button
+                  type="button"
+                  className={`member-detail-stat member-detail-stat-action ${selectedMemberDetailMetric === 'active-issues' ? 'is-active' : ''}`}
+                  onClick={() => setSelectedMemberDetailMetric('active-issues')}
+                  aria-pressed={selectedMemberDetailMetric === 'active-issues'}
+                >
+                  <strong>{memberDetailData.activeIssues.length}</strong>
                   <span>Active Issues</span>
+                </button>
+              </div>
+
+              <div className="member-detail-data-panel">
+                <div className="member-detail-data-header">
+                  <h4>{selectedMemberDetailTab.label}</h4>
+                  <span>{selectedMemberDetailTab.items.length}</span>
                 </div>
+
+                {selectedMemberDetailTab.items.length > 0 ? (
+                  <ul className="member-detail-data-list">
+                    {selectedMemberDetailMetric === 'active-issues' ? (
+                      selectedMemberDetailTab.items.map((issue, index) => {
+                        const issueKey = getIssueDisplayKey(issue);
+                        const issueTitle = getIssueDisplayTitle(issue);
+                        const issueStatus = normalizeIssueStatus(issue?.status);
+                        return (
+                          <li key={issue?.id || issueKey || `${issueTitle}-${index}`} className="member-detail-data-item">
+                            <div className="member-detail-data-title-row">
+                              <span className="member-detail-data-title">{issueTitle}</span>
+                              {issueKey ? (
+                                <span className="member-detail-data-key">{issueKey}</span>
+                              ) : null}
+                            </div>
+                            <span className="member-detail-data-subtitle">
+                              Status: {issueStatus ? issueStatus.charAt(0).toUpperCase() + issueStatus.slice(1) : 'Open'}
+                            </span>
+                          </li>
+                        );
+                      })
+                    ) : (
+                      selectedMemberDetailTab.items.map((project, index) => {
+                        const projectName = getProjectDisplayName(project);
+                        const projectKey = getProjectDisplayKey(project);
+                        return (
+                          <li key={project?.id || projectKey || `${projectName}-${index}`} className="member-detail-data-item">
+                            <div className="member-detail-data-title-row">
+                              <span className="member-detail-data-title">{projectName}</span>
+                              {projectKey ? (
+                                <span className="member-detail-data-key">{projectKey}</span>
+                              ) : null}
+                            </div>
+                            <span className="member-detail-data-subtitle">
+                              {isProjectCompleted(project) ? 'Completed project' : 'Active project'}
+                            </span>
+                          </li>
+                        );
+                      })
+                    )}
+                  </ul>
+                ) : (
+                  <p className="member-detail-empty">{selectedMemberDetailTab.emptyText}</p>
+                )}
               </div>
             </div>
 
