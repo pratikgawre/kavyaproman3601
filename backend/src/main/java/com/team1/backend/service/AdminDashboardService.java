@@ -133,19 +133,23 @@ public class AdminDashboardService {
         Map<String, String> cache = new HashMap<>();
         List<AdminProjectHighlightDto> highlights = new ArrayList<>();
         addHighlights(highlights, active, "Active", cache);
-        if (highlights.size() < 3) {
-            addHighlights(highlights, onHold, "On Hold", cache);
-        }
-        if (highlights.size() < 3) {
-            addHighlights(highlights, archived, "Completed", cache);
-        }
+        addHighlights(highlights, onHold, "On Hold", cache);
+        addHighlights(highlights, archived, "Completed", cache);
+        highlights.sort(
+                Comparator.comparingInt(AdminProjectHighlightDto::getCompletionPct)
+                        .reversed()
+                        .thenComparing(
+                                AdminProjectHighlightDto::getName,
+                                Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER)
+                        )
+        );
         return highlights;
     }
 
     private void addHighlights(List<AdminProjectHighlightDto> highlights, List<Project> source, String statusLabel, Map<String, String> cache) {
         for (Project project : source) {
-            if (highlights.size() >= 3) {
-                break;
+            if (project == null) {
+                continue;
             }
             highlights.add(buildHighlight(project, statusLabel, cache));
         }

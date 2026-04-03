@@ -497,6 +497,30 @@ export default function Backlog() {
     }
   }
 
+  async function refreshIssues() {
+    if (!activeProjectKey) {
+      setIssues([])
+      setIssuesLoading(false)
+      return
+    }
+    setIssuesLoading(true)
+    setIssuesError('')
+    try {
+      const res = await fetch(`${API_BASE}/api/issues?project=${encodeURIComponent(activeProjectKey)}`)
+      if (!res.ok) {
+        const errorText = await res.text()
+        throw new Error(errorText || 'Failed to load issues')
+      }
+      const data = await res.json()
+      setIssues(Array.isArray(data) ? data : [])
+    } catch (err) {
+      setIssues([])
+      setIssuesError(err.message || 'Failed to load issues')
+    } finally {
+      setIssuesLoading(false)
+    }
+  }
+
   useEffect(() => {
     if (!mobileSearchOpen) return
     const timeoutId = setTimeout(() => topSearchInputRef.current?.focus(), 0)
@@ -1126,6 +1150,7 @@ export default function Backlog() {
         return found ? next : [updated, ...next]
       })
       await refreshSprints()
+      await refreshIssues()
     } catch (err) {
       setSprintActionError(err.message || 'Failed to complete sprint')
     } finally {

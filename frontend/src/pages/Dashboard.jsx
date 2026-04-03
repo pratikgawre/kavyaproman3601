@@ -45,6 +45,36 @@ function getProjectStatusKey(project) {
   return 'active'
 }
 
+function normalizeEmailAddress(value) {
+  const normalized = (value || '').toString().trim().toLowerCase()
+  return normalized || ''
+}
+
+function normalizeComparableText(value) {
+  return (value || '').toString().trim().toLowerCase()
+}
+
+function pendingRequestTypeFromStatus(status) {
+  const normalized = normalizeComparableText(status)
+  return normalized.includes('role') ? 'role' : 'join'
+}
+
+function buildProjectManagerLookup(teams) {
+  const lookup = new Map()
+  const teamList = Array.isArray(teams) ? teams : []
+  teamList.forEach((manager) => {
+    const managerEmail = normalizeEmailAddress(manager?.managerEmail)
+    const managerName = normalizeComparableText(manager?.managerName)
+    const projects = Array.isArray(manager?.projects) ? manager.projects : []
+    projects.forEach((project) => {
+      const projectId = (project?.projectId || '').toString().trim()
+      if (!projectId) return
+      lookup.set(projectId, { managerEmail, managerName })
+    })
+  })
+  return lookup
+}
+
 function normalizeStatus(value) {
   const normalized = (value || '').toString().trim().toLowerCase()
   if (normalized === 'todo' || normalized === 'to-do') return 'todo'
@@ -314,6 +344,9 @@ export default function Dashboard({ initialShowCreate = false }) {
   const [managerTeamsError, setManagerTeamsError] = useState('')
   const [showManagerTeamsModal, setShowManagerTeamsModal] = useState(false)
   const [roleUpdatedAt, setRoleUpdatedAt] = useState(0)
+  const [projectOverviewActionLoadingKey, setProjectOverviewActionLoadingKey] = useState('')
+  const [projectOverviewActionMessage, setProjectOverviewActionMessage] = useState('')
+  const [projectOverviewActionError, setProjectOverviewActionError] = useState('')
   const handleAdminActionClick = (action, path) => () => {
     setActiveUserAction(action)
     if (path) {
@@ -1414,12 +1447,16 @@ export default function Dashboard({ initialShowCreate = false }) {
     () => (Array.isArray(adminOverview?.announcements) ? adminOverview.announcements : []),
     [adminOverview]
   )
+  const projectManagerLookup = useMemo(
+    () => buildProjectManagerLookup(managerTeams),
+    [managerTeams]
+  )
 
   const projectOverviewRows = useMemo(() => {
     const defaultRows = {
-      active: { label: 'Active Projects', count: 0, ownerName: '', ownerEmail: '' },
-      completed: { label: 'Completed Projects', count: 0, ownerName: '', ownerEmail: '' },
-      onHold: { label: 'On Hold Projects', count: 0, ownerName: '', ownerEmail: '' }
+      active: { statusKey: 'active', label: 'Active Projects', count: 0, ownerName: '', ownerEmail: '' },
+      completed: { statusKey: 'completed', label: 'Completed Projects', count: 0, ownerName: '', ownerEmail: '' },
+      onHold: { statusKey: 'onHold', label: 'On Hold Projects', count: 0, ownerName: '', ownerEmail: '' }
     }
 
     const apiRows = (Array.isArray(adminProjectOverview) ? adminProjectOverview : [])
@@ -1490,6 +1527,122 @@ export default function Dashboard({ initialShowCreate = false }) {
     defaultRows.onHold.count = Number(adminOverview?.onHoldProjects ?? 0) || 0
     return [defaultRows.active, defaultRows.completed, defaultRows.onHold]
   }, [adminOverview, adminProjectOverview, projects])
+
+  const fetchManagerTeamsForActions = async () => {
+    if (projectManagerLookup.size > 0) {
+      return projectManagerLookup
+    }
+    if (!user?.id) {
+      return new Map()
+    }
+    try {
+      const response = await fetch(`${API_BASE}/api/admin/manager-teams`, {
+        headers: { 'X-USER-ID': String(user.id) }
+      })
+      if (!response.ok) {
+        const text = await response.text()
+        throw new Error(text || 'Unable to load team data')
+      }
+      const data = await response.json()
+      const nextManagerTeams = Array.isArray(data) ? data : []
+      setManagerTeams(nextManagerTeams)
+      return buildProjectManagerLookup(nextManagerTeams)
+    } catch (err) {
+      console.error('failed to load manager teams for project overview action', err)
+      return projectManagerLookup
+    }
+  }
+
+  const findPendingApprovalForRow = (statusRow, managerLookup) => {
+    const candidates = adminPendingApprovals.filter((item) => item?.projectId && item?.memberEmail)
+    if (!candidates.length) return null
+
+    const ownerEmail = normalizeEmailAddress(statusRow?.ownerEmail)
+    const ownerName = normalizeComparableText(statusRow?.ownerName)
+    if (managerLookup.size && (ownerEmail || ownerName)) {
+      const ownerMatched = candidates.find((item) => {
+        const projectId = (item?.projectId || '').toString().trim()
+        if (!projectId) return false
+        const manager = managerLookup.get(projectId)
+        if (!manager) return false
+        if (ownerEmail && ownerEmail === manager.managerEmail) return true
+        if (!ownerEmail && ownerName && ownerName === manager.managerName) return true
+        return false
+      })
+      if (ownerMatched) return ownerMatched
+    }
+
+    return candidates[0]
+  }
+
+  const handleProjectOverviewAction = async (statusRow, action) => {
+    if (!isAdmin) return
+
+    if (!user?.id) {
+      setProjectOverviewActionError('Please sign in again to review pending requests.')
+      return
+    }
+
+    const normalizedAction = action === 'rejected' ? 'rejected' : 'approved'
+    const statusKey = statusRow?.statusKey || getProjectOverviewStatusKeyFromLabel(statusRow?.label)
+    const loadingKey = `${statusKey}:${normalizedAction}`
+    setProjectOverviewActionLoadingKey(loadingKey)
+    setProjectOverviewActionError('')
+    setProjectOverviewActionMessage('')
+
+    try {
+      const managerLookup = await fetchManagerTeamsForActions()
+      const targetRequest = findPendingApprovalForRow(statusRow, managerLookup)
+      if (!targetRequest) {
+        setProjectOverviewActionMessage('No pending requests available to process.')
+        return
+      }
+
+      const requestType = pendingRequestTypeFromStatus(targetRequest?.status)
+      const response = await fetch(`${API_BASE}/api/admin/pending-requests/${requestType}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-USER-ID': String(user.id)
+        },
+        body: JSON.stringify({
+          action: normalizedAction,
+          projectId: targetRequest.projectId,
+          memberEmail: targetRequest.memberEmail
+        })
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(errorText || 'Unable to update pending request')
+      }
+
+      const data = await response.json()
+      setAdminOverview((prev) => {
+        if (!prev) return prev
+        const previousPending = Array.isArray(prev.pendingApprovals) ? prev.pendingApprovals : []
+        const nextPending = previousPending.filter((item) => {
+          const sameProject = (item?.projectId || '') === (targetRequest?.projectId || '')
+          const sameMember = normalizeEmailAddress(item?.memberEmail) === normalizeEmailAddress(targetRequest?.memberEmail)
+          return !(sameProject && sameMember)
+        })
+        const parsedPendingCount = Number(prev.pendingRequests)
+        const nextPendingCount = Number.isFinite(parsedPendingCount)
+          ? Math.max(0, parsedPendingCount - 1)
+          : nextPending.length
+        return {
+          ...prev,
+          pendingApprovals: nextPending,
+          pendingRequests: nextPendingCount
+        }
+      })
+      setProjectOverviewActionMessage(data?.message || `Request marked as ${normalizedAction}.`)
+    } catch (err) {
+      setProjectOverviewActionError(err?.message || 'Unable to update pending request')
+    } finally {
+      setProjectOverviewActionLoadingKey('')
+    }
+  }
 
   return (
     <div className="dashboard-root d-flex">
@@ -1732,33 +1885,59 @@ export default function Dashboard({ initialShowCreate = false }) {
                   <h5>Project Overview</h5>
                   <p className="small-muted">Status breakdown</p>
                 </div>
+                {projectOverviewActionMessage && (
+                  <div className="admin-info-state project-overview-feedback">{projectOverviewActionMessage}</div>
+                )}
+                {projectOverviewActionError && (
+                  <div className="admin-error-state project-overview-feedback">{projectOverviewActionError}</div>
+                )}
                 <div className="project-status-list">
-                  {projectOverviewRows.map((status) => (
-                    <div className="project-status-row" key={status.label}>
-                      <div>
-                        <div className="project-status-label">{status.label}</div>
-                        {(status.ownerName || status.ownerEmail) && (
-                          <div className="project-status-owner">Managed by {status.ownerName || status.ownerEmail}</div>
-                        )}
+                  {projectOverviewRows.map((status) => {
+                    const statusKey = status.statusKey || getProjectOverviewStatusKeyFromLabel(status.label)
+                    const approveLoadingKey = `${statusKey}:approved`
+                    const rejectLoadingKey = `${statusKey}:rejected`
+                    const rowActionBusy = projectOverviewActionLoadingKey === approveLoadingKey || projectOverviewActionLoadingKey === rejectLoadingKey
+                    return (
+                      <div className="project-status-row" key={status.label}>
+                        <div>
+                          <div className="project-status-label">{status.label}</div>
+                          {(status.ownerName || status.ownerEmail) && (
+                            <div className="project-status-owner">Managed by {status.ownerName || status.ownerEmail}</div>
+                          )}
+                        </div>
+                        <div className="project-status-meta">
+                          <span className="project-status-count">{status.count}</span>
+                          <div className="project-status-actions">
+                            <button
+                              className="admin-status-btn approve"
+                              type="button"
+                              disabled={rowActionBusy}
+                              onClick={() => handleProjectOverviewAction(status, 'approved')}
+                            >
+                              {projectOverviewActionLoadingKey === approveLoadingKey ? 'Approving...' : 'Approve'}
+                            </button>
+                            <button
+                              className="admin-status-btn reject"
+                              type="button"
+                              disabled={rowActionBusy}
+                              onClick={() => handleProjectOverviewAction(status, 'rejected')}
+                            >
+                              {projectOverviewActionLoadingKey === rejectLoadingKey ? 'Rejecting...' : 'Reject'}
+                            </button>
+                            {isAdmin && status.ownerEmail && (
+                              <button
+                                className="admin-status-btn view-team"
+                                type="button"
+                                onClick={() => handleViewTeam(status.ownerEmail, status.ownerName)}
+                              >
+                                View team
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <div className="project-status-meta">
-                        <span className="project-status-count">{status.count}</span>
-                      <div className="project-status-actions">
-                        <button className="admin-status-btn approve" type="button">Approve</button>
-                        <button className="admin-status-btn reject" type="button">Reject</button>
-                        {isAdmin && status.ownerEmail && (
-                          <button
-                            className="admin-status-btn view-team"
-                            type="button"
-                            onClick={() => handleViewTeam(status.ownerEmail, status.ownerName)}
-                          >
-                            View team
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
                 <div className="admin-card-footer">
                   <button className="btn admin-ghost-btn" type="button" onClick={() => navigate('/projects')}>Manage Projects</button>
@@ -1821,14 +2000,16 @@ export default function Dashboard({ initialShowCreate = false }) {
               <section className="admin-card highlights-card">
                 <div className="admin-card-header">
                   <h5>Project Highlights</h5>
-                  <p className="small-muted">Top performers</p>
+                  <p className="small-muted">All projects by completion rate</p>
                 </div>
                 <div className="highlight-list">
                   {adminProjectHighlights.length ? adminProjectHighlights.map((highlight) => (
                     <div className="highlight-row" key={highlight.projectId || highlight.projectKey}>
                       <div>
                         <div className="highlight-title">{highlight.name || highlight.projectKey}</div>
-                        <div className="muted">{highlight.status} · {highlight.managerName || highlight.leadName || 'Team'}</div>
+                        <div className="muted">
+                          {highlight.status || 'Active'} - {highlight.completedIssues ?? 0}/{highlight.totalIssues ?? 0} done - {highlight.managerName || highlight.leadName || 'Team'}
+                        </div>
                       </div>
                       <div className="highlight-progress-track">
                         <div
@@ -1839,7 +2020,7 @@ export default function Dashboard({ initialShowCreate = false }) {
                       <span className="highlight-pct">{highlight.completionPct ?? 0}%</span>
                     </div>
                   )) : (
-                    <div className="muted">Highlights appear once projects report status.</div>
+                    <div className="muted">Projects appear here once they are created.</div>
                   )}
                 </div>
               </section>

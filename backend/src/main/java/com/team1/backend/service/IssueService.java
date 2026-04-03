@@ -39,10 +39,22 @@ public class IssueService {
     }
 
     public List<Issue> listAll(String project){
+        return listAll(project, false);
+    }
+
+    public List<Issue> listAll(String project, boolean includeArchived){
+        List<Issue> issues;
         if (project == null || project.trim().isEmpty()) {
-            return repo.findAll();
+            issues = repo.findAll();
+        } else {
+            issues = repo.findByProject(normalizeProjectKey(project));
         }
-        return repo.findByProject(normalizeProjectKey(project));
+        if (includeArchived) {
+            return issues;
+        }
+        return issues.stream()
+                .filter(issue -> !isArchived(issue))
+                .toList();
     }
 
     public Optional<Issue> findMineById(String userId, String id){
@@ -75,6 +87,8 @@ public class IssueService {
         issue.setAssignDate(normalizeText(issue.getAssignDate()));
         issue.setDeadlineDate(normalizeText(issue.getDeadlineDate()));
         issue.setSprintId(normalizeText(issue.getSprintId()));
+        issue.setArchived(Boolean.FALSE);
+        issue.setArchivedAt(null);
 
         if (issue.getStatus() == null || issue.getStatus().trim().isEmpty()) {
             issue.setStatus("todo");
@@ -236,10 +250,19 @@ public class IssueService {
             if (updated.getSprintId() != null) {
                 existing.setSprintId(normalizeText(updated.getSprintId()));
             }
+            if (updated.getArchived() != null) {
+                existing.setArchived(updated.getArchived());
+            }
+            if (updated.getArchivedAt() != null) {
+                existing.setArchivedAt(updated.getArchivedAt());
+            }
             existing.setUpdatedAt(LocalDateTime.now());
             return repo.save(existing);
         }).orElseGet(() -> {
             updated.setId(id);
+            if (updated.getArchived() == null) {
+                updated.setArchived(Boolean.FALSE);
+            }
             updated.setCreatedAt(LocalDateTime.now());
             updated.setUpdatedAt(LocalDateTime.now());
             return repo.save(updated);
@@ -783,5 +806,9 @@ public class IssueService {
             case "done" -> "Done";
             default -> "To Do";
         };
+    }
+
+    private boolean isArchived(Issue issue) {
+        return issue != null && Boolean.TRUE.equals(issue.getArchived());
     }
 }

@@ -44,6 +44,9 @@ public class Issue {
 
     private List<IssueComment> comments;
 
+    private Boolean archived;
+    private LocalDateTime archivedAt;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -118,6 +121,12 @@ public class Issue {
 
     public List<IssueComment> getComments() { return comments; }
     public void setComments(List<IssueComment> comments) { this.comments = comments; }
+
+    public Boolean getArchived() { return archived; }
+    public void setArchived(Boolean archived) { this.archived = archived; }
+
+    public LocalDateTime getArchivedAt() { return archivedAt; }
+    public void setArchivedAt(LocalDateTime archivedAt) { this.archivedAt = archivedAt; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

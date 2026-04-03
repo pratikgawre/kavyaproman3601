@@ -2700,6 +2700,11 @@ html[data-theme='dark'] .project-status-owner{
   font-size: 0.8rem;
 }
 
+.admin-status-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 .admin-status-btn.approve {
   background: #059669;
   color: #fff;
@@ -2826,6 +2831,20 @@ html[data-theme='dark'] .announcement-list li.clickable-item {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(15, 23, 42, 0.35) transparent;
+}
+
+.highlight-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.highlight-list::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.28);
+  border-radius: 999px;
 }
 
 .highlight-row {
@@ -2855,7 +2874,8 @@ html[data-theme='dark'] .announcement-list li.clickable-item {
 }
 
 .admin-loading-state,
-.admin-error-state {
+.admin-error-state,
+.admin-info-state {
   background: rgba(255, 255, 255, 0.75);
   border: 1px solid rgba(15, 23, 42, 0.12);
   padding: 0.85rem 1.25rem;
@@ -2867,6 +2887,15 @@ html[data-theme='dark'] .announcement-list li.clickable-item {
 .admin-error-state {
   border-color: rgba(239, 68, 68, 0.3);
   color: #b91c1c;
+}
+
+.admin-info-state {
+  border-color: rgba(14, 116, 144, 0.3);
+  color: #0e7490;
+}
+
+.project-overview-feedback {
+  margin-bottom: 0.75rem;
 }
 
 @media (max-width: 992px) {

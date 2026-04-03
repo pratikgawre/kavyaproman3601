@@ -356,12 +356,14 @@ const Reports = () => {
     const organizationId = selectedOrg?.id || selectedOrg?._id || "";
     const organizationUsername = selectedOrg?.username || selectedOrg?.slug || "";
     const organizationName = selectedOrg?.name || "";
-    if (organizationId) {
-      queryParams.set("organizationId", organizationId);
-    } else if (organizationUsername) {
-      queryParams.set("organizationUsername", organizationUsername);
-    } else if (organizationName) {
-      queryParams.set("organizationName", organizationName);
+    if (!isAdmin) {
+      if (organizationId) {
+        queryParams.set("organizationId", organizationId);
+      } else if (organizationUsername) {
+        queryParams.set("organizationUsername", organizationUsername);
+      } else if (organizationName) {
+        queryParams.set("organizationName", organizationName);
+      }
     }
 
     Promise.resolve()
