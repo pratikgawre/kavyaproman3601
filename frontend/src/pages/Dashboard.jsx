@@ -21,6 +21,30 @@ function normalizeRole(role) {
   return (role || '').trim().toLowerCase()
 }
 
+function normalizeProjectOverviewLabel(label) {
+  return (label || '').toString().trim().toLowerCase()
+}
+
+function getProjectOverviewStatusKeyFromLabel(label) {
+  const normalized = normalizeProjectOverviewLabel(label)
+  if (normalized.includes('completed') || normalized.includes('archive')) return 'completed'
+  if (normalized.includes('hold') || normalized.includes('pause') || normalized.includes('freeze')) return 'onHold'
+  return 'active'
+}
+
+function isProjectOnHold(project) {
+  const type = (project?.projectType || '').toString().trim().toLowerCase()
+  if (type && (type.includes('hold') || type.includes('pause') || type.includes('freeze'))) return true
+  const name = (project?.name || '').toString().trim().toLowerCase()
+  return Boolean(name && name.includes('hold'))
+}
+
+function getProjectStatusKey(project) {
+  if (project?.isArchived === true) return 'completed'
+  if (isProjectOnHold(project)) return 'onHold'
+  return 'active'
+}
+
 function normalizeStatus(value) {
   const normalized = (value || '').toString().trim().toLowerCase()
   if (normalized === 'todo' || normalized === 'to-do') return 'todo'
@@ -1367,16 +1391,105 @@ export default function Dashboard({ initialShowCreate = false }) {
     runIssueSearch()
   }
 
-  const adminPendingApprovals = adminOverview?.pendingApprovals ?? []
-  const adminProjectOverview = adminOverview?.projectOverview ?? []
-  const adminProjectHighlights = adminOverview?.projectHighlights ?? []
-  const adminNotificationTitles = Array.isArray(adminOverview?.systemNotifications)
-    ? adminOverview.systemNotifications
-    : (Array.isArray(notifications) ? notifications.map((n) => n.title) : [])
+  const adminPendingApprovals = useMemo(
+    () => (Array.isArray(adminOverview?.pendingApprovals) ? adminOverview.pendingApprovals : []),
+    [adminOverview]
+  )
+  const adminProjectOverview = useMemo(
+    () => (Array.isArray(adminOverview?.projectOverview) ? adminOverview.projectOverview : []),
+    [adminOverview]
+  )
+  const adminProjectHighlights = useMemo(
+    () => (Array.isArray(adminOverview?.projectHighlights) ? adminOverview.projectHighlights : []),
+    [adminOverview]
+  )
+  const adminNotificationTitles = useMemo(
+    () => (Array.isArray(adminOverview?.systemNotifications)
+      ? adminOverview.systemNotifications
+      : (Array.isArray(notifications) ? notifications.map((n) => n.title) : [])),
+    [adminOverview, notifications]
+  )
 
-  const adminAnnouncementItems = Array.isArray(adminOverview?.announcements)
-    ? adminOverview.announcements
-    : []
+  const adminAnnouncementItems = useMemo(
+    () => (Array.isArray(adminOverview?.announcements) ? adminOverview.announcements : []),
+    [adminOverview]
+  )
+
+  const projectOverviewRows = useMemo(() => {
+    const defaultRows = {
+      active: { label: 'Active Projects', count: 0, ownerName: '', ownerEmail: '' },
+      completed: { label: 'Completed Projects', count: 0, ownerName: '', ownerEmail: '' },
+      onHold: { label: 'On Hold Projects', count: 0, ownerName: '', ownerEmail: '' }
+    }
+
+    const apiRows = (Array.isArray(adminProjectOverview) ? adminProjectOverview : [])
+      .map((item) => {
+        const statusKey = getProjectOverviewStatusKeyFromLabel(item?.label)
+        const count = Number(item?.count)
+        return {
+          statusKey,
+          label: defaultRows[statusKey]?.label || (item?.label || '').toString().trim() || 'Active Projects',
+          count: Number.isFinite(count) ? count : 0,
+          ownerName: (item?.ownerName || '').toString().trim(),
+          ownerEmail: (item?.ownerEmail || '').toString().trim()
+        }
+      })
+      .filter((item) => item.statusKey && item.label)
+
+    if (apiRows.length) {
+      apiRows.forEach((item) => {
+        defaultRows[item.statusKey] = {
+          ...defaultRows[item.statusKey],
+          label: item.label,
+          count: item.count,
+          ownerName: item.ownerName,
+          ownerEmail: item.ownerEmail
+        }
+      })
+      return [defaultRows.active, defaultRows.completed, defaultRows.onHold]
+    }
+
+    const projectList = Array.isArray(projects) ? projects : []
+    if (projectList.length) {
+      const ownerBuckets = {
+        active: new Map(),
+        completed: new Map(),
+        onHold: new Map()
+      }
+
+      projectList.forEach((project) => {
+        const statusKey = getProjectStatusKey(project)
+        if (!defaultRows[statusKey]) return
+        defaultRows[statusKey].count += 1
+
+        const ownerName = (project?.teamLead || '').toString().trim()
+        const ownerEmail = (project?.managerEmail || '').toString().trim()
+        const ownerKey = (ownerEmail || ownerName).toLowerCase()
+        if (!ownerKey) return
+
+        const existing = ownerBuckets[statusKey].get(ownerKey) || { count: 0, ownerName, ownerEmail }
+        existing.count += 1
+        if (!existing.ownerName && ownerName) existing.ownerName = ownerName
+        if (!existing.ownerEmail && ownerEmail) existing.ownerEmail = ownerEmail
+        ownerBuckets[statusKey].set(ownerKey, existing)
+      })
+
+      ;['active', 'completed', 'onHold'].forEach((statusKey) => {
+        const entries = Array.from(ownerBuckets[statusKey].values())
+        if (!entries.length) return
+        entries.sort((a, b) => b.count - a.count)
+        defaultRows[statusKey].ownerName = entries[0].ownerName
+        defaultRows[statusKey].ownerEmail = entries[0].ownerEmail
+      })
+
+      return [defaultRows.active, defaultRows.completed, defaultRows.onHold]
+    }
+
+    defaultRows.active.count = Number(adminOverview?.activeProjects ?? 0) || 0
+    defaultRows.completed.count = Number(adminOverview?.completedProjects ?? 0) || 0
+    defaultRows.onHold.count = Number(adminOverview?.onHoldProjects ?? 0) || 0
+    return [defaultRows.active, defaultRows.completed, defaultRows.onHold]
+  }, [adminOverview, adminProjectOverview, projects])
 
   return (
     <div className="dashboard-root d-flex">
@@ -1620,11 +1733,7 @@ export default function Dashboard({ initialShowCreate = false }) {
                   <p className="small-muted">Status breakdown</p>
                 </div>
                 <div className="project-status-list">
-                  {(adminProjectOverview.length ? adminProjectOverview : [
-                    { label: 'Active Projects', count: adminOverview?.activeProjects ?? 0, ownerName: '' },
-                    { label: 'Completed Projects', count: adminOverview?.completedProjects ?? 0, ownerName: '' },
-                    { label: 'On Hold Projects', count: adminOverview?.onHoldProjects ?? 0, ownerName: '' }
-                  ]).map((status) => (
+                  {projectOverviewRows.map((status) => (
                     <div className="project-status-row" key={status.label}>
                       <div>
                         <div className="project-status-label">{status.label}</div>
