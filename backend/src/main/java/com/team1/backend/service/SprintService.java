@@ -133,6 +133,7 @@ public class SprintService {
     public Sprint completeSprint(String id) {
         Sprint sprint = sprintRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Sprint not found"));
+        archiveDoneIssuesForCompletedSprint(sprint);
         sprint.setStatus("completed");
         if (sprint.getEndDate() == null || sprint.getEndDate().isBlank()) {
             sprint.setEndDate(LocalDate.now().toString());
@@ -141,6 +142,27 @@ public class SprintService {
         Sprint saved = sprintRepository.save(sprint);
         attachIssueSummary(saved);
         return saved;
+    }
+
+    private void archiveDoneIssuesForCompletedSprint(Sprint sprint) {
+        if (sprint == null || sprint.getId() == null || sprint.getId().isBlank()) return;
+        List<Issue> sprintIssues = issueRepository.findBySprintId(sprint.getId());
+        if (sprintIssues == null || sprintIssues.isEmpty()) return;
+
+        LocalDateTime now = LocalDateTime.now();
+        List<Issue> toArchive = new ArrayList<>();
+        for (Issue issue : sprintIssues) {
+            if (issue == null || Boolean.TRUE.equals(issue.getArchived())) continue;
+            if (!"done".equals(normalizeIssueStatus(issue.getStatus()))) continue;
+            issue.setArchived(Boolean.TRUE);
+            issue.setArchivedAt(now);
+            issue.setUpdatedAt(now);
+            toArchive.add(issue);
+        }
+
+        if (!toArchive.isEmpty()) {
+            issueRepository.saveAll(toArchive);
+        }
     }
 
     private void ensureNoOtherActive(String projectKey, String currentId) {

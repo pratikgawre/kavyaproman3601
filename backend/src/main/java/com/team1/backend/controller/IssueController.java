@@ -19,8 +19,10 @@ public class IssueController {
     public IssueController(IssueService service){ this.service = service; }
 
     @GetMapping
-    public List<Issue> list(@RequestParam(required = false) String project){
-        return service.listAll(project);
+    public List<Issue> list(
+            @RequestParam(required = false) String project,
+            @RequestParam(defaultValue = "false") boolean includeArchived){
+        return service.listAll(project, includeArchived);
     }
 
     @GetMapping("/{id}")

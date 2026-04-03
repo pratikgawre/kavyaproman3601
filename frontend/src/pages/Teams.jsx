@@ -29,12 +29,29 @@ const getAvatarInitials = (name, email) => {
   if (parts.length === 1) return parts[0].charAt(0).toUpperCase()
   return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase()
 }
+const PROJECT_MANAGER_ROLE = 'Project Manager'
 const normalizeRole = (role) => (role || '').trim().toLowerCase()
-const getRoleLabel = (role) => {
+const normalizeTeamMemberRole = (role, fallback = '') => {
+  const rawRole = (role || '').toString().trim()
+  const normalized = normalizeRole(rawRole)
+  if (normalized === 'admin' || normalized === 'project manager') return PROJECT_MANAGER_ROLE
+  if (normalized === 'developer') return 'Developer'
+  if (normalized === 'tester') return 'Tester'
+  if (!rawRole) return fallback
+  return rawRole
+}
+const getRoleLabel = (role, { preserveAdmin = false } = {}) => {
   const normalized = normalizeRole(role)
-  if (normalized === 'admin') return 'Admin'
-  if (normalized === 'project manager') return 'Project Manager'
+  if (normalized === 'admin') return preserveAdmin ? 'Admin' : PROJECT_MANAGER_ROLE
+  if (normalized === 'project manager') return PROJECT_MANAGER_ROLE
   return role || ''
+}
+const getRoleBadgeClass = (role, { preserveAdmin = false } = {}) => {
+  const normalized = normalizeRole(role)
+  if (!normalized) return 'member'
+  if (normalized === 'admin') return preserveAdmin ? 'admin' : 'manager'
+  if (normalized === 'project manager') return 'manager'
+  return normalized
 }
 const isProjectManagerRole = (role) => {
   const normalized = normalizeRole(role)
@@ -98,7 +115,7 @@ const getMemberCardId = (member, fallbackIndex = null) => {
 const matchesMemberId = (member, memberId) => getMemberCardId(member) === String(memberId ?? '')
 
 const FALLBACK_MEMBERS = [
-  { id: 1, name: 'Sarah Johnson', email: 'sarah.johnson@kavyapro.com', role: 'Admin', projects: 3, activeIssues: 8, image: '' },
+  { id: 1, name: 'Sarah Johnson', email: 'sarah.johnson@kavyapro.com', role: 'Project Manager', projects: 3, activeIssues: 8, image: '' },
   { id: 2, name: 'Michael Chen', email: 'michael.chen@kavyapro.com', role: 'Developer', projects: 2, activeIssues: 6, image: '' },
   { id: 3, name: 'Emily Rodriguez', email: 'emily.rodriguez@kavyapro.com', role: 'Tester', projects: 2, activeIssues: 4, image: '' }
 ];
@@ -227,6 +244,7 @@ export default function Teams() {
   const organizationName = selectedOrg?.name || null;
   const isProjectManager = isProjectManagerRole(currentUser?.role);
   const isAdmin = normalizeRole(currentUser?.role) === 'admin';
+  const currentUserTeamRole = isAdmin ? 'Admin' : PROJECT_MANAGER_ROLE;
   const visibleTab = isProjectManager ? activeTab : "Members";
 
   useEffect(() => {
@@ -616,6 +634,7 @@ export default function Teams() {
     setEditingId(memberCardId);
     setEditingMember({
       ...member,
+      role: normalizeTeamMemberRole(member?.role, 'Developer'),
       memberRecordId: member?.memberRecordId || member?.id || member?._id || member?.memberId || null
     });
   };
@@ -662,7 +681,7 @@ export default function Teams() {
           memberId: editingMember.memberId || editingMember.id || null,
           name: editingMember.name || '',
           email: normalizedEmail,
-          role: editingMember.role || 'Developer',
+          role: normalizeTeamMemberRole(editingMember.role, 'Developer'),
           status: editingMember.status || 'Invited'
         };
         const currentTeam = Array.isArray(selectedProject?.teamMembers) ? selectedProject.teamMembers : [];
@@ -706,7 +725,7 @@ export default function Teams() {
       const payload = {
         name: editingMember.name || '',
         email: normalizedEmail,
-        role: editingMember.role || 'Developer',
+        role: normalizeTeamMemberRole(editingMember.role, 'Developer'),
         managerEmail: (editingMember.managerEmail || currentUser?.email || '').trim() || undefined,
         image: editingMember.image || editingMember.avatar || undefined,
         organizationId: organizationId || undefined,
@@ -828,7 +847,7 @@ export default function Teams() {
     }
     if (statName === 'Project Managers') {
       setActiveTab('Members');
-      setSelectedRole('Admin');
+      setSelectedRole(PROJECT_MANAGER_ROLE);
       setSearchTerm('');
       setTimeout(scrollToMemberList, 0);
       return;
@@ -866,7 +885,7 @@ export default function Teams() {
           setEmailVerificationStatus('verified');
           // Always sync the name from DB once verified
           const dbName = sanitizeName(userData?.name || '').trim();
-          const dbRole = (userData?.role || '').trim();
+          const dbRole = normalizeTeamMemberRole((userData?.role || '').trim(), '');
           setInviteFormData((prev) => ({
             ...prev,
             name: dbName || prev.name,
@@ -914,7 +933,7 @@ export default function Teams() {
 
     const normalizedName = sanitizeName(inviteFormData.name || '').trim()
     const normalizedEmail = sanitizeEmail(inviteFormData.email || '').trim().toLowerCase()
-    const normalizedRole = (inviteFormData.role || '').trim()
+    const normalizedRole = normalizeTeamMemberRole(inviteFormData.role, '').trim()
 
     if (!normalizedName || !normalizedEmail || !normalizedRole) {
       alert('Please fill all fields');
@@ -1125,7 +1144,7 @@ export default function Teams() {
       id: 'manager-self',
       name: displayName || 'Project Manager',
       email: normalizedManagerEmail,
-      role: 'Admin',
+      role: currentUserTeamRole,
       projects: activeProjectCount,
       completedProjects: completedProjectCount,
       activeIssues: getActiveIssuesForMember(normalizedManagerEmail, projectKeys),
@@ -1385,7 +1404,9 @@ export default function Teams() {
       memberId: member?.memberId || member?.id || null,
       name: member?.name || member?.email || 'Member',
       email: member?.email || '',
-      role: isManagerEmail(email) ? 'Admin' : (member?.role || 'Developer'),
+      role: isManagerEmail(email)
+        ? currentUserTeamRole
+        : normalizeTeamMemberRole(member?.role, 'Developer'),
       image: member?.image || member?.avatar || ''
     });
   });
@@ -1401,7 +1422,9 @@ export default function Teams() {
         memberMap.set(email, {
           ...existing,
           name: existing.name || member?.name || member?.email || 'Member',
-          role: isManagerEmail(email) ? 'Admin' : (existing.role || member?.role || 'Developer'),
+          role: isManagerEmail(email)
+            ? currentUserTeamRole
+            : normalizeTeamMemberRole(existing.role || member?.role, 'Developer'),
           image: existing.image || member?.avatar || member?.image || '',
           memberRecordId: existing.memberRecordId || member?.memberId || member?.id || null
         });
@@ -1413,7 +1436,9 @@ export default function Teams() {
         memberId: member?.memberId || member?.id || null,
         name: member?.name || member?.email || 'Member',
         email: member?.email || '',
-        role: isManagerEmail(email) ? 'Admin' : (member?.role || 'Developer'),
+        role: isManagerEmail(email)
+          ? currentUserTeamRole
+          : normalizeTeamMemberRole(member?.role, 'Developer'),
         image: member?.avatar || member?.image || ''
       });
     });
@@ -1441,7 +1466,9 @@ export default function Teams() {
         memberId: member?.memberId || member?.id || null,
         name: member?.name || member?.email || 'Member',
         email: member?.email || '',
-        role: member?.role || 'Developer',
+        role: isManagerEmail(email)
+          ? currentUserTeamRole
+          : normalizeTeamMemberRole(member?.role, 'Developer'),
         projects: selectedProjectActiveCount,
         completedProjects: selectedProjectCompletedCount,
         activeIssues: getActiveIssuesForMember(email, projectFilterKeys),
@@ -1454,14 +1481,20 @@ export default function Teams() {
     const memberEmail = (member?.email || '').trim().toLowerCase();
     return !!userEmail && memberEmail === userEmail;
   };
+  const isSelfAdminMember = (member) => isAdmin && isSelfMember(member);
 
   const baseMembers = selectedProject ? projectTeamMembers : allMembers;
   const filteredMembers = baseMembers.filter((member) => {
     const name = (member?.name || '').toLowerCase();
     const email = (member?.email || '').toLowerCase();
     const matchesSearch = name.includes(searchTerm.toLowerCase()) || email.includes(searchTerm.toLowerCase());
-    const isProjectManagerRoleMatch = selectedRole === 'Admin' && normalizeRole(member.role) === 'project manager';
-    const matchesRole = selectedRole === 'All Roles' || member.role === selectedRole || isProjectManagerRoleMatch;
+    const selectedRoleNormalized = normalizeRole(selectedRole);
+    const memberRoleNormalized = normalizeRole(member?.role);
+    const isProjectManagerRoleMatch = selectedRoleNormalized === 'project manager'
+      && (memberRoleNormalized === 'project manager' || memberRoleNormalized === 'admin');
+    const matchesRole = selectedRole === 'All Roles'
+      || selectedRoleNormalized === memberRoleNormalized
+      || isProjectManagerRoleMatch;
     return matchesSearch && matchesRole;
   });
 
@@ -1617,7 +1650,7 @@ export default function Teams() {
               </div>
               <div className="ms-2 user-info">
                 <div className="user-name">{displayName}</div>
-            <div className="user-role">{getRoleLabel(currentUser?.role || 'Member')}</div>
+                <div className="user-role">{getRoleLabel(currentUser?.role || 'Member', { preserveAdmin: true })}</div>
               </div>
             </div>
             <button className="btn logout-badge mt-3" onClick={handleLogout} title="Logout">
@@ -1827,7 +1860,7 @@ export default function Teams() {
           {isProjectManager && (
             <div className="stats">
             <div 
-              className="card stat-card"
+              className="card stat-card stat-card-total-members"
               onClick={() => handleStatClick('Total Members')}
               onKeyDown={(event) => triggerCardAction(event, () => handleStatClick('Total Members'))}
               role="button"
@@ -1838,7 +1871,7 @@ export default function Teams() {
             </div>
 
             <div 
-              className="card stat-card"
+              className="card stat-card stat-card-active-projects"
               onClick={() => handleStatClick('Active Projects')}
               onKeyDown={(event) => triggerCardAction(event, () => handleStatClick('Active Projects'))}
               role="button"
@@ -1849,7 +1882,7 @@ export default function Teams() {
             </div>
 
             <div 
-              className="card stat-card"
+              className="card stat-card stat-card-avg-workload"
               onClick={() => handleStatClick('Avg. Workload')}
               onKeyDown={(event) => triggerCardAction(event, () => handleStatClick('Avg. Workload'))}
               role="button"
@@ -1861,7 +1894,7 @@ export default function Teams() {
             </div>
 
             <div 
-              className="card stat-card"
+              className="card stat-card stat-card-project-managers"
               onClick={() => handleStatClick('Project Managers')}
               onKeyDown={(event) => triggerCardAction(event, () => handleStatClick('Project Managers'))}
               role="button"
@@ -1904,7 +1937,7 @@ export default function Teams() {
             </select>
             <select value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}>
               <option>All Roles</option>
-              <option value="Admin">Project Manager</option>
+              <option value={PROJECT_MANAGER_ROLE}>{PROJECT_MANAGER_ROLE}</option>
               <option>Developer</option>
               <option>Tester</option>
             </select>
@@ -2029,10 +2062,11 @@ export default function Teams() {
                 prioritizedMembers.map((member, index) => {
                   const memberCardId = getMemberCardId(member, index);
                   const isEditingMember = editingId === memberCardId;
+                  const preserveAdminRole = isSelfAdminMember(member);
                   return (
                   <div 
                     key={memberCardId}
-                    className={`member-card member-role-${normalizeRole(member?.role || 'member').replace(/\s+/g, '-')} ${isProjectManager && isSelfMember(member) ? 'manager-highlight' : ''}`}
+                    className={`member-card member-role-${normalizeRole(preserveAdminRole ? 'admin' : (member?.role || 'member')).replace(/\s+/g, '-')} ${isProjectManager && isSelfMember(member) ? 'manager-highlight' : ''}`}
                     onClick={() => handleCardClick(member)}
                     onKeyDown={(event) => triggerCardAction(event, () => handleCardClick(member))}
                     role="button"
@@ -2064,7 +2098,7 @@ export default function Teams() {
                               value={editingMember.role}
                               onChange={(e) => setEditingMember({...editingMember, role: e.target.value})}
                             >
-                              <option value="Admin">Project Manager</option>
+                              <option value={PROJECT_MANAGER_ROLE}>{PROJECT_MANAGER_ROLE}</option>
                               <option>Developer</option>
                               <option>Tester</option>
                             </select>
@@ -2073,8 +2107,8 @@ export default function Teams() {
                           <>
                             <h3>
                               {member.name} 
-                              <span className={`role ${(member.role || '').toLowerCase()}`}>
-                                {getRoleLabel(member.role)}
+                              <span className={`role ${getRoleBadgeClass(member.role, { preserveAdmin: preserveAdminRole })}`}>
+                                {getRoleLabel(member.role, { preserveAdmin: preserveAdminRole })}
                               </span>
                             </h3>
                             <p>{member.email}</p>
@@ -2277,7 +2311,7 @@ export default function Teams() {
                               onClick={() => {
                                 const email = sanitizeEmail(userOption?.email || '').trim().toLowerCase();
                                 const selectedName = sanitizeName(userOption?.name || inviteFormData.name || '');
-                                const dbRole = (userOption?.role || '').trim();
+                                const dbRole = normalizeTeamMemberRole((userOption?.role || '').trim(), '');
                                 setInviteFormData((prev) => ({
                                   ...prev,
                                   name: selectedName || prev.name,
@@ -2450,8 +2484,8 @@ export default function Teams() {
                 <div className="member-detail-info">
                   <div className="member-detail-name-row">
                     <h3>{selectedMember.name}</h3>
-                    <span className={`role ${(selectedMember.role || '').toLowerCase()}`}>
-                      {getRoleLabel(selectedMember.role)}
+                    <span className={`role ${getRoleBadgeClass(selectedMember.role, { preserveAdmin: isSelfAdminMember(selectedMember) })}`}>
+                      {getRoleLabel(selectedMember.role, { preserveAdmin: isSelfAdminMember(selectedMember) })}
                     </span>
                   </div>
                   <p className="member-detail-email">{selectedMember.email}</p>

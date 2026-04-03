@@ -76,7 +76,9 @@ public class ProjectService {
         project.setOrganizationId(normalizeText(project.getOrganizationId()));
         project.setOrganizationUsername(normalizeSlug(project.getOrganizationUsername()));
         project.setOrganizationName(normalizeText(project.getOrganizationName()));
-        project.setTeamMembers(normalizeTeamMembers(project.getTeamMembers()));
+        List<ProjectMember> normalizedTeamMembers = normalizeTeamMembers(project.getTeamMembers());
+        validateSingleAdmin(normalizedTeamMembers);
+        project.setTeamMembers(normalizedTeamMembers);
 
         if (project.getProjectType() == null || project.getProjectType().trim().isEmpty()) {
             project.setProjectType("Scrum");
@@ -169,7 +171,9 @@ public class ProjectService {
         }
 
         if (updated.getTeamMembers() != null) {
-            existing.setTeamMembers(normalizeTeamMembers(updated.getTeamMembers()));
+            List<ProjectMember> normalizedTeamMembers = normalizeTeamMembers(updated.getTeamMembers());
+            validateSingleAdmin(normalizedTeamMembers);
+            existing.setTeamMembers(normalizedTeamMembers);
         }
 
         if (updated.getTotalIssues() != null) {
@@ -318,6 +322,24 @@ public class ProjectService {
             unique.put(key, normalized);
         }
         return new ArrayList<>(unique.values());
+    }
+
+    private void validateSingleAdmin(List<ProjectMember> members) {
+        if (members == null || members.isEmpty()) {
+            return;
+        }
+        long adminCount = members.stream()
+                .filter(member -> member != null && "admin".equals(normalizeRole(member.getRole())))
+                .count();
+        if (adminCount > 1) {
+            throw new IllegalStateException("Only one admin is allowed per project.");
+        }
+    }
+
+    private String normalizeRole(String role) {
+        if (role == null) return null;
+        String normalized = role.trim().toLowerCase();
+        return normalized.isEmpty() ? null : normalized;
     }
 
     private String normalizeSlug(String value) {
